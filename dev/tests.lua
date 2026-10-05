@@ -259,14 +259,32 @@ do
     H.eq(#G.Raided(), 1, "and a report does not show it")
 end
 
-H.section("solo and ungrouped")
+H.section("only a raid is a raid night")
 do
     reset()
     H.inRaid = false
     local night, why = W.Kill("Najentus", 100)
     H.eq(night, nil, "a boss killed alone is not a raid night")
-    H.eq(why, "solo", "and it says so", tostring(why))
+    H.eq(why, "not a raid", "and it says so", tostring(why))
     H.eq(#G.Nights(), 0, "nothing written down")
+
+    -- A FIVE-MAN HAS BOSSES TOO (4 Oct 2026). Arn: "there are no raids in wow forever yet" - so on
+    -- that client a dungeon would be the only thing this ever recorded, and raid attendance would
+    -- be made entirely of Blackfathom runs. On TBC it rots the number more quietly: a Tuesday
+    -- heroic counting exactly as much as Black Temple.
+    local realInGroup = _G.IsInGroup
+    _G.IsInGroup = function() return true end       -- in a party...
+    H.inRaid = false                                -- ...but not a raid
+    H.raid = { "Kumlust", "Ariar" }
+    night, why = W.Kill("Aku'mai", 200)
+    H.eq(night, nil, "a dungeon boss in a party is not a raid night")
+    H.eq(why, "not a raid", "and it says why", tostring(why))
+    H.eq(#G.Nights(), 0, "still nothing written down")
+    _G.IsInGroup = realInGroup
+
+    H.inRaid = true
+    W.Kill("Najentus", 300)
+    H.eq(#G.Nights(), 1, "a raid group is")
 end
 
 H.section("reading it back")
