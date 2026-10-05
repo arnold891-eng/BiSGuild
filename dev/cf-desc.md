@@ -28,7 +28,7 @@ In PowerShell:
 
 The answer must be exactly this, for **the current version**:
 
-    SHA-256   088D75691456E59FDE0F8235544467E4437EAE35882FD4B7DF78CD367D6F9B02
+    SHA-256   64E58A59C45E4AC505AF570AB89C0336F93E535F2A9ECECCFB9755BA2ECBE216
 
 `/bisg script` in game also shows a number — but **compare against this page, not against that**.
 Whoever tampers with the script can change the number the addon shows you just as easily, and then

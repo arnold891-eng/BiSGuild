@@ -25,7 +25,10 @@ param(
     [Parameter(Mandatory = $true)] [string] $Logs,
     [string] $Log,
     [switch] $AllPulls,
-    [switch] $Review
+    [switch] $Review,
+    # Count five-man bosses too. Useful for proving the whole chain works on a client that has no
+    # raids yet; wrong for a record, because a Tuesday heroic is not a raid night.
+    [switch] $Dungeons
 )
 
 $ErrorActionPreference = "Stop"
@@ -79,8 +82,19 @@ foreach ($line in [System.IO.File]::ReadLines($file.FullName)) {
     $event = $body.Substring(0, $comma)
 
     if ($event -eq "ENCOUNTER_START") {
-        $f = $body -split ","
-        $cur = @{ boss = $f[2].Trim('"'); kill = $false; who = @{} }
+        # ENCOUNTER_START,<id>,"<name>",<difficulty>,<groupSize>,... - the name is quoted and could
+        # hold a comma, so it is matched rather than split.
+        #
+        # A DUNGEON BOSS IS NOT A RAID NIGHT. The addon learned that when Arn said there are no
+        # raids in Forever yet; this reader never did, so a five-man log would have produced
+        # attendance indistinguishable from real raid data. groupSize is the honest line.
+        $m = [regex]::Match($body, 'ENCOUNTER_START,(\d+),"(.*?)",(-?\d+),(-?\d+)')
+        if ($m.Success) {
+            $cur = @{ boss = $m.Groups[2].Value; size = [int]$m.Groups[4].Value; kill = $false; who = @{} }
+        } else {
+            $f = $body -split ","
+            $cur = @{ boss = $f[2].Trim('"'); size = 0; kill = $false; who = @{} }
+        }
         [void]$pulls.Add($cur)
     }
     elseif ($event -eq "ENCOUNTER_END") {
@@ -118,8 +132,17 @@ foreach ($line in [System.IO.File]::ReadLines($file.FullName)) {
 }
 
 $counted = @($pulls | Where-Object { $AllPulls -or $_.kill })
+# NOT $dungeons - PowerShell variable names are case-insensitive, so a local $dungeons IS the
+# -Dungeons switch, and assigning an array to it makes the parameter binder throw "Cannot convert
+# System.Object[] to SwitchParameter" on the NEXT run. Caught the first time this was run.
+$fiveMans = @($counted | Where-Object { $_.size -gt 0 -and $_.size -le 5 })
+if (-not $Dungeons) { $counted = @($counted | Where-Object { -not ($_.size -gt 0 -and $_.size -le 5) }) }
 if ($counted.Count -eq 0) {
     Write-Host ("no {0} found in that log." -f $(if ($AllPulls) { "pulls" } else { "boss kills" }))
+    if ($fiveMans.Count -gt 0 -and -not $Dungeons) {
+        Write-Host ("  {0} five-man boss kill(s) were left out - a dungeon boss is not a raid night." -f $fiveMans.Count)
+        Write-Host "  -Dungeons counts them, which is useful for testing and wrong for a record."
+    }
     exit 1
 }
 
