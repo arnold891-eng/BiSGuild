@@ -51,40 +51,21 @@ function W.Kill(name, at)
     if #who == 0 then return nil, "nobody" end
 
     local night = G.Record(name, at, who, R.Zone())
-    -- THE PULL'S ANSWER, not this moment's. Food is lost on death, so judging readiness at the
-    -- kill would mark down precisely the people who died doing it. W.Pull() took the reading when
-    -- the fight began; if it never fired - a client with no ENCOUNTER_START, a boss that does not
-    -- raise one - there is no reading, and no reading is nil rather than a row of failures.
-    if night and W.pulled then
-        night.kills[#night.kills].ready = W.pulled
-    end
-    W.pulled = nil
     lastName, lastAt = name, at
     return night, nil
-end
-
---- The fight began: who was ready. Held until the boss dies, then written onto the kill.
-function W.Pull()
-    local C = ns.C
-    W.pulled = C and C.Snapshot() or nil
-    return W.pulled
 end
 
 --- Only for the suite: a fresh file has seen no kills.
 function W.Forget()
     lastName, lastAt = nil, -math.huge
-    W.pulled = nil
 end
 
 function W.Start()
     local f = CreateFrame("Frame")
     f:RegisterEvent("BOSS_KILL")
     f:RegisterEvent("ENCOUNTER_END")
-    f:RegisterEvent("ENCOUNTER_START")
     f:SetScript("OnEvent", function(_, event, ...)
-        if event == "ENCOUNTER_START" then
-            W.Pull()
-        elseif event == "BOSS_KILL" then
+        if event == "BOSS_KILL" then
             local _, name = ...
             W.Kill(name)
         elseif event == "ENCOUNTER_END" then
