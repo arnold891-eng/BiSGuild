@@ -41,6 +41,12 @@ function R.InGroup()
     return false
 end
 
+--- A RAID group, which is the only kind this addon writes anything down about. A five-man has
+--- bosses too, and a dungeon boss is not a raid night - see Watch.lua.
+function R.InRaid()
+    return (IsInRaid and IsInRaid()) and true or false
+end
+
 --- Everyone in the group, as plain short names, the player included.
 ---
 --- Walks raid1..N when in a raid and party1..N plus the player otherwise, because `GetNumGroupMembers`

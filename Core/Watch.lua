@@ -37,7 +37,15 @@ function W.Kill(name, at)
 
     local R, G = ns.R, ns.G
     if not (R and G) then return nil, "not loaded" end
-    if not R.InGroup() then return nil, "solo" end
+    -- A RAID GROUP, NOT ANY GROUP (4 Oct 2026). Arn: "there are no raids in wow forever yet" - and
+    -- the first thing that told me was that dungeons still have bosses. `InGroup` was true for a
+    -- five-man, so a Blackfathom run would have built raid nights out of dungeon bosses, and on
+    -- Forever that is the ONLY thing it would ever have recorded. Even on TBC it rots the number
+    -- quietly: a Tuesday heroic counting the same as Black Temple.
+    --
+    -- `IsInRaid` is the honest line. A guild that raids converts to a raid group to do it, and a
+    -- five-man never is one.
+    if not R.InRaid() then return nil, "not a raid" end
 
     local who = R.Names()
     if #who == 0 then return nil, "nobody" end
