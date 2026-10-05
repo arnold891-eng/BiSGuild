@@ -1,0 +1,14 @@
+-- BiSGuild :: Data/Report.lua - the placeholder. Sets nothing on purpose.
+--
+-- `dev/logreport.py --write` replaces this file IN THE GAME FOLDER with the numbers out of a combat
+-- log. This copy, the one in the repository, stays empty forever: raid data is not source, and a
+-- guild's attendance does not belong in a public repo.
+--
+-- It exists at all because the TOC names it and the harness loads every file the TOC names - which
+-- is the guard that catches a typo in the load order, and worth more than saving one empty file.
+-- The real client would simply skip a missing file; the harness is stricter, so the file is here.
+--
+-- After `deploy.sh` this placeholder is what the client has again, and `/bisg report` says which
+-- command to run. Re-run the script after a deploy.
+--
+-- Nothing below. `BiSGuildReport` stays nil and ns.P answers "no report" in words.
