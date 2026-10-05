@@ -15,5 +15,6 @@ Libs\LibBiSComm-1.0\LibBiSComm-1.0.lua
 Core\Init.lua
 Core\Nights.lua
 Core\Roster.lua
+Core\Consumes.lua
 Core\Watch.lua
 Core\Say.lua

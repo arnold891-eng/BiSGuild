@@ -77,8 +77,11 @@ end)
 
 SLASH_BISGUILD1 = "/bisg"
 SlashCmdList.BISGUILD = function(input)
-  local cmd = tostring(input or ""):match("^%s*(%S*)"):lower()
-  if ns.Say then return ns.Say(cmd) end
+  -- the command is lowercased, the REST is not: a spell id does not care, but this is the shape
+  -- that stored "/memories now Killed Baron Silverlaine" as lower case in BiSMemories (0.5.3)
+  local raw = tostring(input or "")
+  local cmd, rest = raw:match("^%s*(%S*)%s*(.-)%s*$")
+  if ns.Say then return ns.Say(cmd:lower(), rest) end
   local lib = _G.LibBiSComm
   ns.Print("hello - version %s, BiS comm %s, %d peer(s)", ns.VERSION,
     (lib and lib:Enabled()) and T.text("good", "on") or T.text("warn", "off"), lib and lib:Count() or 0)
