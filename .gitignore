@@ -1,0 +1,11 @@
+*.zip
+release/
+*.bak
+.DS_Store
+Thumbs.db
+dev/*.uploaded
+
+# a companion app's output (album.py) and any screenshot that lands here: never the addon's
+album.html
+album-notes.json
+WoWScrnShot_*

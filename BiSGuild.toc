@@ -1,0 +1,15 @@
+## Interface: 20506, 16001
+## Title: |cffb980ffBiS|r Guild
+## Notes: Raid attendance and consumables, measured instead of remembered.
+## Author: Arn
+## Version: 0.0.1
+## SavedVariables: BiSGuildDB
+## OptionalDeps: BiSTheme
+## DefaultState: enabled
+## X-Curse-Project-ID: 0
+## X-CurseForge-GameVersionType: Burning Crusade
+
+Libs\BiSTheme\Console.lua
+Libs\LibBiSComm-1.0\LibBiSComm-1.0.lua
+
+Core\Init.lua

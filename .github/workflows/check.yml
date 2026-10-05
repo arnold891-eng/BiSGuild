@@ -1,0 +1,24 @@
+# CI for BiSGuild (template: _bisdev/ci/caller.yml, BiSGuild replaced; sync with ci/sync.sh).
+#
+# Every push and pull request runs `_bisdev/check.sh BiSGuild` - every dev suite, the
+# embed-bytes asserts against canon, bislint, the API fence - through the reusable workflow in
+# arnold891-eng/bis-ci.
+#
+# WHY bis-ci AND NOT bisdev (19 Sep 2026). A PUBLIC repository cannot `uses:` a reusable workflow
+# that lives in a PRIVATE one. No setting opens it - bisdev's Actions access was already "user" -
+# and the run dies before a single job starts, with one line that names nothing: "This run likely
+# failed because of a workflow file issue". Seven repos went red the minute they were flipped.
+# bis-ci is public and holds ONLY those two workflows; bisdev stays private and is still cloned
+# by the job with BISDEV_TOKEN.
+#
+# A pull request FROM A FORK gets no secrets, so BISDEV_TOKEN is empty and this job cannot pass
+# for an outside contributor. That is the price of a private toolbox beside public addons.
+name: check
+on: [push, pull_request]
+jobs:
+  check:
+    uses: arnold891-eng/bis-ci/.github/workflows/check.yml@main
+    with:
+      addon: BiSGuild
+    secrets:
+      BISDEV_TOKEN: ${{ secrets.BISDEV_TOKEN }}
