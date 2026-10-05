@@ -83,7 +83,7 @@ def auras_of(line):
     return out
 
 
-def main(path, kills_only=True, paste=False, review=False, write=False):
+def main(path, kills_only=True, paste=False, review=False, write=False, include_dungeons=False):
     kinds = load_kinds()
     if not kinds:
         print("consumables.txt is empty or missing - nothing can be judged. See %s" % LIST)
@@ -104,8 +104,20 @@ def main(path, kills_only=True, paste=False, review=False, write=False):
             event = body[:comma] if comma != -1 else body
 
             if event == "ENCOUNTER_START":
-                f = body.split(",")
-                cur = {"boss": f[2].strip('"') if len(f) > 2 else "?", "kill": False, "who": {}}
+                # ENCOUNTER_START,<id>,"<name>",<difficulty>,<groupSize>,<instance>,...
+                # The name is quoted and could contain a comma, so it is matched rather than split.
+                #
+                # A DUNGEON BOSS IS NOT A RAID NIGHT (5 Oct 2026). The addon learned this when Arn
+                # said "there are no raids in wow forever yet" - and the reader never did, so a
+                # five-man log would have produced attendance that looked exactly like real raid
+                # data. groupSize is the honest line: 25 for Black Temple, 5 for a dungeon.
+                m = re.match(r'ENCOUNTER_START,(\d+),"(.*?)",(-?\d+),(-?\d+)', body)
+                if m:
+                    boss, size = m.group(2), int(m.group(4))
+                else:
+                    f = body.split(",")
+                    boss, size = (f[2].strip('"') if len(f) > 2 else "?"), 0
+                cur = {"boss": boss, "size": size, "kill": False, "who": {}}
                 pulls.append(cur)
 
             elif event == "ENCOUNTER_END":
@@ -133,8 +145,15 @@ def main(path, kills_only=True, paste=False, review=False, write=False):
                             guid_name[g] = short(n)
 
     counted = [p for p in pulls if p["kill"]] if kills_only else pulls
+    dungeons = [p for p in counted if 0 < p.get("size", 0) <= 5]
+    if not include_dungeons:
+        counted = [p for p in counted if p not in dungeons]
     if not counted:
         print("no %s found in that log." % ("boss kills" if kills_only else "pulls"))
+        if dungeons and not include_dungeons:
+            print("  %d five-man boss kill(s) were left out - a dungeon boss is not a raid night."
+                  % len(dungeons))
+            print("  --dungeons counts them, which is useful for testing and wrong for a record.")
         return 1
 
     present = defaultdict(int)
@@ -282,4 +301,5 @@ if __name__ == "__main__":
                   kills_only="--all-pulls" not in sys.argv,
                   paste="--paste" in sys.argv,
                   review="--review" in sys.argv,
-                  write="--write" in sys.argv))
+                  write="--write" in sys.argv,
+                  include_dungeons="--dungeons" in sys.argv))
