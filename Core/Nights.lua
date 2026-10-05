@@ -93,16 +93,51 @@ end
 ---
 --- Returns earned, raided, and the percentage as a whole number (nil when nothing is on record -
 --- a person with no history has no attendance, which is not the same as nought percent).
-function G.Rate(name)
+function G.Rate(name, at)
     local earned, raided = 0, 0
-    for _, night in ipairs(G.Nights()) do
-        if #(night.kills or {}) > 0 then
-            raided = raided + 1
-            if G.Earned(night, name) then earned = earned + 1 end
-        end
+    for _, night in ipairs(G.Settled(at)) do
+        raided = raided + 1
+        if G.Earned(night, name) then earned = earned + 1 end
     end
     if raided == 0 then return 0, 0, nil end
     return earned, raided, math.floor((earned / raided) * 100 + 0.5)
+end
+
+--- TONIGHT IS NOT PART OF THE RECORD (4 Oct 2026).
+---
+--- Arn, on why their log-based numbers being a raid behind never mattered: "obv someone that is
+--- rolling on loot is here today". The person being voted on is standing in the raid by
+--- definition, so tonight says nothing about them - what is being judged is whether they have been
+--- turning up and coming prepared BEFORE this.
+---
+--- It is also the only honest way to count it. A night in progress has not finished having kills,
+--- so "half of them" is not a question that can be answered yet: somebody at 1 of 1 reads as
+--- having earned the night, and will not have if they leave and six more bosses die. Counting it
+--- flatters whoever happens to be standing there when the council looks, which is everyone up for
+--- the item.
+---
+--- A night is settled when it has kills in it and the quiet since its last one is longer than the
+--- gap that ends a night - the same rule that decides what night a kill belongs to.
+function G.Settled(at)
+    at = tonumber(at) or (GetServerTime and GetServerTime()) or (time and time()) or 0
+    local out = {}
+    for _, night in ipairs(G.Nights()) do
+        if #(night.kills or {}) > 0 and (at - (tonumber(night.stop) or 0)) > G.GAP then
+            out[#out + 1] = night
+        end
+    end
+    return out
+end
+
+--- The night in progress, if there is one. Shown beside the record, never inside it.
+function G.Tonight(at)
+    at = tonumber(at) or (GetServerTime and GetServerTime()) or (time and time()) or 0
+    local nights = G.Nights()
+    local last = nights[#nights]
+    if last and #(last.kills or {}) > 0 and (at - (tonumber(last.stop) or 0)) <= G.GAP then
+        return last
+    end
+    return nil
 end
 
 --- Everyone the addon has ever seen at a kill, with their rate. Best first, then by name, so the

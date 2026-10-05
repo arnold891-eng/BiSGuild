@@ -221,6 +221,36 @@ do
     _G.issecretvalue = realSecret
 end
 
+H.section("tonight is not part of the record")
+do
+    -- 4 Oct 2026. Arn, on why their log-based numbers being a raid behind never mattered: "obv
+    -- someone that is rolling on loot is here today". The person being voted on is standing in the
+    -- raid by definition, so tonight says nothing about them - and a night still having kills
+    -- cannot answer "half of them" yet. Counting it flatters everyone up for the item.
+    reset()
+    H.inRaid = true
+    H.raid = { "Kumlust", "Ariar" }
+    clock = 500000
+    W.Kill("One", clock)                        -- a night, right now
+
+    H.eq(#G.Settled(clock), 0, "a night in progress is not settled")
+    H.ok(G.Tonight(clock) ~= nil, "it is tonight")
+    local _, _, pct = G.Rate("Kumlust", clock)
+    H.eq(pct, nil, "and nobody has a percentage from it")
+
+    -- four hours later the night is over and joins the record
+    local later = clock + (4 * 60 * 60)
+    H.eq(#G.Settled(later), 1, "once the quiet is longer than the gap it settles")
+    H.eq(G.Tonight(later), nil, "and is no longer tonight")
+    local earned, raided
+    earned, raided, pct = G.Rate("Kumlust", later)
+    H.eq(earned, 1, "now it counts") H.eq(raided, 1, "as one night") H.eq(pct, 100, "100%")
+
+    _G.SlashCmdList.BISGUILD("")
+    H.ok(said[#said]:find("tonight", 1, true) ~= nil or said[#said - 1]:find("tonight", 1, true) ~= nil,
+         "/bisg says tonight is excluded rather than hiding it", said[#said])
+end
+
 H.section("the percentage")
 do
     reset()
@@ -229,7 +259,7 @@ do
     H.raid = { "Kumlust", "Ariar" };  W.Kill("One", 100)
     -- night two: Ariar misses it entirely
     H.raid = { "Kumlust" };           W.Kill("Two", 100 + (4 * 60 * 60))
-
+    -- both nights are long finished as far as `clock` is concerned
     local earned, raided, pct = G.Rate("Kumlust")
     H.eq(earned, 2, "two nights earned") H.eq(raided, 2, "of two raided") H.eq(pct, 100, "100%")
 
@@ -413,7 +443,10 @@ do
     H.ok(type(kill.ready) == "table", "the pull's reading is on the kill")
     H.eq(kill.ready.Kumlust, true, "and it is what they had when it STARTED, not when it ended")
 
-    local ready, counted, pct = C.Rate("Kumlust")
+    -- asked from four hours later, so the night has settled: tonight is never in the record
+    local after = clock + (4 * 60 * 60)
+    H.eq(C.Rate("Kumlust"), 0, "while the night is still running it counts for nothing")
+    local ready, counted, pct = C.Rate("Kumlust", after)
     H.eq(ready, 1, "one ready pull") H.eq(counted, 1, "of one judged") H.eq(pct, 100, "100%")
 end
 
@@ -433,8 +466,47 @@ do
     H.eq(pct, nil, "the rate stays nil")
 end
 
+H.section("the name is the classifier")
+do
+    -- Arn: "cant we just check that stuff with the logs?" Nothing in the client, log included, ever
+    -- says "this is a flask" - but the client says what it is CALLED, and most of them name
+    -- themselves. English patterns, and a suggestion rather than a verdict: every guess is printed.
+    H.eq(C.Guess("Flask of Relentless Assault"), "flask", "a flask names itself")
+    H.eq(C.Guess("Elixir of Major Agility"), "elixir", "so does an elixir")
+    H.eq(C.Guess("Elixir of Major Defense"), "elixir", "both kinds the same way")
+    H.eq(C.Guess("Well Fed"), "food", "and food")
+    H.eq(C.Guess("Blessing of Kings"), nil, "a buff that is not a consumable is left alone")
+
+    -- BATTLE AND GUARDIAN ARE NOT IN THE NAME, which is why the pair is COUNTED, not named: the
+    -- game will not let two battle elixirs sit on one person, so two elixirs is one of each.
+    _G.BiSGuildDB.taught = {}
+    C.Teach(FOOD, "food") C.Teach(BATTLE, "elixir")
+    H.eq(C.Ready(), false, "one elixir known is not enough to count a pair")
+    C.Teach(GUARDIAN, "elixir")
+    H.eq(C.Ready(), true, "two are")
+
+    BUFFS.raid1 = { { id = BATTLE, name = "E1" }, { id = FOOD, name = "F" } }
+    H.eq(C.Check("raid1").ok, false, "one elixir up and food is not ready")
+    BUFFS.raid1 = { { id = BATTLE, name = "E1" }, { id = GUARDIAN, name = "E2" }, { id = FOOD, name = "F" } }
+    H.eq(C.Check("raid1").ok, true, "two elixirs up and food is")
+
+    -- /bisg learn does the four at once
+    _G.BiSGuildDB.taught = {}
+    BUFFS.player = {
+        { id = FLASK, name = "Flask of Relentless Assault" },
+        { id = FOOD, name = "Well Fed" },
+        { id = 12345, name = "Blessing of Kings" },
+    }
+    _G.SlashCmdList.BISGUILD("learn")
+    H.eq(_G.BiSGuildDB.taught[FLASK], "flask", "learn writes the flask down")
+    H.eq(_G.BiSGuildDB.taught[FOOD], "food", "and the food")
+    H.eq(_G.BiSGuildDB.taught[12345], nil, "and leaves the paladin buff alone")
+    H.eq(C.Ready(), true, "one command is enough to start judging")
+end
+
 H.section("teaching from your own buffs")
 do
+    _G.BiSGuildDB.taught = {}
     BUFFS.player = { { id = FLASK, name = "Flask of Relentless Assault" } }
     _G.SlashCmdList.BISGUILD("buffs")
     H.ok(said[#said - 1]:find("Flask of Relentless Assault", 1, true) ~= nil
