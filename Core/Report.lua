@@ -22,6 +22,40 @@ local ADDON, ns = ...
 local P = {}
 ns.P = P
 
+--- WHERE THE LOGS LIVE, asked once and remembered (4 Oct 2026).
+---
+--- Arn: "we should ask one time copy the path to your logs folder once and from there we generate
+--- a ps script they can powershell to do the whole process".
+---
+--- The addon cannot write that script - no file I/O, the same wall that stops it reading the log.
+--- What it CAN do is print the command, already filled in. One path is all it needs: the WoW folder
+--- is the Logs folder with \Logs taken off, and every installed copy of this addon is under that,
+--- so one answer reaches all of them.
+function P.SetLogs(path)
+    path = tostring(path or ""):gsub("^%s+", ""):gsub("%s+$", ""):gsub('^"', ""):gsub('"$', "")
+    if path == "" then return nil, "nothing" end
+    -- a trailing slash would make the derived WoW folder wrong by one level
+    path = path:gsub("[\\/]+$", "")
+    if not path:lower():find("logs$") then return nil, "not a logs folder" end
+    ns.DB().logs = path
+    return path
+end
+
+function P.Logs()
+    local p = ns.DB().logs
+    return type(p) == "string" and p ~= "" and p or nil
+end
+
+--- The line to paste into PowerShell. Nil until the folder is known.
+function P.Command()
+    local logs = P.Logs()
+    if not logs then return nil end
+    local wow = logs:match("^(.*)[\\/][^\\/]+[\\/][^\\/]+$")   -- drop \<flavour>\Logs
+    if not wow then return nil end
+    return ('powershell -ExecutionPolicy Bypass -File "%s\\%s\\Interface\\AddOns\\BiSGuild\\Tools\\logreport.ps1" -Logs "%s"')
+        :format(wow, logs:match("[\\/]([^\\/]+)[\\/][^\\/]+$") or "_anniversary_", logs)
+end
+
 --- What the last written report holds, or nil. Shape, from logreport.py:
 ---   BiSGuildReport = { written = <epoch>, kills = <n>, zones = "...",
 ---                      rows = { { name =, attend =, consumes = }, ... } }

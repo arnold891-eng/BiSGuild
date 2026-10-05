@@ -1,0 +1,81 @@
+# BiSGuild :: which auras count as consumables.
+#
+# Seeded 4 Oct 2026 from Arn's own Black Temple log - every line below was SEEN on a raider at a
+# pull, not remembered from anywhere.
+#
+#   <kind> <tab or spaces> <aura name exactly as the log writes it>
+#   kinds: flask  elixir  food
+#
+# Why a file and not a rule in the code: the buff does NOT carry the item's name. "Flask of
+# Chromatic Wonder" shows up as "Chromatic Wonder", and the Shattrath flasks as "... of Shattrath".
+# A regex on "Flask of" misses half of them and silently reports those raiders as unprepared, which
+# is the most confident kind of wrong. So the list is data, it is reviewed by someone who knows what
+# the guild drinks, and `logreport.py --review` prints anything it has never been told about.
+#
+# Battle and guardian elixirs read identically in a log - the difference is in the item, not the
+# aura - so the PAIR is counted: two elixirs up at once is one of each, because the game will not
+# let two of a kind stack.
+
+# ---- flasks (persist through death, count as the whole thing) ----
+flask   Flask of Relentless Assault
+flask   Flask of Pure Death
+flask   Flask of Mighty Restoration
+flask   Flask of Blinding Light
+flask   Flask of Fortification
+flask   Flask of Chromatic Wonder
+flask   Chromatic Wonder
+flask   Distilled Wisdom
+# the Shattrath flasks - cheaper, bind on pickup, only usable in Outland
+flask   Relentless Assault of Shattrath
+flask   Pure Death of Shattrath
+flask   Blinding Light of Shattrath
+flask   Mighty Restoration of Shattrath
+flask   Supreme Power of Shattrath
+flask   Fortification of Shattrath
+
+# ---- elixirs (two at once is a battle and a guardian) ----
+elixir  Elixir of Draenic Wisdom
+# the log writes this one WITHOUT the "Elixir of" - it is why Arn's own line read 0% while he was
+# holding a battle and a guardian elixir and food (4 Oct 2026)
+elixir  Healing Power
+elixir  Elixir of Major Fortitude
+elixir  Elixir of the Mongoose
+elixir  Elixir of Demonslaying
+elixir  Adept's Elixir
+elixir  Onslaught Elixir
+elixir  Elixir of Major Agility
+elixir  Elixir of Major Strength
+elixir  Elixir of Major Firepower
+elixir  Elixir of Major Shadow Power
+elixir  Elixir of Healing Power
+elixir  Elixir of Major Defense
+elixir  Elixir of Major Mageblood
+elixir  Elixir of Mastery
+elixir  Elixir of Empowerment
+
+# ---- scrolls ----
+# Arn, 4 Oct 2026: "scrolls do count in tbc tbd in forever". So on this client a scroll is worth the
+# same as an elixir towards the pair - somebody who cannot afford elixirs and brings scrolls has
+# still turned up prepared, which is what the number is for.
+#
+# TO STOP THEM COUNTING, change `scroll` to a word logreport.py does not know (say `ignore`) and
+# they drop out - the kind exists SO the Forever answer is one word here and not a hunt through
+# the code.
+scroll  Agility
+scroll  Strength
+scroll  Spirit
+scroll  Armor
+scroll  Major Armor
+scroll  Intellect
+scroll  Stamina
+scroll  Protection
+
+# ---- food ----
+# every food gives its own spell id but they all name themselves the same way
+food    Well Fed
+
+# ---- still not classified ----
+# Seen in the 4 Oct log and left out on purpose. Move one up if it should count.
+#
+#   Nightmare Seed         (1 raider) - a consumable, but not flask, elixir or food
+#   id 43722               (1)        - never named anywhere in that log, so it cannot be judged
