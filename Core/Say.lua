@@ -108,7 +108,17 @@ function ns.Say(cmd, rest)
         local P, T = ns.P, ns.T
         local line = P.Command()
         if not line then
-            ns.Print("tell me where your logs are first: %s", T.text("accent", "/bisg logs <path>"))
+            -- TWO DIFFERENT PROBLEMS, TWO DIFFERENT SENTENCES (5 Oct 2026). Arn set a folder, was
+            -- told it was remembered, and then got "tell me where your logs are first" - which is
+            -- the addon calling him a liar about something it had just confirmed. If a folder IS
+            -- known and the command still cannot be built, say THAT.
+            if P.Logs() then
+                ns.Print("I have %s but cannot work out where WoW is from it.", T.text("accent", P.Logs()))
+                ns.Print("  %s", T.text("muted", "It should be the Logs folder inside a client"
+                    .. " folder - the one with Interface and WTF beside it."))
+            else
+                ns.Print("tell me where your logs are first: %s", T.text("accent", "/bisg logs <path>"))
+            end
             return
         end
         -- THE WARNING COMES FIRST AND IS NOT POLITE ABOUT IT (Arn, 4 Oct). "Paste this into

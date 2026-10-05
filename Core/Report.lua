@@ -79,13 +79,22 @@ function P.Logs()
 end
 
 --- Where the shipped script is, worked out from the Logs folder. Nil until that is known.
+--- ONE LEVEL UP, NOT TWO (fixed 5 Oct 2026, off Arn's screen).
+---
+--- He set `x:\logs`, was told "logs folder remembered", and then `/bisg script` said "tell me where
+--- your logs are first". The first version went up TWO levels and re-appended the flavour folder,
+--- which silently needs the path to be at least `<something>\<flavour>\Logs` - so anything shallower
+--- matched nothing and the addon denied knowing a folder it had just confirmed.
+---
+--- `Logs` and `Interface` are SIBLINGS inside the client folder. Dropping the last part is the whole
+--- derivation, it works at any depth, and it was what the two-level version was laboriously
+--- reconstructing anyway.
 function P.ScriptPath()
     local logs = P.Logs()
     if not logs then return nil end
-    local wow = logs:match("^(.*)[\\/][^\\/]+[\\/][^\\/]+$")   -- drop \<flavour>\Logs
-    local flavour = logs:match("[\\/]([^\\/]+)[\\/][^\\/]+$")
-    if not (wow and flavour) then return nil end
-    return ("%s\\%s\\Interface\\AddOns\\BiSGuild\\Tools\\logreport.ps1"):format(wow, flavour)
+    local client = logs:match("^(.*)[\\/][^\\/]+$")      -- drop \Logs; Interface sits beside it
+    if not client or client == "" then return nil end
+    return client .. "\\Interface\\AddOns\\BiSGuild\\Tools\\logreport.ps1"
 end
 
 --- The line to paste into PowerShell. Nil until the folder is known.
