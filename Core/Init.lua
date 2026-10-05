@@ -69,13 +69,16 @@ f:SetScript("OnEvent", function(_, event, name)
   if event == "ADDON_LOADED" and name == ADDON then
     db()
     ns.Comm.Boot()
+    if ns.W and ns.W.Start then ns.W.Start() end     -- the two events that mean a boss died
   elseif event == "PLAYER_LOGOUT" then
     ns.Comm.Save()
   end
 end)
 
 SLASH_BISGUILD1 = "/bisg"
-SlashCmdList.BISGUILD = function()
+SlashCmdList.BISGUILD = function(input)
+  local cmd = tostring(input or ""):match("^%s*(%S*)"):lower()
+  if ns.Say then return ns.Say(cmd) end
   local lib = _G.LibBiSComm
   ns.Print("hello - version %s, BiS comm %s, %d peer(s)", ns.VERSION,
     (lib and lib:Enabled()) and T.text("good", "on") or T.text("warn", "off"), lib and lib:Count() or 0)
