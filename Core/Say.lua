@@ -111,7 +111,31 @@ function ns.Say(cmd, rest)
             ns.Print("tell me where your logs are first: %s", T.text("accent", "/bisg logs <path>"))
             return
         end
-        ns.Print("paste this into PowerShell after a raid, then /reload:")
+        -- THE WARNING COMES FIRST AND IS NOT POLITE ABOUT IT (Arn, 4 Oct). "Paste this into
+        -- PowerShell" is how people get robbed. A script can do anything the person running it can
+        -- do, and nothing in this addon can tell a good one from a bad one - so the only honest
+        -- thing is to say where the risk is and let them decide, loudly, every time.
+        ns.Print("%s", T.text("warn", "READ THIS BEFORE YOU RUN IT"))
+        ns.Print("  %s", T.text("warn", "This runs a PowerShell script. A script can do anything"
+            .. " you can do on this computer - read your files, change them, send them away."))
+        ns.Print("  %s", T.text("muted", "Only run it if you got BiSGuild from CurseForge or from"
+            .. " your own officers. If somebody sent you a copy, do not run this - not even if they"
+            .. " seem helpful. That is the one check that actually matters."))
+        -- ARN FOUND THE HOLE, 4 Oct: "won't someone that steals the zip can just write code to put
+        -- up whatever hash is the most correct tho?" Yes. Whoever changes the script changes this
+        -- number with it, and then both sides of the check agree and the player feels safe.
+        --
+        -- A check an attacker controls both ends of is WORSE than no check, because it manufactures
+        -- confidence. So the number below is not presented as proof of anything: the comparison
+        -- that counts is against the CurseForge page, which is the one thing they cannot edit.
+        ns.Print("  %s", T.text("muted", "To check this copy, run this and compare the answer with"
+            .. " the hash on our CurseForge page - NOT with the number below:"))
+        ns.Print("Get-FileHash -Algorithm SHA256 \"%s\"", P.ScriptPath() or "...")
+        ns.Print("  %s %s", T.text("muted", "this copy says"), T.text("accent", P.SCRIPT_SHA))
+        ns.Print("  %s", T.text("warn", "A faked addon would show you a faked number here too, so"
+            .. " these two agreeing proves nothing on its own. Only the CurseForge page does."))
+        ns.Print(" ")
+        ns.Print("then, after a raid, this - and /reload:")
         ns.Print("%s", line)
         ns.Print("  %s", T.text("muted", "It reads only the NEWEST log, not all of them, and writes"
             .. " the numbers straight into the addon. Nothing is pasted back in here."))

@@ -370,6 +370,50 @@ do
     _G.BiSGuildDB.logs = nil
 end
 
+H.section("the warning, and the fingerprint")
+do
+    -- Arn, 4 Oct: "we need a big warning that you are about to run a powershell make sure no one
+    -- sent you this copy". "Paste this into PowerShell" is how people get robbed, and nothing in
+    -- this addon can tell a good script from a bad one - so the warning is not optional decoration,
+    -- it is the feature.
+    H.ok(type(P.SCRIPT_SHA) == "string", "the shipped script's hash is carried in the addon")
+    H.eq(#P.SCRIPT_SHA, 64, "a SHA-256 is 64 characters", tostring(#P.SCRIPT_SHA))
+    H.ok(P.SCRIPT_SHA:match("^%x+$") ~= nil, "and nothing but hex")
+
+    P.SetLogs("C:\\Program Files (x86)\\World of Warcraft\\_anniversary_\\Logs")
+    local before = #said
+    _G.SlashCmdList.BISGUILD("script")
+    local out = table.concat(said, "\n", before + 1, #said)
+
+    H.ok(out:find("PowerShell", 1, true) ~= nil, "it says the word PowerShell")
+    H.ok(out:find("anything you can do", 1, true) ~= nil, "and what that means")
+    H.ok(out:find("do not run", 1, true) ~= nil, "and says not to run a copy somebody sent you")
+    H.ok(out:find("CurseForge", 1, true) ~= nil, "and where a trustworthy copy comes from")
+    H.ok(out:find("Get-FileHash", 1, true) ~= nil, "it gives the command to check the file")
+    H.ok(out:find(P.SCRIPT_SHA, 1, true) ~= nil, "and shows what this copy claims")
+
+    -- ARN FOUND THE HOLE (4 Oct): "won't someone that steals the zip can just write code to put up
+    -- whatever hash is the most correct tho?" Yes - whoever changes the script changes this
+    -- constant with it, and then both ends of the check agree. A check an attacker controls both
+    -- ends of is WORSE than none, because it manufactures confidence. The addon must say so.
+    H.ok(out:find("proves nothing on its own", 1, true) ~= nil,
+         "and says plainly that the two agreeing proves nothing on its own", out)
+    H.ok(out:find("faked number here too", 1, true) ~= nil,
+         "because a faked addon would fake this number as well")
+
+    -- THE WARNING MUST COME FIRST. A caution printed under the command is one people scroll past
+    -- having already copied the line.
+    local warnAt = out:find("PowerShell", 1, true)
+    local cmdAt = out:find("%-ExecutionPolicy")
+    H.ok(warnAt and cmdAt and warnAt < cmdAt, "and all of it comes BEFORE the command itself")
+
+    -- the file it tells you to hash must be the file the command runs
+    local script = P.ScriptPath()
+    H.ok(script and out:find(script, 1, true) ~= nil,
+         "the file to check is the same path the command runs", tostring(script))
+    _G.BiSGuildDB.logs = nil
+end
+
 H.section("told where the logs are, once")
 do
     _G.BiSGuildDB.logs = nil
