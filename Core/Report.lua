@@ -22,6 +22,38 @@ local ADDON, ns = ...
 local P = {}
 ns.P = P
 
+--- THE FINGERPRINT OF THE SCRIPT WE SHIPPED (4 Oct 2026).
+---
+--- Arn: "we need a big warning that you are about to run a powershell make sure no one sent you
+--- this copy and that you got it from curseforge and even then we should add some sort of
+--- integrity check... something like a blockchain idk I'm not tech literate".
+---
+--- The word wanted is a HASH, and it is simpler than a blockchain: a fingerprint where changing one
+--- character of the file changes the whole fingerprint unpredictably, so a tampered script cannot
+--- be made to match. Windows computes it with Get-FileHash and needs nothing installed.
+---
+--- WHAT THIS ACTUALLY DEFENDS AGAINST, said plainly because security that is oversold is worse than
+--- none:
+---   * somebody swapping ONLY the .ps1 inside an otherwise real addon - caught, the hash moves.
+---   * a download that was corrupted or half-written - caught.
+---   * somebody handing you a WHOLE fake BiSGuild - NOT caught by this number, because they would
+---     change this line too. Nothing inside a file can prove the file is genuine. The only defence
+---     is where you got it, which is why the warning says that first and the hash second.
+---
+--- The addon cannot check the script itself: no file I/O, the same wall as everything else here. So
+--- the player is given the command to check it with, and the answer to compare against. The
+--- authority is the copy published on GitHub, not this constant - a constant can be edited by
+--- whoever edited the script.
+---
+--- PUBLISHED AT THE TOP OF EVERY RELEASE (Arn's idea, 4 Oct): the hash goes in the CHANGELOG and on
+--- the CurseForge page, so the number to compare against lives somewhere the person handing you a
+--- copy does not control. That is the half that makes the hash worth anything.
+---
+--- REGENERATE with Tools\stamp.ps1 whenever logreport.ps1 changes; `-Check` says whether they still
+--- agree. The suite asserts the SHAPE of this constant only - it cannot compute SHA-256 in Lua, so
+--- a script edited without restamping is NOT caught automatically yet. That gap is on the desk.
+P.SCRIPT_SHA = "088D75691456E59FDE0F8235544467E4437EAE35882FD4B7DF78CD367D6F9B02"
+
 --- WHERE THE LOGS LIVE, asked once and remembered (4 Oct 2026).
 ---
 --- Arn: "we should ask one time copy the path to your logs folder once and from there we generate
@@ -46,14 +78,22 @@ function P.Logs()
     return type(p) == "string" and p ~= "" and p or nil
 end
 
---- The line to paste into PowerShell. Nil until the folder is known.
-function P.Command()
+--- Where the shipped script is, worked out from the Logs folder. Nil until that is known.
+function P.ScriptPath()
     local logs = P.Logs()
     if not logs then return nil end
     local wow = logs:match("^(.*)[\\/][^\\/]+[\\/][^\\/]+$")   -- drop \<flavour>\Logs
-    if not wow then return nil end
-    return ('powershell -ExecutionPolicy Bypass -File "%s\\%s\\Interface\\AddOns\\BiSGuild\\Tools\\logreport.ps1" -Logs "%s"')
-        :format(wow, logs:match("[\\/]([^\\/]+)[\\/][^\\/]+$") or "_anniversary_", logs)
+    local flavour = logs:match("[\\/]([^\\/]+)[\\/][^\\/]+$")
+    if not (wow and flavour) then return nil end
+    return ("%s\\%s\\Interface\\AddOns\\BiSGuild\\Tools\\logreport.ps1"):format(wow, flavour)
+end
+
+--- The line to paste into PowerShell. Nil until the folder is known.
+function P.Command()
+    local script = P.ScriptPath()
+    local logs = P.Logs()
+    if not (script and logs) then return nil end
+    return ('powershell -ExecutionPolicy Bypass -File "%s" -Logs "%s"'):format(script, logs)
 end
 
 --- What the last written report holds, or nil. Shape, from logreport.py:
