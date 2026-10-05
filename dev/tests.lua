@@ -353,9 +353,60 @@ do
     -- THE FILE IS NAMED IN THE TOC AND IS NOT IN GIT. A fresh install has none, and deploy.sh
     -- wipes the game folder before copying, so a deploy removes it too. Looking broken at that
     -- moment is the easy mistake; saying what to run is the fix.
+    _G.BiSGuildDB.logs = nil
+    local before = #said
     _G.SlashCmdList.BISGUILD("report")
-    H.ok(said[#said]:find("logreport", 1, true) ~= nil,
-         "and /bisg report says how to make one instead of looking broken", said[#said])
+    local said1 = table.concat(said, "\n", before + 1, #said)
+    H.ok(said1:find("/bisg logs", 1, true) ~= nil,
+         "with no report AND no logs folder it asks for the folder", said1)
+
+    -- once it knows where the logs are, the next step is the script and it says so
+    P.SetLogs("C:\\Program Files (x86)\\World of Warcraft\\_anniversary_\\Logs")
+    before = #said
+    _G.SlashCmdList.BISGUILD("report")
+    local said2 = table.concat(said, "\n", before + 1, #said)
+    H.ok(said2:find("/bisg script", 1, true) ~= nil,
+         "and once it knows, it points at the script instead", said2)
+    _G.BiSGuildDB.logs = nil
+end
+
+H.section("told where the logs are, once")
+do
+    _G.BiSGuildDB.logs = nil
+    H.eq(P.Logs(), nil, "nothing known to start with")
+    H.eq(P.Command(), nil, "and no command can be built")
+
+    H.eq(P.SetLogs("C:\\Program Files (x86)\\World of Warcraft\\_anniversary_"), nil,
+         "the WoW folder is refused - it is the Logs folder we want")
+    H.eq(P.SetLogs(""), nil, "and so is nothing")
+
+    local set = P.SetLogs("C:\\Program Files (x86)\\World of Warcraft\\_anniversary_\\Logs")
+    H.ok(set ~= nil, "the Logs folder is taken")
+
+    -- A TRAILING SLASH WOULD MOVE THE WOW FOLDER UP A LEVEL, and the command would point at a
+    -- folder with no addon in it. Pasted paths carry one often.
+    P.SetLogs("C:\\Program Files (x86)\\World of Warcraft\\_anniversary_\\Logs\\")
+    H.eq(P.Logs(), "C:\\Program Files (x86)\\World of Warcraft\\_anniversary_\\Logs",
+         "a trailing slash is trimmed")
+    -- and so are the quotes Windows adds when you copy a path
+    P.SetLogs('"C:\\Program Files (x86)\\World of Warcraft\\_anniversary_\\Logs"')
+    H.eq(P.Logs(), "C:\\Program Files (x86)\\World of Warcraft\\_anniversary_\\Logs",
+         "and the quotes Windows wraps a copied path in")
+
+    local cmd = P.Command()
+    H.ok(cmd:find("logreport.ps1", 1, true) ~= nil, "the command names the script", cmd)
+    H.ok(cmd:find("AddOns\\BiSGuild\\Tools", 1, true) ~= nil,
+         "and finds the addon from the logs path alone - one answer reaches everything")
+    H.ok(cmd:find("_anniversary_\\Logs", 1, true) ~= nil, "and passes the logs folder to it")
+
+    _G.SlashCmdList.BISGUILD("script")
+    H.ok(said[#said - 1]:find("powershell", 1, true) ~= nil
+         or said[#said - 2]:find("powershell", 1, true) ~= nil, "/bisg script prints it")
+
+    _G.BiSGuildDB.logs = nil
+    _G.SlashCmdList.BISGUILD("script")
+    H.ok(said[#said]:find("/bisg logs", 1, true) ~= nil,
+         "and asks for the folder first when it does not know", said[#said])
 end
 
 H.section("a report that was written")
