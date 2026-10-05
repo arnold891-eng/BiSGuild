@@ -306,6 +306,148 @@ do
          "with nothing on record it says attendance cannot be worked out backwards", said[#said])
 end
 
+--=============================================================================
+-- CONSUMABLES. Arn's definition: a flask, OR a battle and a guardian elixir together, AND food.
+--
+-- The list is LEARNED, never shipped. Typing flask ids from memory is how a spell list gets
+-- reasoned out of a build number and comes out wrong - and a wrong aura list does not error, it
+-- reports the whole raid at nought percent and looks exactly like data.
+--=============================================================================
+local C = NS.C
+
+-- the client's buff reader, taught the real shape: an aura has an id, and the walk STOPS at the
+-- first empty slot rather than running to forty
+local BUFFS = {}
+_G.C_UnitAuras = nil
+-- UnitBuff's real shape on 2.5.x: name, icon, count, debuffType, duration, expirationTime,
+-- unitCaster, canStealOrPurge, nameplateShowPersonal, spellId - so the id is the TENTH return and
+-- not the eleventh. One slot out and every id reads back nil, which is a mock that quietly says
+-- "nobody has anything" while the client says otherwise.
+_G.UnitBuff = function(unit, i)
+    local a = (BUFFS[unit] or {})[i]
+    if not a then return nil end
+    return a.name, "icon", 1, nil, 3600, 0, "player", false, false, a.id
+end
+
+local FLASK, BATTLE, GUARDIAN, FOOD = 17628, 33721, 39625, 33263
+
+H.section("nothing taught is not nought percent")
+do
+    reset()
+    _G.BiSGuildDB.taught = {}
+    H.eq(C.Ready(), false, "an addon with no list cannot judge anybody")
+    H.eq(C.Check("raid1"), nil, "and says nil, which is not false")
+    H.eq(C.Snapshot(), nil, "a whole raid reads as nil too")
+
+    -- THE ONE THAT MATTERS. An empty list reporting 0% is the most confident kind of wrong, and
+    -- it is the kind a loot council would act on.
+    local _, _, pct = C.Rate("Kumlust")
+    H.eq(pct, nil, "and a rate from no judgements is nil, never 0")
+
+    _G.SlashCmdList.BISGUILD("consumes")
+    H.ok(said[#said - 1]:find("nothing taught", 1, true) ~= nil
+         or said[#said]:find("guessed", 1, true) ~= nil,
+         "/bisg consumes says so in words rather than printing zeroes", said[#said])
+end
+
+H.section("half a list is still no list")
+do
+    _G.BiSGuildDB.taught = {}
+    C.Teach(FLASK, "flask")
+    H.eq(C.Ready(), false, "a flask alone cannot answer - food is part of the definition")
+    C.Teach(FOOD, "food")
+    H.eq(C.Ready(), true, "flask and food can")
+
+    _G.BiSGuildDB.taught = {}
+    C.Teach(FOOD, "food")
+    C.Teach(BATTLE, "battle")
+    H.eq(C.Ready(), false, "one elixir kind and food cannot - the pair is the point")
+    C.Teach(GUARDIAN, "guardian")
+    H.eq(C.Ready(), true, "both kinds and food can")
+
+    H.eq(C.Teach(123, "beer"), false, "a kind the addon does not know is refused")
+end
+
+H.section("flask OR the pair, AND food")
+do
+    _G.BiSGuildDB.taught = {}
+    C.Teach(FLASK, "flask") C.Teach(BATTLE, "battle")
+    C.Teach(GUARDIAN, "guardian") C.Teach(FOOD, "food")
+
+    BUFFS.raid1 = { { id = FLASK, name = "Flask" }, { id = FOOD, name = "Food" } }
+    H.eq(C.Check("raid1").ok, true, "flask and food is ready")
+
+    BUFFS.raid1 = { { id = BATTLE, name = "B" }, { id = GUARDIAN, name = "G" }, { id = FOOD, name = "F" } }
+    H.eq(C.Check("raid1").ok, true, "both elixirs and food is ready")
+
+    BUFFS.raid1 = { { id = BATTLE, name = "B" }, { id = FOOD, name = "F" } }
+    H.eq(C.Check("raid1").ok, false, "one elixir and food is not - the pair is the whole point")
+
+    BUFFS.raid1 = { { id = FLASK, name = "Flask" } }
+    H.eq(C.Check("raid1").ok, false, "a flask with no food is not")
+
+    BUFFS.raid1 = { { id = FOOD, name = "F" } }
+    H.eq(C.Check("raid1").ok, false, "food alone is not")
+
+    BUFFS.raid1 = {}
+    H.eq(C.Check("raid1").ok, false, "and nothing at all certainly is not")
+end
+
+H.section("read at the pull, not at the kill")
+do
+    -- FOOD IS LOST ON DEATH. Judging at the kill would mark down exactly the people who died
+    -- doing it, which is the opposite of what the number is for.
+    reset()
+    H.inRaid = true
+    H.raid = { "Kumlust", "Ariar" }
+    BUFFS.raid1 = { { id = FLASK, name = "Flask" }, { id = FOOD, name = "F" } }
+    BUFFS.raid2 = { { id = FLASK, name = "Flask" }, { id = FOOD, name = "F" } }
+
+    fire("ENCOUNTER_START", 601, "Illidan", 3, 25)
+    -- both die; their food is gone by the time the boss falls
+    BUFFS.raid1 = {}
+    BUFFS.raid2 = {}
+    fire("ENCOUNTER_END", 601, "Illidan", 3, 25, 1)
+
+    local kill = G.Nights()[1].kills[1]
+    H.ok(type(kill.ready) == "table", "the pull's reading is on the kill")
+    H.eq(kill.ready.Kumlust, true, "and it is what they had when it STARTED, not when it ended")
+
+    local ready, counted, pct = C.Rate("Kumlust")
+    H.eq(ready, 1, "one ready pull") H.eq(counted, 1, "of one judged") H.eq(pct, 100, "100%")
+end
+
+H.section("a pull nobody watched")
+do
+    -- No ENCOUNTER_START - an older client, or a boss that raises none. That is NOT everybody
+    -- failing; it is nobody being judged.
+    reset()
+    H.inRaid = true
+    H.raid = { "Kumlust" }
+    BUFFS.raid1 = {}
+    fire("BOSS_KILL", 601, "Najentus")
+    local kill = G.Nights()[1].kills[1]
+    H.eq(kill.ready, nil, "a kill with no pull reading carries none")
+    local _, counted, pct = C.Rate("Kumlust")
+    H.eq(counted, 0, "and it is counted against nobody")
+    H.eq(pct, nil, "the rate stays nil")
+end
+
+H.section("teaching from your own buffs")
+do
+    BUFFS.player = { { id = FLASK, name = "Flask of Relentless Assault" } }
+    _G.SlashCmdList.BISGUILD("buffs")
+    H.ok(said[#said - 1]:find("Flask of Relentless Assault", 1, true) ~= nil
+         or said[#said]:find("Flask of Relentless Assault", 1, true) ~= nil,
+         "/bisg buffs names what the CLIENT calls it", said[#said - 1])
+
+    _G.BiSGuildDB.taught = {}
+    _G.SlashCmdList.BISGUILD("teach 17628 flask")
+    H.eq(_G.BiSGuildDB.taught[17628], "flask", "teach writes it down")
+    _G.SlashCmdList.BISGUILD("forget 17628")
+    H.eq(_G.BiSGuildDB.taught[17628], nil, "forget takes it away")
+end
+
 _G.UnitName = realUnitName
 
 H.report()
