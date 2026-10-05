@@ -168,11 +168,23 @@ foreach ($r in $rows) { Write-Host ("{0,-16} {1,7}% {2,8}%" -f $r.name, $r.atten
 # ----------------------------------------------------- hand it to the addon ---
 # The WoW folder is the Logs folder with \Logs taken off, so the one path the player gave us
 # reaches every installed copy of the addon.
-$flavour = Split-Path (Split-Path $Logs -Parent) -Leaf
-$wowRoot = Split-Path (Split-Path $Logs -Parent) -Parent
+# ONE LEVEL UP IS THE ANSWER; the level above that is a BONUS. Logs and Interface are siblings
+# inside the client folder, so dropping \Logs is the whole derivation and it works at any depth.
+# Going up a second level finds the OTHER clients installed beside this one, which is worth having -
+# but it must never be the only way, or a Logs folder that is not nested two deep writes nothing.
+# (The Lua side had exactly that bug: Arn set x:\logs and the addon then denied knowing it.)
+$client = Split-Path $Logs -Parent
+$roots = @()
+if ($client) { $roots += $client }
+$wowRoot = Split-Path $client -Parent
+if ($wowRoot) {
+    foreach ($d in (Get-ChildItem -LiteralPath $wowRoot -Directory -ErrorAction SilentlyContinue)) {
+        if ($roots -notcontains $d.FullName) { $roots += $d.FullName }
+    }
+}
 $written = @()
-foreach ($dir in (Get-ChildItem -LiteralPath $wowRoot -Directory -ErrorAction SilentlyContinue)) {
-    $addon = Join-Path $dir.FullName "Interface\AddOns\BiSGuild"
+foreach ($root in $roots) {
+    $addon = Join-Path $root "Interface\AddOns\BiSGuild"
     if (-not (Test-Path -LiteralPath $addon)) { continue }
     $data = Join-Path $addon "Data"
     New-Item -ItemType Directory -Force -Path $data | Out-Null

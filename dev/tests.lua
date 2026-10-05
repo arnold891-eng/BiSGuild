@@ -442,6 +442,34 @@ do
     H.ok(cmd:find("AddOns\\BiSGuild\\Tools", 1, true) ~= nil,
          "and finds the addon from the logs path alone - one answer reaches everything")
     H.ok(cmd:find("_anniversary_\\Logs", 1, true) ~= nil, "and passes the logs folder to it")
+    H.ok(cmd:find("_anniversary_\\Interface", 1, true) ~= nil,
+         "the script sits beside Logs in the SAME client folder, not a level up")
+
+    -- A SHALLOW PATH STILL WORKS (5 Oct 2026). Arn set `x:\logs`, was told "logs folder
+    -- remembered", and then /bisg script said "tell me where your logs are first" - the derivation
+    -- went up TWO levels and re-appended the flavour, so anything shallower matched nothing and the
+    -- addon denied knowing a folder it had just confirmed. Logs and Interface are siblings; one
+    -- level is the whole answer.
+    P.SetLogs("x:\\logs")
+    H.eq(P.Logs(), "x:\\logs", "a short path is remembered")
+    local short = P.ScriptPath()
+    H.ok(short ~= nil, "and the script path still resolves from it", tostring(short))
+    H.eq(short, "x:\\Interface\\AddOns\\BiSGuild\\Tools\\logreport.ps1",
+         "one level up, then Interface", tostring(short))
+    H.ok(P.Command() ~= nil, "so the command can be built")
+
+    -- and when it genuinely cannot be worked out, it must not say "tell me where your logs are" at
+    -- somebody who just told it
+    _G.BiSGuildDB.logs = "Logs"
+    local before2 = #said
+    _G.SlashCmdList.BISGUILD("script")
+    local out2 = table.concat(said, "\n", before2 + 1, #said)
+    H.ok(out2:find("cannot work out where WoW is", 1, true) ~= nil,
+         "a folder it cannot use is said to BE a folder it cannot use", out2)
+    H.ok(out2:find("tell me where your logs are first", 1, true) == nil,
+         "and not called missing when it was given")
+
+    P.SetLogs("C:\\Program Files (x86)\\World of Warcraft\\_anniversary_\\Logs")
 
     _G.SlashCmdList.BISGUILD("script")
     H.ok(said[#said - 1]:find("powershell", 1, true) ~= nil
