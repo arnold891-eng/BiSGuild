@@ -19,18 +19,39 @@ end
 local function all()
     local G, T = ns.G, ns.T
     local rows = G.Everyone()
-    local nights = #G.Raided()
+    local nights = #G.Settled()
+    local tonight = G.Tonight()
     if nights == 0 then
+        if tonight then
+            ns.Print("tonight is the first night on record - %d kill(s) so far.", #tonight.kills)
+            ns.Print("  %s", T.text("muted", "It joins the record when it ends. The record is what"
+                .. " happened BEFORE tonight: whoever is rolling is standing here either way."))
+            return
+        end
         ns.Print("no raid nights on record yet.")
         ns.Print("  %s", T.text("muted", "Attendance cannot be worked out backwards - it starts the"
             .. " first boss this addon sees die while you are in a group."))
         return
     end
-    ns.Print("attendance over %s raid night(s):", T.text("accent", tostring(nights)))
+    local C = ns.C
+    ns.Print("over %s finished raid night(s):", T.text("accent", tostring(nights)))
     for _, r in ipairs(rows) do
         local colour = (r.pct >= 75 and "good") or (r.pct >= 50 and "gold") or "warn"
-        ns.Print("  %-14s %s  %s", r.name, T.text(colour, r.pct .. "%"),
-            T.text("muted", r.earned .. " of " .. r.raided))
+        -- written out, not `C and C.Rate(...)`: an `and` keeps only the FIRST return value, so the
+        -- percentage would have been nil every time and the column would silently never appear
+        local cpct
+        if C then local _, _, p = C.Rate(r.name) cpct = p end
+        local con = (cpct ~= nil)
+            and ("  " .. T.text(cpct >= 90 and "good" or cpct >= 60 and "gold" or "warn",
+                 "consumes " .. cpct .. "%"))
+            or ""
+        ns.Print("  %-14s %s  %s%s", r.name, T.text(colour, r.pct .. "%"),
+            T.text("muted", r.earned .. " of " .. r.raided), con)
+    end
+    if tonight then
+        ns.Print("  %s", T.text("muted", "Tonight (" .. #tonight.kills .. " kill(s)) is NOT in"
+            .. " these numbers - it joins when it ends. Whoever is rolling is here either way;"
+            .. " the record is what they did before."))
     end
     ns.Print("  %s", T.text("muted", "A night is earned by being there for at least half its"
         .. " kills. |cffb980ff/bisg nights|r for the nights themselves."))
@@ -148,6 +169,25 @@ function ns.Say(cmd, rest)
     if cmd == "nights" then return nights() end
     if cmd == "me" then return me() end
     if cmd == "buffs" then return buffs() end
+    if cmd == "learn" then
+        local C, T = ns.C, ns.T
+        local got, unknown = C.Learn()
+        if #got == 0 then
+            ns.Print("nothing on you names itself as a consumable.")
+        else
+            ns.Print("learned from what is on you:")
+            for _, a in ipairs(got) do
+                ns.Print("  %-6d %-28s %s", a.id, a.name, T.text("good", a.kind))
+            end
+        end
+        for _, a in ipairs(unknown) do
+            ns.Print("  %-6d %-28s %s", a.id, a.name, T.text("muted", "not recognised"))
+        end
+        ns.Print("  %s", T.text("muted", C.Ready()
+            and "That is enough to judge a pull. |cffb980ff/bisg buffs|r shows the whole list."
+            or "Still not enough - food is needed, plus a flask or two elixirs."))
+        return
+    end
     if cmd == "teach" then return teach(rest) end
     if cmd == "consumes" or cmd == "consumables" then return consumes() end
     if cmd == "forget" then
