@@ -12,7 +12,13 @@
 Libs\BiSTheme\Console.lua
 Libs\LibBiSComm-1.0\LibBiSComm-1.0.lua
 
+# Written by dev/logreport.py --write, never by hand and never committed: it is raid data, not
+# source. A file named here that does not exist is skipped by the client, so a fresh install and a
+# fresh deploy both simply have no report until the script runs.
+Data\Report.lua
+
 Core\Init.lua
+Core\Report.lua
 Core\Nights.lua
 Core\Roster.lua
 Core\Watch.lua

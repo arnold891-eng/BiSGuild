@@ -336,6 +336,63 @@ do
          "with nothing on record it says attendance cannot be worked out backwards", said[#said])
 end
 
+--=============================================================================
+-- THE LOG REPORT. Arn: "am I expected to copy and paste a whole 108mb of text into a text box in
+-- wow?" No - and nor the 410-character summary. logreport.py --write puts a Lua file in the addon
+-- folder and the client loads it, so /reload IS the import.
+--=============================================================================
+local P = NS.P
+
+H.section("no report is not an empty report")
+do
+    _G.BiSGuildReport = nil
+    H.eq(P.Report(), nil, "with no file written there is no report")
+    H.eq(P.Of("Kumlust"), nil, "and nobody has numbers from it")
+    H.eq(#P.Rows(), 0, "and the list is empty rather than erroring")
+
+    -- THE FILE IS NAMED IN THE TOC AND IS NOT IN GIT. A fresh install has none, and deploy.sh
+    -- wipes the game folder before copying, so a deploy removes it too. Looking broken at that
+    -- moment is the easy mistake; saying what to run is the fix.
+    _G.SlashCmdList.BISGUILD("report")
+    H.ok(said[#said]:find("logreport", 1, true) ~= nil,
+         "and /bisg report says how to make one instead of looking broken", said[#said])
+end
+
+H.section("a report that was written")
+do
+    -- exactly the shape logreport.py writes
+    _G.BiSGuildReport = {
+        written = 1791182045, kills = 2, zones = "Illidan Stormrage",
+        rows = {
+            { name = "Belbearr", attend = 100, consumes = 0 },
+            { name = "Kumlust", attend = 100, consumes = 100 },
+            { name = "Interrup", attend = 50, consumes = 100 },
+        },
+    }
+    H.ok(P.Report() ~= nil, "the report is read")
+    H.eq(P.Of("Kumlust").consumes, 100, "one person's numbers come back")
+    H.eq(P.Of("NotInRaid"), nil, "somebody not in it has none")
+
+    local rows = P.Rows()
+    H.eq(rows[1].name, "Kumlust", "best attendance first")
+    H.eq(rows[2].name, "Belbearr", "a tie on attendance breaks on consumes, best first")
+    H.eq(rows[3].name, "Interrup", "then lower attendance, however good their consumes")
+
+    local before = #said
+    _G.SlashCmdList.BISGUILD("report")
+    local printed = table.concat(said, "\n", before + 1, #said)
+    H.ok(printed:find("Kumlust", 1, true) ~= nil, "/bisg report prints the people in it")
+    H.ok(printed:find("Illidan Stormrage", 1, true) ~= nil, "and says which bosses it came from")
+    H.ok(printed:find("100%", 1, true) ~= nil, "with the percentages")
+
+    -- a half-written or hand-mangled file must not take the addon down with it
+    _G.BiSGuildReport = { written = 1, kills = 1 }
+    H.eq(P.Report(), nil, "a report with no rows is no report")
+    _G.BiSGuildReport = "not a table"
+    H.eq(P.Report(), nil, "and neither is something that is not a table")
+    _G.BiSGuildReport = nil
+end
+
 _G.UnitName = realUnitName
 
 H.report()

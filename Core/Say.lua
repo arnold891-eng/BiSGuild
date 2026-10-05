@@ -82,11 +82,31 @@ end
 function ns.Say(cmd, rest)
     if cmd == "nights" then return nights() end
     if cmd == "me" then return me() end
+    if cmd == "report" or cmd == "log" then
+        local P, T = ns.P, ns.T
+        local r = P.Report()
+        if not r then
+            ns.Print("no log report loaded.")
+            ns.Print("  %s", T.text("muted", "Run |cffb980ffBiSGuild/dev/logreport.py <your combat"
+                .. " log> --write|r and /reload. Nothing is pasted - it writes a file the client"
+                .. " loads. A deploy clears it until the script runs again."))
+            return
+        end
+        ns.Print("from the combat log: %s (%d kill(s))", r.zones or "?", r.kills or 0)
+        for _, row in ipairs(P.Rows()) do
+            local a, c = row.attend or 0, row.consumes or 0
+            ns.Print("  %-14s %s  %s", row.name,
+                T.text(a >= 75 and "good" or a >= 50 and "gold" or "warn", a .. "%"),
+                T.text(c >= 90 and "good" or c >= 60 and "gold" or "warn", "consumes " .. c .. "%"))
+        end
+        return
+    end
     if cmd == "help" then
         ns.Print("version %s", ns.VERSION)
         ns.Print("  %s  everyone's attendance", ns.T.text("accent", "/bisg"))
         ns.Print("  %s  the raid nights themselves", ns.T.text("accent", "/bisg nights"))
         ns.Print("  %s  your own, night by night", ns.T.text("accent", "/bisg me"))
+        ns.Print("  %s  attendance and consumes from the combat log", ns.T.text("accent", "/bisg report"))
         return
     end
     return all()

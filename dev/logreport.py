@@ -83,7 +83,7 @@ def auras_of(line):
     return out
 
 
-def main(path, kills_only=True, paste=False, review=False):
+def main(path, kills_only=True, paste=False, review=False, write=False):
     kinds = load_kinds()
     if not kinds:
         print("consumables.txt is empty or missing - nothing can be judged. See %s" % LIST)
@@ -188,7 +188,83 @@ def main(path, kills_only=True, paste=False, review=False):
     if paste:
         print()
         print("BISGUILD1|" + "|".join("%s,%d,%d" % r for r in rows))
+
+    if write:
+        wrote = write_data(rows, total, sorted({p["boss"] for p in counted}))
+        print()
+        if wrote:
+            for w in wrote:
+                print("written: %s" % w)
+            print("/reload in the client and the numbers are there. Nothing to paste.")
+        else:
+            print("no BiSGuild addon folder found to write into - is it deployed?")
     return 0
+
+
+def lua_str(s):
+    return '"%s"' % str(s).replace("\\", "\\\\").replace('"', '\\"')
+
+
+def game_roots():
+    """Every installed BiSGuild addon folder. The path comes from _bisdev/wow-path.txt, the one
+    answer the whole family uses, so this cannot drift from deploy.sh."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    bisdev = os.path.join(here, "..", "..", "_bisdev", "wow-path.txt")
+    base = os.environ.get("BISWOW")
+    if not base:
+        try:
+            with open(bisdev, "r", encoding="utf-8") as fh:
+                base = fh.read().strip()
+        except OSError:
+            return []
+    out = []
+    try:
+        for flavour in os.listdir(base):
+            d = os.path.join(base, flavour, "Interface", "AddOns", "BiSGuild")
+            if os.path.isdir(d):
+                out.append(d)
+    except OSError:
+        pass
+    return out
+
+
+def write_data(rows, kills, zones):
+    """Write Data/Report.lua into each installed copy.
+
+    Arn: "am I expected to copy and paste a whole 108mb of text into a text box in wow?" No - and
+    nor should the 410-character summary be pasted. The client loads any file its TOC names, so the
+    numbers are handed over as a file and /reload is the whole import.
+
+    It is deliberately NOT written into the repo: raid data is not source, and `deploy.sh` wipes the
+    game folder before copying, so a deploy clears it until this runs again.
+    """
+    import time as _t
+    body = [
+        "-- Written by BiSGuild/dev/logreport.py. Do not edit: the next run replaces it.",
+        "-- Raid data, not source. It is gitignored and a deploy removes it.",
+        "BiSGuildReport = {",
+        "    written = %d," % int(_t.time()),
+        "    kills = %d," % kills,
+        "    zones = %s," % lua_str(", ".join(zones)),
+        "    rows = {",
+    ]
+    for name, att, con in rows:
+        body.append("        { name = %s, attend = %d, consumes = %d }," % (lua_str(name), att, con))
+    body.append("    },")
+    body.append("}")
+    text = "\n".join(body) + "\n"
+
+    done = []
+    for root in game_roots():
+        d = os.path.join(root, "Data")
+        try:
+            os.makedirs(d, exist_ok=True)
+            with open(os.path.join(d, "Report.lua"), "w", encoding="utf-8") as fh:
+                fh.write(text)
+            done.append(os.path.join(d, "Report.lua"))
+        except OSError as e:
+            print("could not write into %s: %s" % (d, e))
+    return done
 
 
 if __name__ == "__main__":
@@ -205,4 +281,5 @@ if __name__ == "__main__":
     sys.exit(main(args[0],
                   kills_only="--all-pulls" not in sys.argv,
                   paste="--paste" in sys.argv,
-                  review="--review" in sys.argv))
+                  review="--review" in sys.argv,
+                  write="--write" in sys.argv))
