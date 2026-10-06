@@ -336,6 +336,26 @@ do
     tick(f.cmdWrap, 0.5)
     H.eq(f.caret:GetAlpha(), 1, "and comes back - it is a blink, not a fade-out")
 
+    -- ESCAPE CLOSES IT, AND THERE IS A WAY BACK (5 Oct 2026). Arn: "also no way to go back from
+    -- this screen and esc does not close this window". Pressing "I understand" was ONE-WAY, so the
+    -- warning and the hash check - the only safety on the page - could be read once per session and
+    -- never again.
+    H.ok(f._scripts.OnKeyDown ~= nil, "the window handles keys itself")
+    U.Show()
+    f._scripts.OnKeyDown(f, "ESCAPE")
+    H.eq(f:IsShown(), false, "escape closes it")
+    U.Show()
+    f._scripts.OnKeyDown(f, "A")
+    H.eq(f:IsShown(), true, "and any other key is left alone, so typing still reaches chat")
+
+    U.agreed = true
+    U.Refresh()
+    H.ok(f.back:IsShown(), "once past the warning there is a way back to it")
+    f.back._scripts.OnClick(f.back)
+    H.ok(f.warn:IsShown(), "and it goes back")
+    H.eq(f.cmd:GetText(), "", "with the command put away again")
+    H.ok(f.back:IsShown() == false, "and no button back to where you already are")
+
     -- A DECISION IS NOT REMEMBERED. Running a script is a decision, and one made last Tuesday is
     -- not one made now - so a fresh session puts the warning back.
     U.agreed, U.hash = nil, nil

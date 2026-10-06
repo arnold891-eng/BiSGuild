@@ -140,6 +140,33 @@ function U.Build()
     close:SetPoint("TOPRIGHT", -4, -4)
     close:SetScript("OnClick", function() U.Hide() end)
 
+    -- ESCAPE CLOSES IT, the house way (Arn: "esc does not close this window"). NOT via
+    -- UISpecialFrames: that list is also what CloseAllWindows() empties, so a window added to it to
+    -- get one keybind is SHUT every time the player opens their spellbook. Handle the key here and
+    -- swallow only ESCAPE - propagate everything else, or typing stops reaching chat.
+    f:EnableKeyboard(true)
+    f:SetPropagateKeyboardInput(true)
+    f:SetScript("OnKeyDown", function(self, key)
+        if key == "ESCAPE" then
+            self:SetPropagateKeyboardInput(false)
+            U.Hide()
+        else
+            self:SetPropagateKeyboardInput(true)
+        end
+    end)
+
+    -- A WAY BACK. Arn: "no way to go back from this screen". Pressing "I understand" was one-way,
+    -- so the warning and the hash check - the only safety on the page - could be read exactly once
+    -- per session and never again.
+    f.back = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    f.back:SetSize(150, 20)
+    f.back:SetPoint("BOTTOMLEFT", 12, 10)
+    f.back:SetText("Check this copy again")
+    f.back:SetScript("OnClick", function()
+        U.agreed, U.hash = nil, true     -- straight back to the warning, hash check already open
+        U.Refresh()
+    end)
+
     -- 1. where the logs are
     local l1 = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     l1:SetPoint("TOPLEFT", 12, -40)
@@ -336,7 +363,7 @@ function U.Build()
     -- the report
     f.report = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     f.report:SetPoint("TOPLEFT", 12, -204)
-    f.report:SetPoint("BOTTOMRIGHT", -12, 10)
+    f.report:SetPoint("BOTTOMRIGHT", -12, 34)   -- clear of the button along the bottom
     f.report:SetJustifyH("LEFT")
     f.report:SetJustifyV("TOP")
 
@@ -444,10 +471,12 @@ function U.Refresh()
         f.warn:Hide()
         f.cmd:SetText(cmd)
         f.l2:Show()
+        f.back:Show()
     elseif U.agreed then
         f.warn:Hide()
         f.cmd:SetText("")
         f.l2:Show()
+        f.back:Show()
         U.Say("tell me where your logs are first")
     else
         -- EMPTIED, not just covered. The warning frame sits over the box, but the text was still IN
@@ -456,6 +485,7 @@ function U.Refresh()
         -- line is here.
         f.cmd:SetText("")
         f.warn:Show()
+        f.back:Hide()        -- it is already showing; a button back to here would be a loop
     end
 
     -- The hash check types itself out INSIDE the warning. It used to be a box on the window behind,
