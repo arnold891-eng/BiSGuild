@@ -335,20 +335,35 @@ end
 --- never have to wait for an animation.
 U.CPS = 55
 
+--- SETTEXT CLEARS THE SELECTION, so it is called only when the text actually CHANGES (5 Oct 2026).
+---
+--- Arn: "i cant select it it shows selected for a split second and then unselects. maybe our
+--- blinking _". Right about the cause, and it was the typewriter rather than the caret: this ran on
+--- every frame and re-set the same finished string forever, wiping the highlight a frame after the
+--- click put it there.
+---
+--- An animation that keeps running after it has finished is not idle - it is holding the thing it
+--- drew.
+local function put(fs, text)
+    if U.typeShown == text then return end
+    U.typeShown = text
+    fs:SetText(text)
+end
+
 function U.Type(elapsed)
     local f = U.frame
     if not (f and f.hashLine and U.typeTarget) then return end
     if U.typeAt >= #U.typeTarget then
-        f.hashLine:SetText(U.typeTarget)
+        put(f.hashLine, U.typeTarget)
         return
     end
     U.typeAt = math.min(#U.typeTarget, U.typeAt + (tonumber(elapsed) or 0) * U.CPS)
     -- the cursor comes OFF on the tick that finishes it, not the one after: a trailing underscore
     -- left on a command somebody is about to copy is a character they would paste into a shell
     if U.typeAt >= #U.typeTarget then
-        f.hashLine:SetText(U.typeTarget)
+        put(f.hashLine, U.typeTarget)
     else
-        f.hashLine:SetText(U.typeTarget:sub(1, math.floor(U.typeAt)) .. "_")
+        put(f.hashLine, U.typeTarget:sub(1, math.floor(U.typeAt)) .. "_")
     end
 end
 
@@ -356,6 +371,7 @@ end
 function U.TypeOut(text)
     U.typeTarget = (type(text) == "string" and text ~= "") and text or nil
     U.typeAt = 0
+    U.typeShown = nil                 -- a new line must be written even if it matches the last
     if U.frame and U.frame.hashLine then U.frame.hashLine:SetText("") end
 end
 
@@ -363,7 +379,12 @@ end
 function U.TypeNow()
     if U.typeTarget then
         U.typeAt = #U.typeTarget
-        if U.frame and U.frame.hashLine then U.frame.hashLine:SetText(U.typeTarget) end
+        -- written through `put` so the cache agrees: a SetText behind its back would let the next
+        -- tick write the same string again and wipe the selection this call exists to allow
+        if U.frame and U.frame.hashLine and U.typeShown ~= U.typeTarget then
+            U.typeShown = U.typeTarget
+            U.frame.hashLine:SetText(U.typeTarget)
+        end
     end
 end
 

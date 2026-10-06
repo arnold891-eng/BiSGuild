@@ -254,6 +254,41 @@ do
         _G.CopyToClipboard = realCopy
     end
 
+    -- A FINISHED ANIMATION MUST STOP TOUCHING ITS TEXT (5 Oct 2026). Arn: "i cant select it it
+    -- shows selected for a split second and then unselects. maybe our blinking _". Right about the
+    -- cause, wrong about which part: the typewriter ran every frame and re-set the same finished
+    -- string forever, and SetText on an EditBox CLEARS THE SELECTION - so the highlight the click
+    -- put there was gone a frame later.
+    --
+    -- An animation that keeps running after it has finished is not idle; it is holding the thing it
+    -- drew.
+    do
+        local sets = 0
+        local realSet = f.hashLine.SetText
+        f.hashLine.SetText = function(self, t) sets = sets + 1 return realSet(self, t) end
+
+        U.TypeOut("PS> a line to finish")
+        U.Type(10)                      -- finished
+        local afterFinish = sets
+        U.Type(0.1) U.Type(0.1) U.Type(0.1)
+        H.eq(sets, afterFinish, "once typed, more ticks do not touch the text at all")
+
+        -- and a NEW line must still be written even if the cache is warm
+        U.TypeOut("PS> a different line")
+        U.Type(10)
+        H.ok(sets > afterFinish, "but a new line is still typed out")
+        H.eq(f.hashLine:GetText(), "PS> a different line", "and lands in full")
+
+        -- TypeNow must leave the cache agreeing, or the next tick rewrites and unselects again
+        U.TypeOut("PS> finished by a click")
+        U.TypeNow()
+        local afterNow = sets
+        U.Type(0.1) U.Type(0.1)
+        H.eq(sets, afterNow, "a line finished by clicking is not rewritten either")
+
+        f.hashLine.SetText = realSet
+    end
+
     -- NOTHING MAY PRINT THROUGH THE WARNING. The box that did is empty and hidden now, and the
     -- warning sits above anything the window makes after it.
     H.eq(f.hashBox:GetText(), "", "the old box behind the warning stays empty")
