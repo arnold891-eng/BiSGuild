@@ -69,7 +69,16 @@ f:SetScript("OnEvent", function(_, event, name)
   if event == "ADDON_LOADED" and name == ADDON then
     db()
     ns.Comm.Boot()
-    if ns.W and ns.W.Start then ns.W.Start() end     -- the two events that mean a boss died
+    -- THE ADDON WATCHES NOTHING NOW (5 Oct 2026). Arn: "we can get rid of the attendence and
+    -- consume check lets do logs for that". It used to count boss kills and who was standing
+    -- there, which was a SECOND source of truth against the combat log - and when two sources
+    -- disagree, the one people believe is the one on the website. One source, or arguments.
+    --
+    -- The nights it had already written down are dropped rather than left to rot in the saved
+    -- variables, where they would outlive every piece of code that could read them.
+    local d = db()
+    if d.nights ~= nil then d.nights = nil end
+    if d.taught ~= nil then d.taught = nil end       -- and the consumables list, gone the same way
   elseif event == "PLAYER_LOGOUT" then
     ns.Comm.Save()
   end
