@@ -196,6 +196,7 @@ do
          "and checks the same file the command runs")
     H.ok(U.typeTarget:find("PS>", 1, true) ~= nil, "with a prompt on it, like a shell")
 
+
     -- it ARRIVES a character at a time rather than appearing
     H.ok(#f.hashLine:GetText() < #U.typeTarget, "it starts unfinished")
     U.Type(0.2)
@@ -204,6 +205,21 @@ do
     H.ok(part:sub(-1) == "_", "with a cursor on the end while it types", part)
     U.Type(10)
     H.eq(f.hashLine:GetText(), U.typeTarget, "until it is all there, with no cursor left on it")
+
+    -- A LINE YOU CANNOT TAKE IS A DEAD END (5 Oct 2026). Arn, looking at exactly this: "what do i
+    -- do with this". It was a FontString - readable, unselectable - and it said nothing about
+    -- itself. Both halves were the bug.
+    H.ok(f.hashLine.HighlightText ~= nil, "the hash line can be selected, so it can be copied")
+    H.ok(f.hashLine._scripts.OnMouseUp ~= nil, "clicking it does something")
+    H.ok(f.hashWhat:GetText():find("PowerShell", 1, true) ~= nil,
+         "and it SAYS what to do with it", f.hashWhat:GetText())
+    H.ok(f.hashWhat:GetText():find("CurseForge", 1, true) ~= nil,
+         "including the only comparison that counts")
+
+    -- clicking finishes the typing AND selects, so nobody waits on a flourish to copy a line
+    U.TypeOut(U.typeTarget)
+    f.hashLine._scripts.OnMouseUp(f.hashLine)
+    H.eq(f.hashLine:GetText(), U.typeTarget, "clicking it finishes the typing at once")
 
     -- NOTHING MAY PRINT THROUGH THE WARNING. The box that did is empty and hidden now, and the
     -- warning sits above anything the window makes after it.
