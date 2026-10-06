@@ -204,7 +204,95 @@ $rows = foreach ($who in $present.Keys) {
 $rows = @($rows | Sort-Object @{E = "attend"; D = $true}, @{E = "consumes"; D = $true}, name)
 
 $zones = ($counted | ForEach-Object { $_.boss } | Sort-Object -Unique) -join ", "
-Write-Host ("{0} boss kill(s): {1}" -f $total, $zones)
+
+# ============================================================= the history ====
+# Arn, 5 Oct 2026: "how are we going to keep track of how people are doing with attendance if it
+# wipes the data when i reload?"
+#
+# The reload was never the problem - Data\Report.lua is a file and the client loads it every login.
+# The real hole was underneath the question: each run read ONE log and OVERWROTE the report, so it
+# only ever said what happened last night. Attendance across one raid is not attendance.
+#
+# So the record lives here, and the report is computed from all of it.
+#
+# IT LIVES IN WTF, not in the addon folder: deploy.sh wipes the addon before copying, and this
+# client hands back no saved variables at all, so those were the two places it could not go. WTF is
+# per client, which matches the rule that a client's record is about that client's raids.
+#
+# ONE LOG IS ONE NIGHT, keyed by the log's own filename. That makes re-running the same log replace
+# its night instead of counting it twice - the thing a history most needs to survive. The cost is
+# that logging straight through two raid nights without restarting the client counts as one; rare,
+# and it makes somebody's attendance kinder rather than harsher.
+# the client folder: Logs' parent. Defined here because the history needs it too, and it is
+# the same one the report is written into further down.
+$client = Split-Path $Logs -Parent
+$wtf = Join-Path $client "WTF"
+$histDir = Join-Path $wtf "BiSGuild"
+$histPath = Join-Path $histDir "history.json"
+
+$nights = @{}
+if (Test-Path -LiteralPath $histPath) {
+    try {
+        $raw = Get-Content -LiteralPath $histPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        foreach ($n in @($raw.nights)) {
+            $p = @{}; $r = @{}
+            foreach ($kv in $n.present.PSObject.Properties) { $p[$kv.Name] = [int]$kv.Value }
+            foreach ($kv in $n.ready.PSObject.Properties)   { $r[$kv.Name] = [int]$kv.Value }
+            $nights[$n.log] = @{ log = $n.log; date = $n.date; zones = $n.zones
+                                 kills = [int]$n.kills; present = $p; ready = $r }
+        }
+    } catch {
+        # a half-written or hand-edited history is started over rather than crashing the run: the
+        # numbers are rebuildable from the logs, and a tool that dies on its own cache is worse
+        Write-Host "history.json could not be read - starting a fresh one"
+        $nights = @{}
+    }
+}
+
+# the filename carries when logging started: WoWCombatLog-MMDDYY_HHMMSS.txt
+$stamp = ""
+if ($file.Name -match 'WoWCombatLog-(\d{2})(\d{2})(\d{2})_') {
+    $stamp = "20{0}-{1}-{2}" -f $Matches[3], $Matches[1], $Matches[2]
+}
+$thisNight = @{ log = $file.Name; date = $stamp; zones = $zones; kills = $total
+                present = @{}; ready = @{} }
+foreach ($who in $present.Keys) {
+    $thisNight.present[$who] = $present[$who]
+    $thisNight.ready[$who]   = $prepared[$who]
+}
+$nights[$file.Name] = $thisNight
+
+if (-not (Test-Path -LiteralPath $histDir)) { New-Item -ItemType Directory -Force -Path $histDir | Out-Null }
+$out = [ordered]@{ version = 1; nights = @($nights.Values | Sort-Object { $_.log }) }
+[System.IO.File]::WriteAllText($histPath, ($out | ConvertTo-Json -Depth 6),
+                               (New-Object System.Text.UTF8Encoding $false))
+
+# ------------------------------------------------- the numbers, over all of it
+# A NIGHT IS EARNED BY HALF ITS KILLS (Arn, 4 Oct: "if there were there for at least half the kills,
+# sometimes life happens"). Asked as present*2 >= kills, never present >= kills/2: three kills and
+# one attendance is 1 against 1.5, and a raid record does not go near floating point.
+$allNights = @($nights.Values)
+$earned = @{}; $seenPulls = @{}; $readyPulls = @{}
+foreach ($n in $allNights) {
+    foreach ($who in $n.present.Keys) {
+        if (-not $earned.ContainsKey($who)) { $earned[$who] = 0; $seenPulls[$who] = 0; $readyPulls[$who] = 0 }
+        if ($n.present[$who] * 2 -ge $n.kills) { $earned[$who]++ }
+        $seenPulls[$who] += $n.present[$who]
+        $readyPulls[$who] += $n.ready[$who]
+    }
+}
+$raided = $allNights.Count
+$rows = foreach ($who in $earned.Keys) {
+    [pscustomobject]@{
+        name     = $who
+        attend   = [math]::Round(100 * $earned[$who] / $raided)
+        consumes = if ($seenPulls[$who]) { [math]::Round(100 * $readyPulls[$who] / $seenPulls[$who]) } else { 0 }
+    }
+}
+$rows = @($rows | Sort-Object @{E = "attend"; D = $true}, @{E = "consumes"; D = $true}, name)
+
+Write-Host ("this log: {0} boss kill(s): {1}" -f $total, $zones)
+Write-Host ("over {0} raid night(s) on record:" -f $raided)
 Write-Host ("{0,-16} {1,8} {2,9}" -f "", "attend", "consumes")
 foreach ($r in $rows) { Write-Host ("{0,-16} {1,7}% {2,8}%" -f $r.name, $r.attend, $r.consumes) }
 
@@ -221,7 +309,6 @@ foreach ($r in $rows) { Write-Host ("{0,-16} {1,7}% {2,8}%" -f $r.name, $r.atten
 # Logs and Interface are siblings inside the client folder, so dropping \Logs is the whole
 # derivation, and it works at any depth. Somebody who wants the numbers in two clients runs it
 # twice, which is a sentence, not a surprise.
-$client = Split-Path $Logs -Parent
 $roots = @()
 if ($client) { $roots += $client }
 $written = @()
@@ -237,6 +324,7 @@ foreach ($root in $roots) {
     [void]$sb.AppendLine("BiSGuildReport = {")
     [void]$sb.AppendLine(("    written = {0}," -f [int][double]::Parse((Get-Date -UFormat %s))))
     [void]$sb.AppendLine(("    kills = {0}," -f $total))
+    [void]$sb.AppendLine(("    nights = {0}," -f $raided))
     [void]$sb.AppendLine(("    zones = `"{0}`"," -f ($zones -replace '"', '\"')))
     [void]$sb.AppendLine("    rows = {")
     foreach ($r in $rows) {

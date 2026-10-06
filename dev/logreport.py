@@ -193,13 +193,48 @@ def main(path, kills_only=True, paste=False, review=False, write=False, include_
         return 0
 
     total = len(counted)
+    zones = sorted({p["boss"] for p in counted})
+
+    # THE RECORD, not just last night (5 Oct 2026). Arn: "how are we going to keep track of how
+    # people are doing with attendance if it wipes the data when i reload?" The reload was never the
+    # problem - Data/Report.lua is a file. The hole underneath the question was that each run read
+    # one log and OVERWROTE the report, so it only ever said what happened last night.
+    #
+    # It lives in WTF: deploy.sh wipes the addon folder, and this client hands back no saved
+    # variables at all, so those were the two places it could not go. One log is one night, keyed by
+    # the log's filename, so re-running the same log replaces its night instead of counting it twice.
+    nights = read_history(path)
+    stamp = ""
+    m = re.search(r"WoWCombatLog-(\d{2})(\d{2})(\d{2})_", os.path.basename(path))
+    if m:
+        stamp = "20%s-%s-%s" % (m.group(3), m.group(1), m.group(2))
+    nights[os.path.basename(path)] = {
+        "log": os.path.basename(path), "date": stamp,
+        "zones": ", ".join(zones), "kills": total,
+        "present": dict(present), "ready": dict(prepared),
+    }
+    write_history(path, nights)
+
+    # A NIGHT IS EARNED BY HALF ITS KILLS. present*2 >= kills, never present >= kills/2: three kills
+    # and one attendance is 1 against 1.5, and a raid record does not go near floating point.
+    earned, seen_pulls, ready_pulls = defaultdict(int), defaultdict(int), defaultdict(int)
+    for n in nights.values():
+        for who, saw in n["present"].items():
+            if saw * 2 >= n["kills"]:
+                earned[who] += 1
+            seen_pulls[who] += saw
+            ready_pulls[who] += n["ready"].get(who, 0)
+    raided = max(1, len(nights))
+
     rows = []
-    for who, n in present.items():
-        rows.append((who, round(100 * n / total), round(100 * prepared[who] / n) if n else 0))
+    for who in earned:
+        rows.append((who, round(100 * earned[who] / raided),
+                     round(100 * ready_pulls[who] / seen_pulls[who]) if seen_pulls[who] else 0))
     rows.sort(key=lambda r: (-r[1], -r[2], r[0]))
 
     label = "boss kill" if kills_only else "pull"
-    print("%d %s(s): %s" % (total, label, ", ".join(sorted({p["boss"] for p in counted}))))
+    print("this log: %d %s(s): %s" % (total, label, ", ".join(zones)))
+    print("over %d raid night(s) on record:" % raided)
     print("%-16s %8s %9s" % ("", "attend", "consumes"))
     for who, att, con in rows:
         print("%-16s %7d%% %8d%%" % (who, att, con))
@@ -209,7 +244,7 @@ def main(path, kills_only=True, paste=False, review=False, write=False, include_
         print("BISGUILD1|" + "|".join("%s,%d,%d" % r for r in rows))
 
     if write:
-        wrote = write_data(rows, total, sorted({p["boss"] for p in counted}), path)
+        wrote = write_data(rows, total, zones, path, raided)
         print()
         if wrote:
             for w in wrote:
@@ -218,6 +253,39 @@ def main(path, kills_only=True, paste=False, review=False, write=False, include_
         else:
             print("no BiSGuild addon folder found to write into - is it deployed?")
     return 0
+
+
+def history_path(log_path):
+    """`<client>/WTF/BiSGuild/history.json` - the one place a deploy does not wipe and a loader this
+    client does not run cannot lose."""
+    logs_dir = os.path.dirname(os.path.abspath(log_path))
+    client = os.path.dirname(logs_dir)
+    return os.path.join(client, "WTF", "BiSGuild", "history.json")
+
+
+def read_history(log_path):
+    """Every night on record, keyed by the log it came from. A half-written or hand-edited file is
+    started over rather than crashing the run: the numbers are rebuildable from the logs, and a tool
+    that dies on its own cache is worse than one that forgets."""
+    import json
+    try:
+        with open(history_path(log_path), "r", encoding="utf-8") as fh:
+            got = json.load(fh)
+        return {n["log"]: n for n in got.get("nights", []) if n.get("log")}
+    except (OSError, ValueError, KeyError, TypeError):
+        return {}
+
+
+def write_history(log_path, nights):
+    import json
+    p = history_path(log_path)
+    try:
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w", encoding="utf-8") as fh:
+            json.dump({"version": 1, "nights": sorted(nights.values(), key=lambda n: n["log"])},
+                      fh, indent=1)
+    except OSError as e:
+        print("could not write the history (%s): this run counts only itself" % e)
 
 
 def lua_str(s):
@@ -263,7 +331,7 @@ def game_roots(log_path=None):
     return out
 
 
-def write_data(rows, kills, zones, log_path=None):
+def write_data(rows, kills, zones, log_path=None, nights=1):
     """Write Data/Report.lua into each installed copy.
 
     Arn: "am I expected to copy and paste a whole 108mb of text into a text box in wow?" No - and
@@ -280,6 +348,7 @@ def write_data(rows, kills, zones, log_path=None):
         "BiSGuildReport = {",
         "    written = %d," % int(_t.time()),
         "    kills = %d," % kills,
+        "    nights = %d," % nights,
         "    zones = %s," % lua_str(", ".join(zones)),
         "    rows = {",
     ]
