@@ -246,7 +246,7 @@ do
     earned, raided, pct = G.Rate("Kumlust", later)
     H.eq(earned, 1, "now it counts") H.eq(raided, 1, "as one night") H.eq(pct, 100, "100%")
 
-    _G.SlashCmdList.BISGUILD("")
+    _G.SlashCmdList.BISGUILD("attendance")
     H.ok(said[#said]:find("tonight", 1, true) ~= nil or said[#said - 1]:find("tonight", 1, true) ~= nil,
          "/bisg says tonight is excluded rather than hiding it", said[#said])
 end
@@ -323,7 +323,7 @@ do
     H.inRaid = true
     H.raid = { "Kumlust", "Ariar" }
     W.Kill("Najentus", 100)
-    _G.SlashCmdList.BISGUILD("")
+    _G.SlashCmdList.BISGUILD("attendance")
     H.ok(said[#said] ~= nil, "/bisg prints something")
     _G.SlashCmdList.BISGUILD("nights")
     H.ok(said[#said]:find("Black Temple", 1, true) ~= nil, "/bisg nights names the place", said[#said])
@@ -331,7 +331,7 @@ do
     H.ok(said[#said] ~= nil, "/bisg me prints the working")
 
     reset()
-    _G.SlashCmdList.BISGUILD("")
+    _G.SlashCmdList.BISGUILD("attendance")
     H.ok(said[#said]:find("backwards", 1, true) ~= nil,
          "with nothing on record it says attendance cannot be worked out backwards", said[#said])
 end
@@ -368,6 +368,67 @@ do
     H.ok(said2:find("/bisg script", 1, true) ~= nil,
          "and once it knows, it points at the script instead", said2)
     _G.BiSGuildDB.logs = nil
+end
+
+--=============================================================================
+-- THE WINDOW. Arn: "give me a bis themed window for bis guild so i can copy and paste and not have
+-- to write out commands, also the warning can get lost easy in the chat, better to make them a pop
+-- up in the window where they can confirm with a button".
+--
+-- The second half is the safety one. A caution printed into chat competes with loot rolls and zone
+-- changes and scrolls away while you read it. A warning you must press a button to get past cannot
+-- scroll away - and the press is a deliberate act rather than something that happened above the
+-- thing you copied.
+--=============================================================================
+H.section("the window, and the warning you cannot scroll past")
+do
+    local U = NS.U
+    H.ok(U ~= nil, "there is a window")
+    P.SetLogs("C:\\Program Files (x86)\\World of Warcraft\\_anniversary_\\Logs")
+    U.agreed, U.hash = nil, nil
+
+    local f = U.Build()
+    H.ok(f ~= nil, "it builds")
+    U.Refresh()
+
+    -- THE ONE THAT MATTERS: the command must not be anywhere a player can take it from until the
+    -- warning has been answered. Showing it greyed, or beside the warning, is a warning you get
+    -- past by looking slightly to the left.
+    H.eq(f.cmd:GetText(), "", "the command is EMPTY until the warning is answered")
+    H.ok(f.warn:IsShown(), "and the warning is over the top of it")
+
+    -- press the button
+    f.warn.__ok = nil
+    U.agreed = true
+    U.Refresh()
+    H.ok(f.warn:IsShown() == false, "answering it puts the warning away")
+    H.ok(f.cmd:GetText():find("logreport.ps1", 1, true) ~= nil,
+         "and only THEN is the command there", f.cmd:GetText())
+    H.ok(f.cmd:GetText():find("_anniversary_\\Logs", 1, true) ~= nil,
+         "with the paths already filled in - nothing to type")
+
+    -- the hash is opt-in and names the same file the command runs
+    H.eq(f.hashBox:GetText(), "", "the hash check is not shown until asked for")
+    U.hash = true
+    U.Refresh()
+    H.ok(f.hashBox:GetText():find("Get-FileHash", 1, true) ~= nil, "asked for, it is there")
+    H.ok(f.hashBox:GetText():find(P.ScriptPath(), 1, true) ~= nil,
+         "and checks the same file the command runs")
+
+    -- A DECISION IS NOT REMEMBERED. Running a script is a decision, and one made last Tuesday is
+    -- not one made now - so a fresh session puts the warning back.
+    U.agreed, U.hash = nil, nil
+    U.Refresh()
+    H.ok(f.warn:IsShown(), "a new session asks again")
+    H.eq(f.cmd:GetText(), "", "and the command is gone again with it")
+
+    -- no logs folder: the window says so rather than offering an empty command
+    _G.BiSGuildDB.logs = nil
+    U.agreed = true
+    U.Refresh()
+    H.eq(f.cmd:GetText(), "", "with no logs folder there is no command to copy")
+    P.SetLogs("C:\\Program Files (x86)\\World of Warcraft\\_anniversary_\\Logs")
+    U.agreed, U.hash = nil, nil
 end
 
 H.section("the warning, and the fingerprint")

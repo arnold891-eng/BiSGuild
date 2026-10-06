@@ -22,4 +22,5 @@ Core\Report.lua
 Core\Nights.lua
 Core\Roster.lua
 Core\Watch.lua
+Core\Window.lua
 Core\Say.lua

@@ -80,6 +80,17 @@ local function me()
 end
 
 function ns.Say(cmd, rest)
+    -- THE WINDOW IS THE FRONT DOOR (5 Oct 2026). Arn: "give me a bis themed window for bis guild so
+    -- i can copy and paste and not have to write out commands". A bare `/bisg` opens it; everything
+    -- that was a command still is one, for anybody who prefers them.
+    if cmd == "" and ns.U and ns.U.Toggle then
+        ns.U.Toggle()
+        return
+    end
+    if cmd == "window" or cmd == "show" then
+        if ns.U and ns.U.Show then ns.U.Show() end
+        return
+    end
     if cmd == "nights" then return nights() end
     if cmd == "me" then return me() end
     -- `/bisg logs <path>` - told once, remembered. `/bisg script` prints the command.
