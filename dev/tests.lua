@@ -52,7 +52,7 @@ fire("ADDON_LOADED", "BiSGuild")
 H.ok(type(_G.BiSGuildDB) == "table" and _G.BiSGuildDB.comm == true, "SavedVariables shaped with defaults on first load")
 
 H.section("embedded libs are canon (drift fences)")
-H.eq(_G.LibBiSComm.MINOR, 7, "LibBiSComm minor 7")
+H.eq(_G.LibBiSComm.MINOR, 8, "LibBiSComm minor 8")
 local function listed(rel) for _, f in ipairs(FILES) do if f == rel then return true end end return false end
 H.ok(listed("Libs/BiSTheme/Console.lua"), "TOC lists the Console embed")
 H.ok(listed("Libs/LibBiSComm-1.0/LibBiSComm-1.0.lua"), "TOC lists the comm embed")
