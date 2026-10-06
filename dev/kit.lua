@@ -195,6 +195,11 @@ local function newFrame(ftype, name, parent)
     function fr:CreateFontString() local f = newFontString(self); self._regions = self._regions or {}; table.insert(self._regions, f); return f end
     function fr:SetScript(k, fn) self._scripts[k] = fn end
     function fr:GetScript(k) return self._scripts[k] end
+    -- A FRAME REMEMBERS ITS LEVEL. Both were auto no-ops, so "does this overlay actually sit above
+    -- what it is covering" had no answer - and the hash box printed straight through the warning's
+    -- words on Arn's screen (5 Oct) with the suite green.
+    function fr:SetFrameLevel(n) self._level = n end
+    function fr:GetFrameLevel() return self._level or 1 end
     function fr:HookScript(k, fn) self._scripts["hook_" .. k] = fn end
     function fr:RegisterEvent(e) self._events[e] = true end
     function fr:UnregisterAllEvents() self._events = {} end

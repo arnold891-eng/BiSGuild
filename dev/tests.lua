@@ -407,13 +407,58 @@ do
     H.ok(f.cmd:GetText():find("_anniversary_\\Logs", 1, true) ~= nil,
          "with the paths already filled in - nothing to type")
 
-    -- the hash is opt-in and names the same file the command runs
-    H.eq(f.hashBox:GetText(), "", "the hash check is not shown until asked for")
+    -- THE HASH CHECK LIVES INSIDE THE WARNING, and types itself out. Arn's screenshot, 5 Oct: it
+    -- was a box on the window BEHIND, so pressing the button printed it straight through the
+    -- warning's own words - the "one bar, one label" shape, in a new place.
+    H.eq(f.hashLine:GetText(), "", "the hash check is not shown until asked for")
     U.hash = true
     U.Refresh()
-    H.ok(f.hashBox:GetText():find("Get-FileHash", 1, true) ~= nil, "asked for, it is there")
-    H.ok(f.hashBox:GetText():find(P.ScriptPath(), 1, true) ~= nil,
+    H.ok(U.typeTarget and U.typeTarget:find("Get-FileHash", 1, true) ~= nil,
+         "asked for, it is there", tostring(U.typeTarget))
+    H.ok(U.typeTarget:find(P.ScriptPath(), 1, true) ~= nil,
          "and checks the same file the command runs")
+    H.ok(U.typeTarget:find("PS>", 1, true) ~= nil, "with a prompt on it, like a shell")
+
+    -- it ARRIVES a character at a time rather than appearing
+    H.ok(#f.hashLine:GetText() < #U.typeTarget, "it starts unfinished")
+    U.Type(0.2)
+    local part = f.hashLine:GetText()
+    H.ok(#part > 0 and #part < #U.typeTarget, "and fills in", part)
+    H.ok(part:sub(-1) == "_", "with a cursor on the end while it types", part)
+    U.Type(10)
+    H.eq(f.hashLine:GetText(), U.typeTarget, "until it is all there, with no cursor left on it")
+
+    -- NOTHING MAY PRINT THROUGH THE WARNING. The box that did is empty and hidden now, and the
+    -- warning sits above anything the window makes after it.
+    H.eq(f.hashBox:GetText(), "", "the old box behind the warning stays empty")
+    H.ok(f.warn:GetFrameLevel() > f:GetFrameLevel(),
+         "and the warning is above the window, so nothing can draw over its words")
+
+    -- a person who wants to copy the line should never wait on a flourish
+    U.TypeOut("PS> something long enough to still be typing")
+    U.TypeNow()
+    H.eq(f.hashLine:GetText(), U.typeTarget, "and it can be finished instantly")
+
+    -- IT SHOULD LOOK LIKE A SHELL (5 Oct 2026). Arn: "the more we make it look like a powershell
+    -- window the better blinking _ and everything". Not only taste: the box holding a command you
+    -- are about to run on your own computer should NOT look like the rest of the addon, because it
+    -- is not part of it.
+    H.ok(f.prompt ~= nil and f.prompt:GetText() == "PS>", "there is a prompt, not a label")
+    H.ok(f.caret ~= nil and f.caret:GetText() == "_", "and a cursor")
+    H.ok(f.cmdWrap ~= nil and f.cmdWrap._scripts.OnUpdate ~= nil, "which is driven by a ticker")
+
+    -- the blink: half a second lit, half dark, at the rate the house console uses so two BiS
+    -- windows open together do not blink against each other
+    local tick = f.cmdWrap._scripts.OnUpdate
+    f.cmdWrap.t = 0
+    tick(f.cmdWrap, 0.1)
+    local lit = f.caret:GetAlpha()
+    tick(f.cmdWrap, 0.5)
+    local dark = f.caret:GetAlpha()
+    H.ok(lit == 1 and dark == 0, "the cursor blinks",
+         tostring(lit) .. "/" .. tostring(dark))
+    tick(f.cmdWrap, 0.5)
+    H.eq(f.caret:GetAlpha(), 1, "and comes back - it is a blink, not a fade-out")
 
     -- A DECISION IS NOT REMEMBERED. Running a script is a decision, and one made last Tuesday is
     -- not one made now - so a fresh session puts the warning back.
