@@ -52,7 +52,7 @@ ns.P = P
 --- REGENERATE with Tools\stamp.ps1 whenever logreport.ps1 changes; `-Check` says whether they still
 --- agree. The suite asserts the SHAPE of this constant only - it cannot compute SHA-256 in Lua, so
 --- a script edited without restamping is NOT caught automatically yet. That gap is on the desk.
-P.SCRIPT_SHA = "64E58A59C45E4AC505AF570AB89C0336F93E535F2A9ECECCFB9755BA2ECBE216"
+P.SCRIPT_SHA = "BBFE79CFAD1180A03054E72B4BFFFFA54742C28196BC1981F268EA0D91B4C827"
 
 --- WHERE THE LOGS LIVE, asked once and remembered (4 Oct 2026).
 ---

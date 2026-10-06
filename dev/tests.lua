@@ -362,6 +362,33 @@ do
     H.eq(#P.SCRIPT_SHA, 64, "a SHA-256 is 64 characters", tostring(#P.SCRIPT_SHA))
     H.ok(P.SCRIPT_SHA:match("^%x+$") ~= nil, "and nothing but hex")
 
+    -- AND IT IS THE HASH OF THE SCRIPT WE ACTUALLY SHIP (5 Oct 2026). It was not: Arn ran the check,
+    -- got BBFE79CF..., and the window said 64E58A59.... The one number on that page whose entire job
+    -- is to match did not match, which is worse than having no check at all - a player who compares
+    -- and sees a mismatch concludes they have been given a doctored addon.
+    --
+    -- "Lua 5.1 cannot compute SHA-256" was why this was never enforced, and it was simply untrue:
+    -- no bitwise operators, so the 32-bit work is arithmetic. dev/sha256.lua, checked against the
+    -- published NIST vectors every run, because a hash written from memory and never verified is
+    -- precisely the thing that looks right and is not. (Mine was wrong the first time: `a * 2^(32-n)`
+    -- overflows a double. The vectors caught it in one run.)
+    do
+        local sha = dofile(HERE .. "/sha256.lua")
+        H.eq(sha(""):lower(), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+             "the hasher agrees with the published answer for an empty file")
+        H.eq(sha("abc"):lower(), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+             "and for \"abc\"")
+
+        local fh = io.open(HERE .. "/../Tools/logreport.ps1", "rb")
+        H.ok(fh ~= nil, "the shipped script is where the addon says it is")
+        if fh then
+            local body = fh:read("*a")
+            fh:close()
+            H.eq(sha(body):upper(), P.SCRIPT_SHA:upper(),
+                 "and P.SCRIPT_SHA is the hash of it - run Tools\\stamp.ps1 if this is red")
+        end
+    end
+
     P.SetLogs("C:\\Program Files (x86)\\World of Warcraft\\_anniversary_\\Logs")
     local before = #said
     _G.SlashCmdList.BISGUILD("script")
