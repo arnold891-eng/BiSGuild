@@ -209,7 +209,7 @@ def main(path, kills_only=True, paste=False, review=False, write=False, include_
         print("BISGUILD1|" + "|".join("%s,%d,%d" % r for r in rows))
 
     if write:
-        wrote = write_data(rows, total, sorted({p["boss"] for p in counted}))
+        wrote = write_data(rows, total, sorted({p["boss"] for p in counted}), path)
         print()
         if wrote:
             for w in wrote:
@@ -224,9 +224,25 @@ def lua_str(s):
     return '"%s"' % str(s).replace("\\", "\\\\").replace('"', '\\"')
 
 
-def game_roots():
-    """Every installed BiSGuild addon folder. The path comes from _bisdev/wow-path.txt, the one
-    answer the whole family uses, so this cannot drift from deploy.sh."""
+def game_roots(log_path=None):
+    """Where the report goes.
+
+    THE CLIENT THE LOG CAME FROM, AND NOWHERE ELSE (5 Oct 2026). This used to write into every
+    installed client; Arn read a Forever dungeon log and it overwrote the Black Temple report
+    sitting in TBC. A client's raid record is about that client's raids, and quietly replacing one
+    set of numbers with an unrelated set is the worst thing a tool like this can do, because the
+    numbers still look right.
+
+    `Logs` and `Interface` are siblings inside the client folder, so the log's own path says which
+    client it belongs to. The wow-path.txt fallback is only for a log given from somewhere else.
+    """
+    if log_path:
+        logs_dir = os.path.dirname(os.path.abspath(log_path))
+        if os.path.basename(logs_dir).lower() == "logs":
+            d = os.path.join(os.path.dirname(logs_dir), "Interface", "AddOns", "BiSGuild")
+            if os.path.isdir(d):
+                return [d]
+
     here = os.path.dirname(os.path.abspath(__file__))
     bisdev = os.path.join(here, "..", "..", "_bisdev", "wow-path.txt")
     base = os.environ.get("BISWOW")
@@ -247,7 +263,7 @@ def game_roots():
     return out
 
 
-def write_data(rows, kills, zones):
+def write_data(rows, kills, zones, log_path=None):
     """Write Data/Report.lua into each installed copy.
 
     Arn: "am I expected to copy and paste a whole 108mb of text into a text box in wow?" No - and
@@ -274,7 +290,7 @@ def write_data(rows, kills, zones):
     text = "\n".join(body) + "\n"
 
     done = []
-    for root in game_roots():
+    for root in game_roots(log_path):
         d = os.path.join(root, "Data")
         try:
             os.makedirs(d, exist_ok=True)
