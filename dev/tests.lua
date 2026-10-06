@@ -183,6 +183,10 @@ do
          "and only THEN is the command there", f.cmd:GetText())
     H.ok(f.cmd:GetText():find("_anniversary_\\Logs", 1, true) ~= nil,
          "with the paths already filled in - nothing to type")
+    -- the command box never had the prompt in its text; a test so it never gains one
+    H.ok(f.cmd:GetText():find("PS>", 1, true) == nil,
+         "and no prompt in the copyable text here either", f.cmd:GetText())
+    H.eq(f.prompt:GetText(), "PS>", "the prompt beside it is a label")
 
     -- THE HASH CHECK LIVES INSIDE THE WARNING, and types itself out. Arn's screenshot, 5 Oct: it
     -- was a box on the window BEHIND, so pressing the button printed it straight through the
@@ -194,7 +198,18 @@ do
          "asked for, it is there", tostring(U.typeTarget))
     H.ok(U.typeTarget:find(P.ScriptPath(), 1, true) ~= nil,
          "and checks the same file the command runs")
-    H.ok(U.typeTarget:find("PS>", 1, true) ~= nil, "with a prompt on it, like a shell")
+    -- THE PROMPT IS A LABEL, NOT PART OF THE TEXT (5 Oct 2026). It used to be inside the copied
+    -- string, so pasting into PowerShell gave:
+    --
+    --     PS> : The term 'PS>' is not recognized as the name of a cmdlet
+    --
+    -- Whatever is in that box is what somebody runs. A decoration that travels with the thing being
+    -- copied is not a decoration, it is a bug with a font.
+    H.ok(U.typeTarget:find("PS>", 1, true) == nil,
+         "the prompt is NOT in the copyable text", U.typeTarget)
+    H.ok(U.typeTarget:match("^Get%-FileHash") ~= nil,
+         "the line starts with the command itself", U.typeTarget)
+    H.eq(f.hashPrompt:GetText(), "PS>", "the prompt is a label beside it, so it still reads as a shell")
 
 
     -- it ARRIVES a character at a time rather than appearing

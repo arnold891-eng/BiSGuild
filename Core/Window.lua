@@ -286,13 +286,26 @@ function U.Build()
 
     -- AN EDITBOX, so it can be taken. Clicking it finishes the typing at once and selects the whole
     -- line: nobody should wait on a flourish, and nobody should drag across a path to copy it.
+    -- THE PROMPT IS A LABEL, NOT PART OF THE TEXT (5 Oct 2026). It was inside the copied string, so
+    -- the player pasted `PS> Get-FileHash ...` into PowerShell and got:
+    --
+    --     PS> : The term 'PS>' is not recognized as the name of a cmdlet
+    --
+    -- The command box got this right from the start - a FontString beside the box - and the hash
+    -- line baked it in. A decoration that travels with the thing being copied is not a decoration.
+    f.hashPrompt = warn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    f.hashPrompt:SetPoint("BOTTOMLEFT", 16, 68)
+    if f.hashPrompt.SetFont then pcall(f.hashPrompt.SetFont, f.hashPrompt, PS_FONT, 12, "") end
+    f.hashPrompt:SetTextColor(0.98, 0.98, 0.55, 1)
+    f.hashPrompt:SetText("")
+
     f.hashLine = CreateFrame("EditBox", nil, warn)
     f.hashLine:SetPoint("BOTTOMLEFT", 14, 44)
     f.hashLine:SetPoint("RIGHT", warn, "RIGHT", -14, 0)
     f.hashLine:SetHeight(38)
     f.hashLine:SetMultiLine(true)
     f.hashLine:SetAutoFocus(false)
-    f.hashLine:SetTextInsets(6, 6, 2, 2)
+    f.hashLine:SetTextInsets(34, 6, 2, 2)   -- room for the PS> label beside it
     if f.hashLine.SetFont then pcall(f.hashLine.SetFont, f.hashLine, PS_FONT, 12, "") end
     f.hashLine:SetTextColor(0.88, 0.92, 1, 1)
     local hbg = f.hashLine:CreateTexture(nil, "BACKGROUND")
@@ -443,9 +456,12 @@ function U.Refresh()
     -- The hash check types itself out INSIDE the warning. It used to be a box on the window behind,
     -- which printed straight through the warning's own words.
     if U.hash then
-        local want = ('PS> Get-FileHash -Algorithm SHA256 "%s"'):format(P.ScriptPath() or "...")
+        -- NOTHING BUT THE COMMAND goes in the box: whatever is in there is what gets pasted into a
+        -- shell, and a prompt pasted with it is an error message.
+        local want = ('Get-FileHash -Algorithm SHA256 "%s"'):format(P.ScriptPath() or "...")
         if U.typeTarget ~= want then U.TypeOut(want) end
         f.hashLine:Show()
+        f.hashPrompt:SetText("PS>")
         -- THREE SENTENCES, because a command with no instruction is a thing people stare at. Arn,
         -- at exactly this line: "what do i do with this".
         f.hashWhat:SetText(
@@ -456,6 +472,7 @@ function U.Refresh()
     else
         U.TypeOut(nil)
         f.hashLine:Hide()
+        f.hashPrompt:SetText("")
         f.hashWhat:SetText("")
     end
     -- the old boxes on the window behind are gone; keep them empty so nothing can draw through
