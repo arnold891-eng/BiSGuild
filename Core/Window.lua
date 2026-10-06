@@ -26,7 +26,7 @@ local ADDON, ns = ...
 local U = {}
 ns.U = U
 
-local W, H = 580, 350
+local W, H = 580, 400
 
 local function T() return ns.T end
 
@@ -224,13 +224,38 @@ function U.Build()
     -- AND IT TYPES ITSELF OUT. Arn: "make it type it out like powershell". A line that simply
     -- appears is a line the eye skips; one that arrives a character at a time is one you watch -
     -- which is the right behaviour for the only instruction on this page that is a real check.
-    f.hashLine = warn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    -- WHAT TO DO WITH IT. Arn, looking at the typed line: "what do i do with this". It said nothing
+    -- about itself and - worse - it was a FontString, which cannot be selected. A line of shell you
+    -- can read and cannot copy is a dead end dressed as an instruction.
+    f.hashWhat = warn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    f.hashWhat:SetPoint("BOTTOMLEFT", 14, 86)
+    f.hashWhat:SetPoint("RIGHT", warn, "RIGHT", -14, 0)
+    f.hashWhat:SetJustifyH("LEFT")
+    f.hashWhat:SetText("")
+
+    -- AN EDITBOX, so it can be taken. Clicking it finishes the typing at once and selects the whole
+    -- line: nobody should wait on a flourish, and nobody should drag across a path to copy it.
+    f.hashLine = CreateFrame("EditBox", nil, warn)
     f.hashLine:SetPoint("BOTTOMLEFT", 14, 44)
     f.hashLine:SetPoint("RIGHT", warn, "RIGHT", -14, 0)
-    f.hashLine:SetJustifyH("LEFT")
+    f.hashLine:SetHeight(38)
+    f.hashLine:SetMultiLine(true)
+    f.hashLine:SetAutoFocus(false)
+    f.hashLine:SetTextInsets(6, 6, 2, 2)
     if f.hashLine.SetFont then pcall(f.hashLine.SetFont, f.hashLine, PS_FONT, 12, "") end
     f.hashLine:SetTextColor(0.88, 0.92, 1, 1)
+    local hbg = f.hashLine:CreateTexture(nil, "BACKGROUND")
+    hbg:SetAllPoints()
+    hbg:SetColorTexture(PS_BLUE[1], PS_BLUE[2], PS_BLUE[3], PS_BLUE[4])
+    f.hashLine:SetScript("OnMouseUp", function(self)
+        U.TypeNow()
+        self:HighlightText()
+        self:SetFocus()
+    end)
+    f.hashLine:SetScript("OnEditFocusGained", function(self) self:HighlightText() end)
+    f.hashLine:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     f.hashLine:SetText("")
+    f.hashLine:Hide()
 
     -- the hash line, shown under the command once asked for
     f.hashLabel = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
@@ -330,8 +355,18 @@ function U.Refresh()
     if U.hash then
         local want = ('PS> Get-FileHash -Algorithm SHA256 "%s"'):format(P.ScriptPath() or "...")
         if U.typeTarget ~= want then U.TypeOut(want) end
+        f.hashLine:Show()
+        -- THREE SENTENCES, because a command with no instruction is a thing people stare at. Arn,
+        -- at exactly this line: "what do i do with this".
+        f.hashWhat:SetText(
+            T().text("accent", "Click the line below to copy it,") .. " paste it into PowerShell,\n"
+            .. "and compare the answer with the hash on our CurseForge page. "
+            .. T().text("warn", "Not with this addon") .. " -\n"
+            .. "a faked copy would show you a faked hash here too.")
     else
         U.TypeOut(nil)
+        f.hashLine:Hide()
+        f.hashWhat:SetText("")
     end
     -- the old boxes on the window behind are gone; keep them empty so nothing can draw through
     if f.hashLabel then f.hashLabel:SetText("") end
