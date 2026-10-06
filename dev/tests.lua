@@ -222,31 +222,34 @@ do
     -- I nearly said addons cannot reach the clipboard, which is what it has always been - this
     -- client has CopyToClipboard, and Attune already calls it. The mock is the client's shape: a
     -- plain global that takes the text.
+    -- THE CLIPBOARD IS PROTECTED, AND BEING IN THE CENSUS DID NOT MEAN WE COULD USE IT (5 Oct
+    -- 2026). CopyToClipboard is on both baselines, the fence passed, and the client answered:
+    --
+    --   [ADDON_ACTION_FORBIDDEN] AddOn 'BiSGuild' tried to call the protected function 'UNKNOWN()'
+    --
+    -- The fence proves a NAME exists. It says nothing about permission.
+    --
+    -- And the guard written for this could not work: a pcall around a forbidden call returns CLEAN.
+    -- The refusal arrives later as an event, so the window said "copied" while nothing had been,
+    -- and the player got a red error on top. Measured on 3 Oct, written down, not applied.
     do
+        -- a client that HAS the call must still not be called: the suite fails if anything reaches
+        -- for it, which is the only way this stays out
+        local reached = false
         local realCopy = _G.CopyToClipboard
-        local clipped
-        _G.CopyToClipboard = function(t) clipped = t end
+        _G.CopyToClipboard = function() reached = true end
 
         U.TypeOut(U.typeTarget)
         f.hashLine._scripts.OnMouseUp(f.hashLine)
         H.eq(f.hashLine:GetText(), U.typeTarget, "clicking it finishes the typing at once")
-        H.eq(clipped, U.typeTarget, "and puts the whole line on the clipboard")
-        H.ok(f.flash:IsShown() and f.flash:GetText():find("copied", 1, true) ~= nil,
-             "and says so", f.flash:GetText())
-
-        -- the command box copies too
-        clipped = nil
-        f.cmd._scripts.OnMouseUp(f.cmd)
-        H.ok(clipped ~= nil and clipped:find("logreport.ps1", 1, true) ~= nil,
-             "the command copies on one click as well")
-
-        -- A CLIENT WITHOUT THE CALL must not claim it copied. Saying "copied" when nothing was is
-        -- worse than saying nothing: the player pastes stale clipboard into a shell.
-        _G.CopyToClipboard = nil
-        f.hashLine._scripts.OnMouseUp(f.hashLine)
+        H.eq(reached, false, "and NEVER calls the protected clipboard function")
         H.ok(f.flash:GetText():find("Ctrl+C", 1, true) ~= nil,
-             "with no clipboard call it says to press Ctrl+C instead", f.flash:GetText())
-        H.ok(f.flash:GetText():find("copied", 1, true) == nil, "and does NOT claim it copied")
+             "it says which key to press instead", f.flash:GetText())
+        H.ok(f.flash:GetText():find("copied", 1, true) == nil,
+             "and never claims it copied, because it did not")
+
+        f.cmd._scripts.OnMouseUp(f.cmd)
+        H.eq(reached, false, "the command box does not reach for it either")
 
         _G.CopyToClipboard = realCopy
     end
