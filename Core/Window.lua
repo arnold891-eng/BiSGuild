@@ -48,12 +48,22 @@ local PS_FONT = "Fonts\\ARIALN.TTF"              -- the narrowest the client shi
 --- Feature-detected and never assumed: where the call is missing the line is still selected and
 --- focused, which is the old behaviour and still works with Ctrl+C. The message says which of the
 --- two just happened, because "copied" when nothing was copied is worse than no message at all.
-function U.Copy(text)
-    if type(text) ~= "string" or text == "" then return false end
-    if CopyToClipboard then
-        local ok = pcall(CopyToClipboard, text)
-        if ok then return true end
-    end
+--- ...AND IT IS PROTECTED. Within minutes of shipping the above (5 Oct 2026):
+---
+---     [ADDON_ACTION_FORBIDDEN] AddOn 'BiSGuild' tried to call the protected function 'UNKNOWN()'
+---     [BiSGuild/Core/Window.lua]:54: in function 'Copy'
+---
+--- `CopyToClipboard` is in the census and addons may not call it. The fence proved the NAME exists;
+--- it says nothing about permission, and I read "it is on both baselines" as "we may use it".
+---
+--- Worse, the guard I wrote for exactly this could not work: **a pcall around a forbidden call
+--- returns CLEAN**. The refusal arrives later as an event, so `ok` was true, the window said
+--- "copied", nothing was copied, and the player got a red error. This family measured that on
+--- 3 Oct and wrote it down, and I did not apply it.
+---
+--- So the clipboard is out. Selecting the line and saying which key to press is what an addon may
+--- do, and it is what every export string in every addon has always done.
+function U.Copy()
     return false
 end
 
@@ -84,7 +94,7 @@ local function copyBox(parent, width, console)
         self:SetFocus()
         -- the command box gets the same one-click copy; the logs box does not, because that one is
         -- for typing INTO and copying it would be a surprise
-        if console then U.Flash(U.Copy(self:GetText())) end
+        if console then U.Flash(U.Copy()) end
     end)
     e:SetScript("OnEditFocusGained", function(self) self:HighlightText() end)
     e:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
@@ -292,7 +302,7 @@ function U.Build()
         U.TypeNow()
         self:HighlightText()
         self:SetFocus()
-        U.Flash(U.Copy(self:GetText()))
+        U.Flash(U.Copy())
     end)
     f.hashLine:SetScript("OnEditFocusGained", function(self) self:HighlightText() end)
     f.hashLine:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
