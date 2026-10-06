@@ -73,7 +73,24 @@ $guidName = @{}       # player guid -> short name
 $pulls = New-Object System.Collections.ArrayList
 $cur = $null
 
-foreach ($line in [System.IO.File]::ReadLines($file.FullName)) {
+# READ IT WHILE WOW IS STILL WRITING IT (5 Oct 2026, off Arn's shell):
+#
+#   Exception calling "ReadLines" ... "The process cannot access the file ... because it is being
+#   used by another process."
+#
+# [System.IO.File]::ReadLines asks for FileShare.Read - "others may read, nobody may write" - and
+# the client has the log open for writing the whole time logging is on. So it refused the one case
+# that matters: looking at tonight's raid before logging out of it.
+#
+# FileShare.ReadWrite says we do not mind it being written underneath us, which is true: we read
+# forward once and a line appended behind us is simply not in this report. Telling the player to
+# turn logging off first would have "worked" and been the wrong answer.
+# STILL ONE LINE AT A TIME. A `foreach` over a collected `while` would read the whole 110 MB into
+# memory first, which is precisely what every program that crashes on this file does.
+$stream = [System.IO.File]::Open($file.FullName, [System.IO.FileMode]::Open,
+                                 [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+$reader = New-Object System.IO.StreamReader($stream)
+while ($null -ne ($line = $reader.ReadLine())) {
     $sep = $line.IndexOf("  ")
     if ($sep -lt 0) { continue }
     $body = $line.Substring($sep + 2)
@@ -130,6 +147,9 @@ foreach ($line in [System.IO.File]::ReadLines($file.FullName)) {
         }
     }
 }
+# let go of the client's file the moment we are done with it, even if something above threw
+$reader.Dispose()
+$stream.Dispose()
 
 $counted = @($pulls | Where-Object { $AllPulls -or $_.kill })
 # NOT $dungeons - PowerShell variable names are case-insensitive, so a local $dungeons IS the
@@ -191,20 +211,19 @@ foreach ($r in $rows) { Write-Host ("{0,-16} {1,7}% {2,8}%" -f $r.name, $r.atten
 # ----------------------------------------------------- hand it to the addon ---
 # The WoW folder is the Logs folder with \Logs taken off, so the one path the player gave us
 # reaches every installed copy of the addon.
-# ONE LEVEL UP IS THE ANSWER; the level above that is a BONUS. Logs and Interface are siblings
-# inside the client folder, so dropping \Logs is the whole derivation and it works at any depth.
-# Going up a second level finds the OTHER clients installed beside this one, which is worth having -
-# but it must never be the only way, or a Logs folder that is not nested two deep writes nothing.
-# (The Lua side had exactly that bug: Arn set x:\logs and the addon then denied knowing it.)
+# THE REPORT GOES WHERE THE LOG CAME FROM, AND NOWHERE ELSE (5 Oct 2026).
+#
+# This used to write into every client installed beside this one. It sounded generous and it was
+# wrong: Arn read a Forever dungeon log and it overwrote the Black Temple report sitting in TBC.
+# A client's raid record is about THAT client's raids, and quietly replacing one set of numbers with
+# an unrelated set is the worst thing a tool like this can do - the numbers still look right.
+#
+# Logs and Interface are siblings inside the client folder, so dropping \Logs is the whole
+# derivation, and it works at any depth. Somebody who wants the numbers in two clients runs it
+# twice, which is a sentence, not a surprise.
 $client = Split-Path $Logs -Parent
 $roots = @()
 if ($client) { $roots += $client }
-$wowRoot = Split-Path $client -Parent
-if ($wowRoot) {
-    foreach ($d in (Get-ChildItem -LiteralPath $wowRoot -Directory -ErrorAction SilentlyContinue)) {
-        if ($roots -notcontains $d.FullName) { $roots += $d.FullName }
-    }
-}
 $written = @()
 foreach ($root in $roots) {
     $addon = Join-Path $root "Interface\AddOns\BiSGuild"
