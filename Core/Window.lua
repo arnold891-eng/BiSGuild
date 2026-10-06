@@ -344,7 +344,14 @@ function U.Refresh()
         f.note:SetText("")
         return
     end
-    local lines = { T().text("accent", (r.zones or "?") .. "  (" .. (r.kills or 0) .. " kill(s))") }
+    -- OVER HOW MANY NIGHTS, not just the last one. A percentage with no denominator on screen is a
+    -- percentage somebody will argue with, and they would be right to: 100% of one night is not a
+    -- record.
+    local over = (tonumber(r.nights) or 1)
+    local lines = {
+        T().text("accent", ("%d raid night(s) on record"):format(over)),
+        T().text("muted", "last: " .. (r.zones or "?") .. " (" .. (r.kills or 0) .. " kill(s))"),
+    }
     for i, row in ipairs(P.Rows()) do
         if i > 8 then lines[#lines + 1] = T().text("muted", "...and more, /bisg report for all") break end
         local a, c = row.attend or 0, row.consumes or 0

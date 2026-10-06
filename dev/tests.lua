@@ -368,7 +368,7 @@ H.section("a report that was written")
 do
     -- exactly the shape logreport.py writes
     _G.BiSGuildReport = {
-        written = 1791182045, kills = 2, zones = "Illidan Stormrage",
+        written = 1791182045, kills = 2, nights = 7, zones = "Illidan Stormrage",
         rows = {
             { name = "Belbearr", attend = 100, consumes = 0 },
             { name = "Kumlust", attend = 100, consumes = 100 },
@@ -389,6 +389,15 @@ do
     local printed = table.concat(said, "\n", before + 1, #said)
     H.ok(printed:find("Kumlust", 1, true) ~= nil, "/bisg report prints the people in it")
     H.ok(printed:find("Illidan Stormrage", 1, true) ~= nil, "and says which bosses it came from")
+
+    -- A PERCENTAGE NEEDS ITS DENOMINATOR ON SCREEN (5 Oct 2026). Arn asked how anyone keeps track
+    -- of attendance over time - and the answer only means something if the window says how many
+    -- nights it is over. 100% of one night is not a record, and somebody will argue with it.
+    NS.U.Show()
+    local shown = NS.U.frame.report:GetText()
+    H.ok(shown:find("7 raid night", 1, true) ~= nil,
+         "the window says how many nights the numbers are over", shown)
+    NS.U.Hide()
     H.ok(printed:find("100%", 1, true) ~= nil, "with the percentages")
 
     -- a half-written or hand-mangled file must not take the addon down with it
