@@ -216,10 +216,40 @@ do
     H.ok(f.hashWhat:GetText():find("CurseForge", 1, true) ~= nil,
          "including the only comparison that counts")
 
-    -- clicking finishes the typing AND selects, so nobody waits on a flourish to copy a line
-    U.TypeOut(U.typeTarget)
-    f.hashLine._scripts.OnMouseUp(f.hashLine)
-    H.eq(f.hashLine:GetText(), U.typeTarget, "clicking it finishes the typing at once")
+    -- ONE CLICK COPIES IT (5 Oct 2026). Arn: "when i click that blue part i should not have to
+    -- select and copy when i click it should copy to clipboard with a message saying copied".
+    --
+    -- I nearly said addons cannot reach the clipboard, which is what it has always been - this
+    -- client has CopyToClipboard, and Attune already calls it. The mock is the client's shape: a
+    -- plain global that takes the text.
+    do
+        local realCopy = _G.CopyToClipboard
+        local clipped
+        _G.CopyToClipboard = function(t) clipped = t end
+
+        U.TypeOut(U.typeTarget)
+        f.hashLine._scripts.OnMouseUp(f.hashLine)
+        H.eq(f.hashLine:GetText(), U.typeTarget, "clicking it finishes the typing at once")
+        H.eq(clipped, U.typeTarget, "and puts the whole line on the clipboard")
+        H.ok(f.flash:IsShown() and f.flash:GetText():find("copied", 1, true) ~= nil,
+             "and says so", f.flash:GetText())
+
+        -- the command box copies too
+        clipped = nil
+        f.cmd._scripts.OnMouseUp(f.cmd)
+        H.ok(clipped ~= nil and clipped:find("logreport.ps1", 1, true) ~= nil,
+             "the command copies on one click as well")
+
+        -- A CLIENT WITHOUT THE CALL must not claim it copied. Saying "copied" when nothing was is
+        -- worse than saying nothing: the player pastes stale clipboard into a shell.
+        _G.CopyToClipboard = nil
+        f.hashLine._scripts.OnMouseUp(f.hashLine)
+        H.ok(f.flash:GetText():find("Ctrl+C", 1, true) ~= nil,
+             "with no clipboard call it says to press Ctrl+C instead", f.flash:GetText())
+        H.ok(f.flash:GetText():find("copied", 1, true) == nil, "and does NOT claim it copied")
+
+        _G.CopyToClipboard = realCopy
+    end
 
     -- NOTHING MAY PRINT THROUGH THE WARNING. The box that did is empty and hidden now, and the
     -- warning sits above anything the window makes after it.
