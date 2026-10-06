@@ -215,16 +215,32 @@ def main(path, kills_only=True, paste=False, review=False, write=False, include_
     }
     write_history(path, nights)
 
+    # A RAID DAY IS THE WHOLE DAY (Arn, 5 Oct: "i guess we can count a raid day as the whole day not
+    # just 3 hr window some people run more than 3 hours").
+    #
+    # Stored per LOG, because that is what makes re-running the same log replace its entry instead
+    # of counting it twice. Counted per DAY: logs from one date are added together first, so a
+    # six-hour clear in one log and a client restarted halfway through a raid both come out as
+    # exactly one night. Each key doing the job it is good at.
+    days = {}
+    for n in nights.values():
+        key = n.get("date") or n["log"]        # an unparseable filename is its own day
+        d = days.setdefault(key, {"kills": 0, "present": defaultdict(int), "ready": defaultdict(int)})
+        d["kills"] += n["kills"]
+        for who, saw in n["present"].items():
+            d["present"][who] += saw
+            d["ready"][who] += n["ready"].get(who, 0)
+
     # A NIGHT IS EARNED BY HALF ITS KILLS. present*2 >= kills, never present >= kills/2: three kills
     # and one attendance is 1 against 1.5, and a raid record does not go near floating point.
     earned, seen_pulls, ready_pulls = defaultdict(int), defaultdict(int), defaultdict(int)
-    for n in nights.values():
-        for who, saw in n["present"].items():
-            if saw * 2 >= n["kills"]:
+    for d in days.values():
+        for who, saw in d["present"].items():
+            if saw * 2 >= d["kills"]:
                 earned[who] += 1
             seen_pulls[who] += saw
-            ready_pulls[who] += n["ready"].get(who, 0)
-    raided = max(1, len(nights))
+            ready_pulls[who] += d["ready"][who]
+    raided = max(1, len(days))
 
     rows = []
     for who in earned:

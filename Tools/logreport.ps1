@@ -268,20 +268,40 @@ $out = [ordered]@{ version = 1; nights = @($nights.Values | Sort-Object { $_.log
                                (New-Object System.Text.UTF8Encoding $false))
 
 # ------------------------------------------------- the numbers, over all of it
+# A RAID DAY IS THE WHOLE DAY (Arn, 5 Oct: "i guess we can count a raid day as the whole day not
+# just 3 hr window some people run more than 3 hours").
+#
+# The history is stored per LOG, because that is what makes re-running the same log replace its
+# entry instead of counting it twice. But the UNIT is the day: logs from one date are added
+# together first, so a six-hour clear in one log and a client restarted halfway through a raid both
+# come out as exactly one night. Keyed by log, counted by day - each key doing the job it is good at.
+#
 # A NIGHT IS EARNED BY HALF ITS KILLS (Arn, 4 Oct: "if there were there for at least half the kills,
 # sometimes life happens"). Asked as present*2 >= kills, never present >= kills/2: three kills and
 # one attendance is 1 against 1.5, and a raid record does not go near floating point.
-$allNights = @($nights.Values)
-$earned = @{}; $seenPulls = @{}; $readyPulls = @{}
-foreach ($n in $allNights) {
+$days = @{}
+foreach ($n in @($nights.Values)) {
+    $key = if ($n.date) { $n.date } else { $n.log }     # an unparseable filename is its own day
+    if (-not $days.ContainsKey($key)) { $days[$key] = @{ kills = 0; present = @{}; ready = @{} } }
+    $d = $days[$key]
+    $d.kills += $n.kills
     foreach ($who in $n.present.Keys) {
-        if (-not $earned.ContainsKey($who)) { $earned[$who] = 0; $seenPulls[$who] = 0; $readyPulls[$who] = 0 }
-        if ($n.present[$who] * 2 -ge $n.kills) { $earned[$who]++ }
-        $seenPulls[$who] += $n.present[$who]
-        $readyPulls[$who] += $n.ready[$who]
+        if (-not $d.present.ContainsKey($who)) { $d.present[$who] = 0; $d.ready[$who] = 0 }
+        $d.present[$who] += $n.present[$who]
+        $d.ready[$who]   += $n.ready[$who]
     }
 }
-$raided = $allNights.Count
+
+$earned = @{}; $seenPulls = @{}; $readyPulls = @{}
+foreach ($d in $days.Values) {
+    foreach ($who in $d.present.Keys) {
+        if (-not $earned.ContainsKey($who)) { $earned[$who] = 0; $seenPulls[$who] = 0; $readyPulls[$who] = 0 }
+        if ($d.present[$who] * 2 -ge $d.kills) { $earned[$who]++ }
+        $seenPulls[$who] += $d.present[$who]
+        $readyPulls[$who] += $d.ready[$who]
+    }
+}
+$raided = $days.Count
 $rows = foreach ($who in $earned.Keys) {
     [pscustomobject]@{
         name     = $who
