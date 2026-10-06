@@ -38,6 +38,25 @@ local PS_BLUE = { 0.004, 0.141, 0.337, 0.98 }    -- #012456
 local PS_FONT = "Fonts\\ARIALN.TTF"              -- the narrowest the client ships; the closest to a
                                                  -- console face without shipping a font of our own
 
+--- ONE CLICK PUTS IT ON THE CLIPBOARD (5 Oct 2026). Arn: "when i click that blue part i should not
+--- have to select and copy when i click it should copy to clipboard with a message saying copied".
+---
+--- I nearly told him addons cannot reach the clipboard, which is what it has always been. This
+--- client has `CopyToClipboard` - nine clipboard names in the Forever census, two on TBC, and Attune
+--- already calls it. Checking beat remembering again.
+---
+--- Feature-detected and never assumed: where the call is missing the line is still selected and
+--- focused, which is the old behaviour and still works with Ctrl+C. The message says which of the
+--- two just happened, because "copied" when nothing was copied is worse than no message at all.
+function U.Copy(text)
+    if type(text) ~= "string" or text == "" then return false end
+    if CopyToClipboard then
+        local ok = pcall(CopyToClipboard, text)
+        if ok then return true end
+    end
+    return false
+end
+
 --- A box whose whole contents select on one click. The point of the window.
 local function copyBox(parent, width, console)
     local e = CreateFrame("EditBox", nil, parent)
@@ -60,7 +79,13 @@ local function copyBox(parent, width, console)
     end
     -- click anywhere in it and the whole line is selected, ready for Ctrl+C. Without this the
     -- player drags across a line longer than the box, which is exactly the fiddling to avoid.
-    e:SetScript("OnMouseUp", function(self) self:HighlightText() self:SetFocus() end)
+    e:SetScript("OnMouseUp", function(self)
+        self:HighlightText()
+        self:SetFocus()
+        -- the command box gets the same one-click copy; the logs box does not, because that one is
+        -- for typing INTO and copying it would be a surprise
+        if console then U.Flash(U.Copy(self:GetText())) end
+    end)
     e:SetScript("OnEditFocusGained", function(self) self:HighlightText() end)
     e:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     return e
@@ -154,8 +179,24 @@ function U.Build()
     f.caret:SetTextColor(0.88, 0.92, 1, 1)
     f.caret:SetText("_")
 
+    -- ON TOP OF EVERYTHING, including the warning: a "copied" that appears behind the thing you
+    -- just clicked is the hash box printing through the warning all over again.
+    f.flash = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    f.flash:SetPoint("TOP", f, "TOP", 0, -32)
+    f.flash:Hide()
+
     f.cmdWrap:SetScript("OnUpdate", function(self, elapsed)
         self.t = (self.t or 0) + elapsed
+        -- the copied notice fades itself out
+        if f.flash and f.flashUntil then
+            local left = f.flashUntil - (GetTime and GetTime() or 0)
+            if left <= 0 then
+                f.flash:Hide()
+                f.flashUntil = nil
+            else
+                f.flash:SetAlpha(math.min(1, left))
+            end
+        end
         -- 2 Hz, the same rate the house console blinks at, so two BiS windows open at once do not
         -- blink against each other
         if f.caret then f.caret:SetAlpha(((self.t % 1) < 0.5) and 1 or 0) end
@@ -251,6 +292,7 @@ function U.Build()
         U.TypeNow()
         self:HighlightText()
         self:SetFocus()
+        U.Flash(U.Copy(self:GetText()))
     end)
     f.hashLine:SetScript("OnEditFocusGained", function(self) self:HighlightText() end)
     f.hashLine:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
@@ -312,6 +354,23 @@ function U.TypeNow()
     if U.typeTarget then
         U.typeAt = #U.typeTarget
         if U.frame and U.frame.hashLine then U.frame.hashLine:SetText(U.typeTarget) end
+    end
+end
+
+--- SAY IT WORKED, AND SAY WHICH. Arn asked for "a message saying copied" - and the honest message
+--- depends on whether the client actually has the call, because "copied" when nothing was copied is
+--- worse than silence. It fades on its own: a notice that needs dismissing is a second job.
+U.FLASH_FOR = 2.5
+
+function U.Flash(copied)
+    local f = U.frame
+    if not f then return end
+    f.flashUntil = (GetTime and GetTime() or 0) + U.FLASH_FOR
+    f.flashText = copied and "copied to the clipboard" or "selected - press Ctrl+C"
+    if f.flash then
+        f.flash:SetText(T().text(copied and "good" or "gold", f.flashText))
+        f.flash:SetAlpha(1)
+        f.flash:Show()
     end
 end
 
