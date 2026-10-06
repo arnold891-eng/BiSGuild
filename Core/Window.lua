@@ -294,7 +294,6 @@ function U.Build()
     -- The command box got this right from the start - a FontString beside the box - and the hash
     -- line baked it in. A decoration that travels with the thing being copied is not a decoration.
     f.hashPrompt = warn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    f.hashPrompt:SetPoint("BOTTOMLEFT", 16, 68)
     if f.hashPrompt.SetFont then pcall(f.hashPrompt.SetFont, f.hashPrompt, PS_FONT, 12, "") end
     f.hashPrompt:SetTextColor(0.98, 0.98, 0.55, 1)
     f.hashPrompt:SetText("")
@@ -321,6 +320,12 @@ function U.Build()
     f.hashLine:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     f.hashLine:SetText("")
     f.hashLine:Hide()
+
+    -- ANCHORED TO THE BOX, not to the warning with a guessed offset. Arn: "ps> in the window get a
+    -- little cut off" - it was placed by a number I worked out from the bottom of the frame, which
+    -- stops being right the moment anything above it changes height. Hung off the box's own top-left
+    -- it lines up with the first line of text and cannot drift again.
+    f.hashPrompt:SetPoint("TOPLEFT", f.hashLine, "TOPLEFT", 6, -3)
 
     -- the hash line, shown under the command once asked for
     f.hashLabel = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
