@@ -26,11 +26,36 @@ local function autoMethods(t)
     end })
 end
 
-local function newTexture()
-    local t = { _shown = true }
-    function t:SetAllPoints() end
-    function t:SetPoint() end
-    function t:ClearAllPoints() end
+-- ONE SHAPE FOR EVERY ANCHOR (6 Oct 2026): { point, rel, relPoint, x, y }. The number form
+-- SetPoint("TOPLEFT", 12, -10) is relative to the PARENT with relPoint = point - rel stays nil for
+-- a region (the fit check reads nil as "my parent") and is the parent for a frame, as before.
+local function keepPoint(self, point, a, b, c, d)
+    self._points = self._points or {}
+    if type(a) == "table" then
+        table.insert(self._points, { point = point, rel = a, relPoint = b or point, x = c or 0, y = d or 0 })
+    else
+        table.insert(self._points, { point = point, rel = nil, relPoint = point, x = a or 0, y = b or 0 })
+    end
+end
+
+-- WHAT SIZE A FONT TEMPLATE REALLY IS. The mock used 9 pt for every FontString, so a header made
+-- with GameFontNormal (12 pt on the client) measured a quarter narrower than it draws - the mock
+-- kinder than the client, and a fit check would pass labels that run out. Sizes from the client's
+-- FontStyles (TBC/Classic family); not probed on Forever - UNVERIFIED there.
+local FONT_SIZE = {
+    GameFontNormal = 12, GameFontHighlight = 12, GameFontDisable = 12,
+    GameFontNormalSmall = 10, GameFontHighlightSmall = 10, GameFontDisableSmall = 10,
+}
+H.FONT_SIZE = FONT_SIZE
+
+local function newTexture(owner)
+    local t = { _shown = true, _parent = owner, _isTexture = true }
+    function t:SetAllPoints() self._all = true end
+    -- size and anchor REMEMBERED: a label pinned beside an icon starts where the icon ends, and the
+    -- fit check cannot know that if the icon forgot both
+    function t:SetPoint(...) keepPoint(self, ...) end
+    function t:ClearAllPoints() self._points = {} end
+    function t:GetParent() return self._parent end
     function t:SetWidth(w) self._w = w end
     function t:SetHeight(h) self._h = h end
     function t:SetSize(w, h) self._w, self._h = w, h end
@@ -59,18 +84,18 @@ local function newTexture()
     return autoMethods(t)
 end
 
-local function newFontString(owner)
-    local f = { _text = "", _shown = true, _alpha = 1, _size = 9, _parent = owner }
+-- EVERY LABEL, KEPT, WITH WHAT IT IS PINNED TO (6 Oct 2026, ported from BiSTools). Arn found
+-- labels running out of a window with the suite green. H.labels is walked by the fit check in
+-- dev/tests.lua.
+H.labels = {}
+
+local function newFontString(owner, template)
+    local f = { _text = "", _shown = true, _alpha = 1, _size = FONT_SIZE[template] or 9, _parent = owner,
+                _isLabel = true }
+    H.labels[#H.labels + 1] = f
     function f:SetText(v) self._text = tostring(v or "") end
     function f:GetText() return self._text end
-    function f:SetPoint(point, a, b, c, d)
-        self._points = self._points or {}
-        if type(a) == "table" then
-            table.insert(self._points, { point = point, rel = a, relPoint = b, x = c or 0, y = d or 0 })
-        else
-            table.insert(self._points, { point = point, rel = nil, relPoint = point, x = a or 0, y = b or 0 })
-        end
-    end
+    function f:SetPoint(...) keepPoint(self, ...) end
     function f:OffsetFor(point)
         for _, p in ipairs(self._points or {}) do
             if p.point == point then return p.x, p.y end
@@ -107,7 +132,10 @@ local function newFontString(owner)
         self._font, self._size = path, size
     end
     function f:GetFont() return self._font, self._size end
-    function f:SetFontObject(o) self._fontObject = o; self._font = self._font or "Fonts\\FRIZQT__.TTF" end
+    function f:SetFontObject(o)
+        self._fontObject = o; self._font = self._font or "Fonts\\FRIZQT__.TTF"
+        if FONT_SIZE[o] then self._size = FONT_SIZE[o] end
+    end
     function f:SetWordWrap() end
     function f:Show() self._shown = true end
     function f:Hide() self._shown = false end
@@ -121,9 +149,9 @@ end
 
 H.frames = {}
 
-local function newFrame(ftype, name, parent)
+local function newFrame(ftype, name, parent, template)
     local fr = {
-        _type = ftype, _name = name, _parent = parent,
+        _type = ftype, _name = name, _parent = parent, _template = template,
         _scripts = {}, _events = {}, _shown = true,
         _w = 200, _h = 24, _text = "", _enabled = true,
     }
@@ -191,8 +219,8 @@ local function newFrame(ftype, name, parent)
         end
         return true
     end
-    function fr:CreateTexture() local t = newTexture(); self._regions = self._regions or {}; table.insert(self._regions, t); return t end
-    function fr:CreateFontString() local f = newFontString(self); self._regions = self._regions or {}; table.insert(self._regions, f); return f end
+    function fr:CreateTexture() local t = newTexture(self); self._regions = self._regions or {}; table.insert(self._regions, t); return t end
+    function fr:CreateFontString(_, _, template) local f = newFontString(self, template); self._regions = self._regions or {}; table.insert(self._regions, f); return f end
     function fr:SetScript(k, fn) self._scripts[k] = fn end
     function fr:GetScript(k) return self._scripts[k] end
     -- A FRAME REMEMBERS ITS LEVEL. Both were auto no-ops, so "does this overlay actually sit above
@@ -211,6 +239,13 @@ local function newFrame(ftype, name, parent)
     function fr:SetVerticalScroll(v) self._scroll = v end
     function fr:GetVerticalScroll() return self._scroll or 0 end
     function fr:SetScrollChild(c) self._child = c end
+
+    -- A BUTTON KEEPS ITS WORDS (6 Oct 2026). SetText was an auto no-op, so "does the button's
+    -- label fit the button" had nothing to measure.
+    if ftype == "Button" then
+        function fr:SetText(v) self._text = tostring(v or "") end
+        function fr:GetText() return self._text end
+    end
 
     if ftype == "EditBox" then
         function fr:SetText(v)
