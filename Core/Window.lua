@@ -367,6 +367,27 @@ function U.Build()
     f.report:SetJustifyH("LEFT")
     f.report:SetJustifyV("TOP")
 
+    -- THE BOSSES GO IN THE TOOLTIP (6 Oct 2026). "last: <every boss>" was one line: a full Black
+    -- Temple night is nine names, ~930 px on a 556 px line, so it ran out of the window. The fit
+    -- check caught it. One bar, one label: the line keeps the count, the hover keeps the names.
+    -- Covers the report's two header lines.
+    f.lastHit = CreateFrame("Frame", nil, f)
+    f.lastHit:SetPoint("TOPLEFT", 12, -204)
+    f.lastHit:SetSize(W - 24, 26)
+    f.lastHit:EnableMouse(true)
+    f.lastHit:SetScript("OnEnter", function(self)
+        local r = ns.P.Report()
+        if not (r and GameTooltip) then return end
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText(("Last raid: %d kill(s)"):format(tonumber(r.kills) or 0))
+        for boss in tostring(r.zones or "?"):gmatch("[^,]+") do
+            GameTooltip:AddLine((boss:gsub("^%s+", "")), 1, 1, 1)
+        end
+        GameTooltip:Show()
+    end)
+    f.lastHit:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+    f.lastHit:Hide()
+
     f:Hide()
     U.frame = f
     return f
@@ -519,15 +540,17 @@ function U.Refresh()
         f.report:SetText(T().text("muted",
             "No report yet. Run the command above after a raid, then /reload."))
         f.note:SetText("")
+        f.lastHit:Hide()
         return
     end
+    f.lastHit:Show()
     -- OVER HOW MANY NIGHTS, not just the last one. A percentage with no denominator on screen is a
     -- percentage somebody will argue with, and they would be right to: 100% of one night is not a
     -- record.
     local over = (tonumber(r.nights) or 1)
     local lines = {
         T().text("accent", ("%d raid night(s) on record"):format(over)),
-        T().text("muted", "last: " .. (r.zones or "?") .. " (" .. (r.kills or 0) .. " kill(s))"),
+        T().text("muted", "last raid: " .. (r.kills or 0) .. " kill(s) - hover for the bosses"),
     }
     for i, row in ipairs(P.Rows()) do
         if i > 8 then lines[#lines + 1] = T().text("muted", "...and more, /bisg report for all") break end

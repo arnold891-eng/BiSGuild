@@ -1,5 +1,6 @@
 ## Interface: 20506, 16001
 ## Title: |cffb980ffBiS|r Guild
+## Category: |cffb980ffBiS>|rAddons
 ## Notes: Raid attendance and consumables, measured instead of remembered.
 ## Author: Arn
 ## Version: 0.0.1

@@ -52,7 +52,7 @@ fire("ADDON_LOADED", "BiSGuild")
 H.ok(type(_G.BiSGuildDB) == "table" and _G.BiSGuildDB.comm == true, "SavedVariables shaped with defaults on first load")
 
 H.section("embedded libs are canon (drift fences)")
-H.eq(_G.LibBiSComm.MINOR, 7, "LibBiSComm minor 7")
+H.eq(_G.LibBiSComm.MINOR, 9, "LibBiSComm minor 9")
 local function listed(rel) for _, f in ipairs(FILES) do if f == rel then return true end end return false end
 H.ok(listed("Libs/BiSTheme/Console.lua"), "TOC lists the Console embed")
 H.ok(listed("Libs/LibBiSComm-1.0/LibBiSComm-1.0.lua"), "TOC lists the comm embed")
@@ -554,6 +554,238 @@ do
     _G.BiSGuildReport = nil
 end
 
+--=============================================================================
+-- DOES EVERY LABEL FIT ITS WINDOW (6 Oct 2026, ported from BiSTools). Arn found labels running out
+-- of a BiSTools window with that suite green, and asked for "a check for cut offs or overflows that
+-- happens often". Every shown label inside the window is measured where it actually STARTS -
+-- following what it is pinned to: the window's edge, a frame, another label - and must end inside.
+--
+-- WIDTH, CALIBRATED ON THE CLIENT, NOT GUESSED: capitals and digits 0.75 px per point, lowercase
+-- 0.55, spaces and punctuation 0.3 (BiSTools, from Arn's screenshots). Inline |T..:w:h|t textures
+-- take their width, colour escapes none. The mock's own GetStringWidth (0.6 flat) stays as it is:
+-- BiSTheme's T.Fit trims by it, and changing it changes what the addon draws.
+--=============================================================================
+local function lineWidth(t, size)
+    local tex = 0
+    t = t:gsub("|T[^|]-:(%d+):%d+[^|]*|t", function(w) tex = tex + tonumber(w) return "" end)
+    t = t:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+    local px = 0
+    for ch in t:gmatch(".") do
+        if ch:match("[%u%d]") then px = px + 0.75 elseif ch:match("%l") then px = px + 0.55 else px = px + 0.3 end
+    end
+    return px * size + tex
+end
+-- A "\n" is a new line, not a character: the widest LINE is the label's width. (BiSTools has no
+-- multi-line labels; this window's warning is one.)
+local function widest(text, size)
+    local best, bestLine = 0, ""
+    for line in (tostring(text or "") .. "\n"):gmatch("(.-)\n") do
+        local w = lineWidth(line, size)
+        if w > best then best, bestLine = w, line end
+    end
+    return best, bestLine
+end
+local function hasL(p) return p:find("LEFT") ~= nil end
+local function hasR(p) return p:find("RIGHT") ~= nil end
+
+-- left edge and width of any region, in px from the window's left; nil when it cannot be followed.
+-- FRAMES ARE FOLLOWED, not assumed to span the window: the warning hangs off two corners, a button
+-- off one corner and its own size. A frame with no anchor at all spans the window, as in BiSTools.
+local box
+local function edgeX(rel, relPoint, root, depth)
+    local l, w = box(rel, root, depth + 1)
+    if not l then return nil end
+    if hasL(relPoint) then return l elseif hasR(relPoint) then return l + w end
+    return l + w / 2
+end
+box = function(r, root, depth)
+    depth = depth or 0
+    if r == root then return 0, root._w end
+    if r == nil or r == _G.UIParent or depth > 10 then return nil end
+    if r._all then return box(r._parent, root, depth + 1) end
+    local pts = r._points
+    if not pts or #pts == 0 then
+        if r._isLabel or r._isTexture then return nil end
+        return 0, root._w
+    end
+    local lp, rp, mid
+    for _, p in ipairs(pts) do
+        if hasL(p.point) then lp = lp or p elseif hasR(p.point) then rp = rp or p else mid = mid or p end
+    end
+    local L, R
+    if lp then L = edgeX(lp.rel or r._parent, lp.relPoint, root, depth) if not L then return nil end L = L + lp.x end
+    if rp then R = edgeX(rp.rel or r._parent, rp.relPoint, root, depth) if not R then return nil end R = R + rp.x end
+    -- ANCHORED BOTH SIDES = BOUNDED: the anchors set the width, not the text
+    if L and R then return L, R - L end
+    local w = r._w
+    if r._isLabel and not w then w = (widest(r._text, r._size or 9)) end
+    w = w or 0
+    if L then return L, w end
+    if R then return R - w, w end
+    local c = edgeX(mid.rel or r._parent, mid.relPoint, root, depth)
+    if not c then return nil end
+    return c + mid.x - w / 2, w
+end
+local function insideShown(r, root)
+    if r._shown == false then return false end
+    local p = r._parent
+    while p do
+        if p._shown == false then return false end
+        if p == root then return true end
+        p = p._parent
+    end
+    return false
+end
+local function plain(t) return (tostring(t):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")) end
+-- the font a button's own label draws in: UIPanelButtonTemplate's NormalFont is GameFontNormal
+local BUTTON_SIZE = { UIPanelButtonTemplate = H.FONT_SIZE.GameFontNormal }
+
+local function fitsIn(root, what)
+    local width, bad, measured = root._w, {}, 0
+    for _, fs in ipairs(H.labels) do
+        if fs._text ~= "" and insideShown(fs, root) then
+            local l, span = box(fs, root)
+            if l then
+                measured = measured + 1
+                local need, line = widest(fs._text, fs._size or 9)
+                -- A LABEL PINNED LEFT AND RIGHT (or given a width) is bounded by its span. The code
+                -- breaks those lines itself with "\n" and never asks for word wrap, so a line wider
+                -- than the span is one the client wraps or clips where nobody planned it: measured.
+                local pl, pr = false, false
+                for _, p in ipairs(fs._points or {}) do
+                    if hasL(p.point) then pl = true elseif hasR(p.point) then pr = true end
+                end
+                local bounded = fs._w ~= nil or (pl and pr)
+                if bounded and need > span + 1 then
+                    bad[#bad + 1] = ("%q needs %d px, its span is %d"):format(plain(line), need, span)
+                elseif l < -1 or l + span > width + 1 then
+                    bad[#bad + 1] = ("%q needs %d px from %d, the window is %d"):format(plain(line), need, l, width)
+                end
+            end
+        end
+    end
+    -- A BUTTON'S WORDS are a label too: centred on the button, and must fit the button
+    for _, b in ipairs(H.frames) do
+        local size = BUTTON_SIZE[b._template]
+        if size and b._text ~= "" and insideShown(b, root) then
+            local l, bw = box(b, root)
+            if l then
+                measured = measured + 1
+                local need = lineWidth(b._text, size)
+                if need > bw + 1 then
+                    bad[#bad + 1] = ("button %q needs %d px, the button is %d"):format(plain(b._text), need, bw)
+                elseif l < -1 or l + bw > width + 1 then
+                    bad[#bad + 1] = ("button %q sits %d..%d, the window is %d"):format(plain(b._text), l, l + bw, width)
+                end
+            end
+        end
+    end
+    H.ok(measured > 0, what .. ": the fit check measured something (a check that sees nothing proves nothing)")
+    H.ok(#bad == 0, what .. ": every label fits - " .. table.concat(bad, "; "))
+    H.say(("  (fit) %s: %d label(s) measured"):format(what, measured))
+    return measured
+end
+
+H.section("every label fits the window")
+do
+    local U = NS.U
+    local f = U.Build()
+    local tick = f.cmdWrap._scripts.OnUpdate
+    local function show()
+        U.Show()
+        -- the console fades its words in on the ticker, by the CLOCK: run a second of it, as the
+        -- client would before anybody reads the window
+        for _ = 1, 4 do H.clock = H.clock + 0.3 tick(f.cmdWrap, 0.3) end
+        U.TypeNow()
+    end
+    P.SetLogs("C:\\Program Files (x86)\\World of Warcraft\\_anniversary_\\Logs")
+    _G.BiSGuildReport = nil
+
+    -- empty: the warning, nothing answered, no report
+    U.agreed, U.hash = nil, nil
+    show()
+    fitsIn(f, "the warning, fresh")
+
+    -- the warning with the hash check typed out, and the "press Ctrl+C" notice from clicking it
+    U.hash = true
+    show()
+    f.hashLine._scripts.OnMouseUp(f.hashLine)
+    fitsIn(f, "the warning with the hash check open")
+
+    -- past the warning, no report yet
+    U.agreed, U.hash = true, nil
+    show()
+    fitsIn(f, "the command, no report yet")
+
+    -- past the warning with no logs folder: the header note asks for it
+    _G.BiSGuildDB.logs = nil
+    show()
+    fitsIn(f, "the command, no logs folder")
+    P.SetLogs("C:\\Program Files (x86)\\World of Warcraft\\_anniversary_\\Logs")
+
+    -- POPULATED, WITH THE LONGEST REAL THINGS IT WILL SHOW. A full Black Temple night is nine
+    -- encounters, and logreport writes them all into `zones` (ENCOUNTER_START's names, sorted).
+    -- Forever names carry a surname ("Name Surname"); a first name may be 12 letters.
+    _G.BiSGuildReport = {
+        written = 1791182045, kills = 9, nights = 12,
+        zones = "Gurtogg Bloodboil, High Warlord Naj'entus, Illidan Stormrage, Mother Shahraz, "
+             .. "Reliquary of Souls, Shade of Akama, Supremus, Teron Gorefiend, The Illidari Council",
+        rows = {},
+    }
+    local names = { "Kumlustrande Stormwhisper", "Belbearr Ironhide", "Interrup Moonfallow",
+                    "Hrsalinge Duskbringer", "Overlordwyn Blackthorne", "Kurki Saltmarsh",
+                    "Thundermaul Highcrest", "Feathermoon Wildmantle", "Ashenvalea Grimstone",
+                    "Dreamscythe Vandermolen" }
+    for i, n in ipairs(names) do
+        _G.BiSGuildReport.rows[i] = { name = n, attend = 100 - i * 7, consumes = 100 - i * 9 }
+    end
+    show()
+    fitsIn(f, "the report, a full Black Temple night, long Forever names")
+
+    -- the bosses did not vanish: they moved off the line and into the hover
+    H.ok(f.lastHit:IsShown(), "with a report, the header lines can be hovered")
+    do
+        local tip, real = {}, _G.GameTooltip
+        _G.GameTooltip = setmetatable({
+            SetText = function(_, t) tip[#tip + 1] = t end,
+            AddLine = function(_, t) tip[#tip + 1] = t end,
+        }, { __index = real })
+        f.lastHit._scripts.OnEnter(f.lastHit)
+        _G.GameTooltip = real
+        local all = table.concat(tip, "\n")
+        H.eq(#tip, 10, "the hover says the kills, then one line per boss", all)
+        H.ok(all:find("High Warlord Naj'entus", 1, true) and all:find("The Illidari Council", 1, true),
+             "every boss is named there", all)
+    end
+    _G.BiSGuildReport = nil
+    show()
+    H.ok(not f.lastHit:IsShown(), "and with no report there is nothing to hover")
+
+    U.Hide()
+    U.agreed, U.hash = nil, nil
+    _G.BiSGuildReport = nil
+end
+
 _G.UnitName = realUnitName
+
+-- WHAT AN OPEN WINDOW COSTS, IN CLIENT CALLS (7 Oct 2026). BiSHealing asked the client ~630,000
+-- things a second and every suite was green; Arn: "make sure stuff like this does not happen".
+-- The window ticks every frame while it is open (the cursor, the prompt, the typing). A second of
+-- frames is held to a budget with the family's counter.
+H.section("what a second of the open window costs")
+do
+    local Cost = dofile("../_bisdev/dev/cost.lua")
+    local U = NS.U
+    local f = U.Build()
+    U.Show()
+    local tick = f.cmdWrap._scripts.OnUpdate
+    for _ = 1, 30 do H.clock = H.clock + 0.1 tick(f.cmdWrap, 0.1) end     -- settled, typed out
+    local n, by = Cost.Count(function()
+        for _ = 1, 60 do H.clock = H.clock + 1 / 60 tick(f.cmdWrap, 1 / 60) end
+    end)
+    H.say(("   cost: open window, 1 s = %d calls (%s)"):format(n, Cost.Top(by, 3)))
+    H.ok(n <= 120, "a second of the open window asks the client at most two things a frame: " .. n,
+         Cost.Top(by, 4))
+end
 
 H.report()
