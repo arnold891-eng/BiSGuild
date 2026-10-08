@@ -52,7 +52,7 @@ fire("ADDON_LOADED", "BiSGuild")
 H.ok(type(_G.BiSGuildDB) == "table" and _G.BiSGuildDB.comm == true, "SavedVariables shaped with defaults on first load")
 
 H.section("embedded libs are canon (drift fences)")
-H.eq(_G.LibBiSComm.MINOR, 8, "LibBiSComm minor 8")
+H.eq(_G.LibBiSComm.MINOR, 9, "LibBiSComm minor 9")
 local function listed(rel) for _, f in ipairs(FILES) do if f == rel then return true end end return false end
 H.ok(listed("Libs/BiSTheme/Console.lua"), "TOC lists the Console embed")
 H.ok(listed("Libs/LibBiSComm-1.0/LibBiSComm-1.0.lua"), "TOC lists the comm embed")
@@ -767,5 +767,25 @@ do
 end
 
 _G.UnitName = realUnitName
+
+-- WHAT AN OPEN WINDOW COSTS, IN CLIENT CALLS (7 Oct 2026). BiSHealing asked the client ~630,000
+-- things a second and every suite was green; Arn: "make sure stuff like this does not happen".
+-- The window ticks every frame while it is open (the cursor, the prompt, the typing). A second of
+-- frames is held to a budget with the family's counter.
+H.section("what a second of the open window costs")
+do
+    local Cost = dofile("../_bisdev/dev/cost.lua")
+    local U = NS.U
+    local f = U.Build()
+    U.Show()
+    local tick = f.cmdWrap._scripts.OnUpdate
+    for _ = 1, 30 do H.clock = H.clock + 0.1 tick(f.cmdWrap, 0.1) end     -- settled, typed out
+    local n, by = Cost.Count(function()
+        for _ = 1, 60 do H.clock = H.clock + 1 / 60 tick(f.cmdWrap, 1 / 60) end
+    end)
+    H.say(("   cost: open window, 1 s = %d calls (%s)"):format(n, Cost.Top(by, 3)))
+    H.ok(n <= 120, "a second of the open window asks the client at most two things a frame: " .. n,
+         Cost.Top(by, 4))
+end
 
 H.report()
