@@ -30,7 +30,9 @@
 --   * off means silent AND deaf
 
 -- minor 9 (7 Oct 2026): the cost pass - one roster walk per roster tick, the prefix asked first
-local MAJOR, MINOR = "LibBiSComm-1.0", 9
+-- minor 10 (12 Oct 2026): Forever's own rules (debt 37) - re-announce when the chat lockdown lifts,
+-- the realm's outgoing-message block, RAID only when UnitInRaid says so, a per-sender inbox limit
+local MAJOR, MINOR = "LibBiSComm-1.0", 10
 
 local lib = _G.LibBiSComm
 if lib and (lib.MINOR or 0) >= MINOR then return end   -- an equal or newer copy won
@@ -109,7 +111,18 @@ local function GroupChannel()
     if IsInGroup and LE_PARTY_CATEGORY_INSTANCE and IsInGroup(LE_PARTY_CATEGORY_INSTANCE) then
         return "INSTANCE_CHAT"
     end
-    if IsInRaid and IsInRaid() then return "RAID" end
+    -- RAID ONLY WHEN THE CLIENT SAYS YOU ARE IN ONE (minor 10). Overlord found IsInRaid() can stay
+    -- true right after leaving an instance while RAID refuses every message (Sync.lua); UnitInRaid
+    -- on yourself is the stricter answer. Asked secret-guarded; a hidden answer is "not sure", and
+    -- PARTY still reaches the people beside you.
+    if IsInRaid and IsInRaid() then
+        local sure = true
+        if UnitInRaid then
+            local ok, r = pcall(UnitInRaid, "player")
+            sure = ok and not Secret(r) and r ~= nil and r ~= false
+        end
+        if sure then return "RAID" end
+    end
     if IsInGroup and IsInGroup() then return "PARTY" end
     return nil
 end
@@ -404,9 +417,26 @@ local function ChatLocked()
     local f = C_ChatInfo and C_ChatInfo.InChatMessagingLockdown
     if not f then return false end
     local ok, v = pcall(f)
-    if not ok or Secret(v) then return false end
+    if not ok then return false end
+    -- a HIDDEN answer about the lockdown is itself a sign of one (minor 10; ForeverAuras treats any
+    -- unreadable restriction check as "restricted"): hold, and let the TTL drop what goes stale
+    if Secret(v) then return true end
     return v and true or false
 end
+lib.ChatLocked = ChatLocked
+
+--- THE REALM'S OWN BLOCK (minor 10). C_ChatInfo.AreOutgoingAddonChatMessagesRestricted is a separate
+--- question from the lockdown: not "wait", but "this realm will not carry addon messages from you
+--- right now" (ForeverAuras Transmission.lua asks it first). Held like the lockdown, and named.
+local function OutgoingBlocked()
+    local f = C_ChatInfo and C_ChatInfo.AreOutgoingAddonChatMessagesRestricted
+    if not f then return false end
+    local ok, v = pcall(f)
+    if not ok then return false end
+    if Secret(v) then return true end
+    return v and true or false
+end
+lib.OutgoingBlocked = OutgoingBlocked
 
 local function RawSend(msg, chan)
     if C_ChatInfo and C_ChatInfo.SendAddonMessage then
@@ -454,6 +484,10 @@ function lib:_Pump()
         elseif ChatLocked() then
             self:_Arm(SEND_GAP)
             return
+        elseif OutgoingBlocked() then
+            self._lastError = "this realm is not carrying addon messages right now"
+            self:_Arm(5 * SEND_GAP)
+            return
         elseif now < self.nextSendAt then
             self:_Arm(self.nextSendAt - now)
             return
@@ -481,6 +515,43 @@ function lib:_Pump()
     end
 end
 
+lib.INBOX_BURST, lib.INBOX_RATE = 20, 2
+lib.inbox = lib.inbox or {}
+lib.droppedIn = lib.droppedIn or 0
+
+--- May this sender's message in? A token bucket per sender, refilled by the clock.
+function lib:_Admit(sender)
+    local now = Now()
+    local b = self.inbox[sender]
+    if not b then b = { tokens = self.INBOX_BURST, at = now } self.inbox[sender] = b end
+    if now > b.at then
+        b.tokens = math.min(self.INBOX_BURST, b.tokens + (now - b.at) * self.INBOX_RATE)
+    end
+    b.at = now
+    if b.tokens < 1 then
+        self.droppedIn = self.droppedIn + 1
+        return false
+    end
+    b.tokens = b.tokens - 1
+    return true
+end
+
+--- THE LOCKDOWN LIFTED (minor 10). Messages that waited out a boss died at SEND_TTL, and every
+--- peer's did too - so after every encounter the roster was as stale as the fight was long. On
+--- the lift: send what is still waiting, and say HI - twice, a moment apart, because the others
+--- come out of the lockdown a moment later than we do (LibSpecialization's way, EllesmereUI;
+--- Overlord's catch-up burst). The short-answer rule keeps it from becoming 25 x 25.
+function lib:OnRestrictionChanged()
+    if ChatLocked() or OutgoingBlocked() then return false end
+    self:_Pump()
+    if not InGroup() then return false end
+    local first = 1 + math.random() * 2
+    local function hi() if InGroup() then lib:Hi() end end
+    if not After(first, hi) then hi() end
+    After(first + 3, hi)
+    return true
+end
+
 function lib:OnMessage(prefix, msg, channel, sender)
     if not self.enabled then return end
     -- EVERY ARGUMENT, BEFORE ANYTHING READS ONE (4 Oct 2026). CHAT_MSG_ADDON hands over four
@@ -503,6 +574,10 @@ function lib:OnMessage(prefix, msg, channel, sender)
     if type(msg) ~= "string" then return end
     sender = Short(sender)
     if not sender then return end
+    -- ONE PEER CANNOT FLOOD US (minor 10). A per-sender bucket: INBOX_BURST at once, then
+    -- INBOX_RATE a second (Olympus admits 60 then 2/s; we are far quieter - nothing of ours sends
+    -- more than a message a second). Past it the line is dropped before any parsing, and counted.
+    if not self:_Admit(sender) then return end
 
     local p = split(msg)
     local proto, mod, cmd = tonumber(p[1] or ""), p[2], p[3]
@@ -819,10 +894,13 @@ function lib:Boot()
     reg("CONFIRM_SUMMON")
     reg("CANCEL_SUMMON")
     reg("GUILD_ROSTER_UPDATE")
+    reg("ADDON_RESTRICTION_STATE_CHANGED")     -- Forever: the lockdown starting or lifting (minor 10)
 
     f:SetScript("OnEvent", function(_, event, a1, a2, a3, a4)
         if event == "CHAT_MSG_ADDON" then
             lib:OnMessage(a1, a2, a3, a4)
+        elseif event == "ADDON_RESTRICTION_STATE_CHANGED" then
+            lib:OnRestrictionChanged()
         elseif event == "GUILD_ROSTER_UPDATE" then
             lib._guildDirty = true
         elseif event == "CONFIRM_SUMMON" then
