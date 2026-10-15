@@ -32,7 +32,9 @@
 -- minor 9 (7 Oct 2026): the cost pass - one roster walk per roster tick, the prefix asked first
 -- minor 10 (12 Oct 2026): Forever's own rules (debt 37) - re-announce when the chat lockdown lifts,
 -- the realm's outgoing-message block, RAID only when UnitInRaid says so, a per-sender inbox limit
-local MAJOR, MINOR = "LibBiSComm-1.0", 10
+-- minor 11 (14 Oct 2026): no hook on C_SummonInfo.ConfirmSummon on Forever - a hooked Blizzard
+-- method can break the client until relaunch (Overlord 2.0, seen 11-12 Oct); summons are TBC's
+local MAJOR, MINOR = "LibBiSComm-1.0", 11
 
 local lib = _G.LibBiSComm
 if lib and (lib.MINOR or 0) >= MINOR then return end   -- an equal or newer copy won
@@ -924,7 +926,17 @@ function lib:Boot()
     -- Accept has no event of its own; the popup calls ConfirmSummon(). MINOR 6: on
     -- 2.5.6.69795 that is C_SummonInfo.ConfirmSummon - minor 5 looked only for the
     -- global, found nothing, and never saw an accept.
-    if hooksecurefunc and C_SummonInfo and C_SummonInfo.ConfirmSummon then
+    -- MINOR 11: not on Forever. There a hooksecurefunc on a Blizzard object's method can
+    -- start failing in Blizzard's own caller ("attempt to call a nil value") until the game
+    -- is relaunched (Overlord 2.0 pulled all of its own, 11-12 Oct) - and the summon popup's
+    -- Accept is the caller here. Forever is asked by interface number, as BiSTools' summon
+    -- tool asks it (16000-19999; WOW_PROJECT_ID reads 1 on the beta). Its summon tool does
+    -- not run there, so no accept is missed that anybody reads.
+    local iface = GetBuildInfo and select(4, GetBuildInfo())
+    lib.forever = type(iface) == "number" and iface >= 16000 and iface < 20000
+    if lib.forever then
+        -- no hook
+    elseif hooksecurefunc and C_SummonInfo and C_SummonInfo.ConfirmSummon then
         hooksecurefunc(C_SummonInfo, "ConfirmSummon", function() lib:OnConfirmed() end)
     elseif hooksecurefunc and type(_G.ConfirmSummon) == "function" then
         hooksecurefunc("ConfirmSummon", function() lib:OnConfirmed() end)
