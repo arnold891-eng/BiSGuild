@@ -34,7 +34,10 @@
 -- the realm's outgoing-message block, RAID only when UnitInRaid says so, a per-sender inbox limit
 -- minor 11 (14 Oct 2026): no hook on C_SummonInfo.ConfirmSummon on Forever - a hooked Blizzard
 -- method can break the client until relaunch (Overlord 2.0, seen 11-12 Oct); summons are TBC's
-local MAJOR, MINOR = "LibBiSComm-1.0", 11
+-- minor 12 (14 Oct 2026): SPOT - where guildmates are, for BiS Tools' map: every embedder shares
+-- your spot on the GUILD channel while you move (cascading 15/30/60 s by guild size), one switch
+-- for all of them (/biscomm share on|off), and lib.spots for any addon to draw
+local MAJOR, MINOR = "LibBiSComm-1.0", 12
 
 local lib = _G.LibBiSComm
 if lib and (lib.MINOR or 0) >= MINOR then return end   -- an equal or newer copy won
@@ -897,6 +900,7 @@ function lib:Boot()
     reg("CANCEL_SUMMON")
     reg("GUILD_ROSTER_UPDATE")
     reg("ADDON_RESTRICTION_STATE_CHANGED")     -- Forever: the lockdown starting or lifting (minor 10)
+    if self.StartSpots then self:StartSpots() end -- minor 12: guild spots
 
     f:SetScript("OnEvent", function(_, event, a1, a2, a3, a4)
         if event == "CHAT_MSG_ADDON" then
@@ -970,6 +974,110 @@ function lib:OnRoster()
 end
 
 --------------------------------------------------------------------
+-- SPOT: where your guildmates are, for a map (minor 12)
+--------------------------------------------------------------------
+-- Arn, 14 Oct 2026: "what are the chances we can show all guild locations?" - the game hands an
+-- addon the GROUP's positions only, so BiS clients share their own: "on by default but toggleable,
+-- lets cascading small guild 15 sec as it get bigger maybe once a min" - and in the LIBRARY, so
+-- every BiS addon shares and one switch rules them all ("or does it go in a library?").
+--
+--   SPOT|AT|uiMapID|x|y     x, y 0-1 on that zone map, three decimals; GUILD channel only
+--
+-- Sent only while you MOVE (past SPOT_STEP of the map since the last one), never inside an
+-- instance or with a hidden position, at most every 15 s with up to 20 guildmates online, 30 s up
+-- to 50, 60 s beyond. Received into lib.spots[name] = { map, x, y, at } and fired as "SPOT"; a spot
+-- older than SPOT_STALE is a lie about where somebody is, and dropped. The lib has no SavedVariables:
+-- each embedder remembers the switch (db.commShare) beside the comm switch, as it does /biscomm off.
+lib.spots = lib.spots or {}
+if lib.share == nil then lib.share = true end
+lib.guildMods.SPOT = true
+local SPOT_CHECK, SPOT_STEP, SPOT_STALE = 5, 0.012, 180
+lib.SPOT_CHECK, lib.SPOT_STEP, lib.SPOT_STALE = SPOT_CHECK, SPOT_STEP, SPOT_STALE
+
+local function plainNum(v)
+    if v == nil or Secret(v) or type(v) ~= "number" then return nil end
+    return v
+end
+
+function lib:Sharing() return self.share and true or false end
+function lib:SetSharing(on)
+    self.share = on and true or false
+    if not self.share then self._spotSent = nil end
+end
+
+--- How often to send, by how many guildmates are online.
+function lib:ShareEvery()
+    local ok, _, online = pcall(GetNumGuildMembers)
+    online = ok and plainNum(online) or 0
+    if online <= 20 then return 15 elseif online <= 50 then return 30 end
+    return 60
+end
+
+--- My spot on my zone map, or nil (an instance, a hidden position, no map).
+function lib:MySpot()
+    if not (C_Map and C_Map.GetBestMapForUnit and C_Map.GetPlayerMapPosition) then return nil end
+    if IsInInstance then
+        local ok, inside = pcall(IsInInstance)
+        if not ok or Secret(inside) or inside then return nil end
+    end
+    local ok, map = pcall(C_Map.GetBestMapForUnit, "player")
+    map = ok and plainNum(map) or nil
+    if not map then return nil end
+    local ok2, pos = pcall(C_Map.GetPlayerMapPosition, map, "player")
+    if not ok2 or pos == nil or Secret(pos) then return nil end
+    local ok3, x, y = pcall(function() return pos:GetXY() end)
+    if not ok3 then return nil end
+    x = plainNum(x)
+    y = plainNum(y)
+    if not (x and y) or (x == 0 and y == 0) then return nil end
+    return map, x, y
+end
+
+--- One look (every SPOT_CHECK s): send my spot if I may and should. Answers what it did.
+function lib:ShareTick()
+    if not (self.enabled and self.share) then return "off" end
+    if not (IsInGuild and IsInGuild()) then return "no guild" end
+    local map, x, y = self:MySpot()
+    if not map then return "hidden" end
+    local s, now = self._spotSent, Now()
+    if s and s.map == map and math.abs(s.x - x) < SPOT_STEP and math.abs(s.y - y) < SPOT_STEP then
+        return "still"
+    end
+    if s and now - s.at < self:ShareEvery() then return "wait" end
+    if not self:SendTo("GUILD", "SPOT", "AT", tostring(map), ("%.3f"):format(x), ("%.3f"):format(y)) then
+        return "not sent"
+    end
+    self._spotSent = { map = map, x = x, y = y, at = now }
+    return "sent"
+end
+
+--- Guildmates' spots, the stale ones dropped. name -> { map, x, y, at }
+function lib:Spots()
+    local now = Now()
+    for name, s in pairs(self.spots) do
+        if now - s.at > SPOT_STALE then self.spots[name] = nil end
+    end
+    return self.spots
+end
+
+-- a guildmate's spot (OnMessage already let in only a guild-roster sender, never my own echo)
+lib.handlers.SPOT = lib.handlers.SPOT or {}
+lib.handlers.SPOT.AT = function(sender, map, x, y)
+    map, x, y = tonumber(map), tonumber(x), tonumber(y)
+    if not (map and x and y) or x < 0 or x > 1 or y < 0 or y > 1 then return end
+    local s = { map = map, x = x, y = y, at = Now() }
+    lib.spots[sender] = s
+    fire("SPOT", sender, s)
+end
+
+function lib:StartSpots()
+    if self._spotTicker or not (C_Timer and C_Timer.NewTicker) then return end
+    self._spotTicker = C_Timer.NewTicker(SPOT_CHECK, function() lib:ShareTick() end)
+end
+-- a copy loading after the lib already booted (an upgrade in place) starts it here
+if lib._booted then lib:StartSpots() end
+
+--------------------------------------------------------------------
 -- the one slash: status and the honest off switch
 --------------------------------------------------------------------
 
@@ -986,11 +1094,15 @@ if SlashCmdList then
             lib:SetEnabled(false); say("comm off - silent and deaf until /biscomm on")
         elseif msg == "comm on" or msg == "on" then
             lib:SetEnabled(true); lib:Hi(); say("comm on")
+        elseif msg == "share off" then
+            lib:SetSharing(false); say("share off - your guild no longer sees where you are on their map")
+        elseif msg == "share on" then
+            lib:SetSharing(true); say("share on - your guild sees where you are on their map (while you move, outside instances)")
         else
-            say(("comm %s, lib %d, %d peer(s), running %s")
-                :format(lib:Enabled() and "on" or "off", lib.MINOR, lib:Count(),
+            say(("comm %s, share %s, lib %d, %d peer(s), running %s")
+                :format(lib:Enabled() and "on" or "off", lib:Sharing() and "on" or "off", lib.MINOR, lib:Count(),
                         lib:AddonsBlob() ~= "" and lib:AddonsBlob() or "nothing"))
-            say("/biscomm on | /biscomm off")
+            say("/biscomm on | off  -  /biscomm share on | off")
         end
     end
 end

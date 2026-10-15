@@ -55,11 +55,13 @@ function ns.Comm.Boot()
   if not lib then return end
   lib:RegisterAddon(ADDON, ns.VERSION)
   if db().comm == false then lib:SetEnabled(false) end
+  if db().commShare == false and lib.SetSharing then lib:SetSharing(false) end   -- /biscomm share off (minor 12)
   lib:Boot()
 end
 function ns.Comm.Save()
   local lib = _G.LibBiSComm
   if lib then db().comm = lib:Enabled() end
+  if lib and lib.Sharing then db().commShare = lib:Sharing() end
 end
 
 local f = CreateFrame("Frame")
