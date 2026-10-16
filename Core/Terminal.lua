@@ -35,6 +35,7 @@ K.STRIP = 12                   -- nights in an attendance strip
 -- THE HOVER IS A TINT, NOT A COVER (Arn's screenshot, 16 Oct: the hovered row's item went faded).
 -- The client draws the HIGHLIGHT layer above the text, so a highlight at 0.8 washes the words out.
 K.HOVER = 0.18
+K.WHERE_EVERY = 5              -- seconds between redraws of the WHERE page while it shows
 
 local function T() return ns.T end
 local function S() return ns.S end
@@ -73,6 +74,7 @@ function K.Parse(line, cards, bosses)
     if l == "raiders" then return "raiders" end
     if l == "bosses" then return "bosses" end
     if l == "log" then return "log" end
+    if l == "where" or l == "map" then return "where" end
     if want == "raider" or want == "player" then bosses = {} end
     if want == "boss" then cards = {} end
 
@@ -180,12 +182,15 @@ function K.Guild()
         local total = tonumber((GetNumGuildMembers())) or 0
         local seen = 0
         for i = 1, total do
-            local name, rank, _, _, _, _, _, _, _, _, class = GetGuildRosterInfo(i)
+            local name, rank, _, level, _, zone, _, _, online, _, class = GetGuildRosterInfo(i)
             if type(name) == "string" then
                 local ok, key = pcall(K.NameKey, name)
                 if ok and key ~= "" then
                     seen = seen + 1
-                    g.members[key] = { rank = rank, class = class }
+                    -- zone and online for the WHERE page (Core/Where.lua)
+                    g.members[key] = { rank = rank, class = class, name = name:match("^([^%-]+)") or name,
+                                       zone = type(zone) == "string" and zone or nil, online = online and true or false,
+                                       level = tonumber(level) }
                 end
             end
         end
@@ -387,6 +392,10 @@ local function SetRow(row, key, values, colours)
     if key then row:Show() else row:Hide() end
 end
 
+-- the kit, for pages built in other files (Core/Where.lua) so they look the same
+K.ui = { Fill = Fill, Text = Text, Panel = Panel, Grid = Grid, SetRow = SetRow, Scroll = Scroll,
+         Showing = Showing, rgb = rgb }
+
 function K.Build()
     if K.frame then return K.frame end
     if not CreateFrame then return nil end
@@ -422,7 +431,7 @@ function K.Build()
     end
     f.keys = {}
     local keyX = 300
-    for _, k in ipairs({ { "RAIDERS", "raiders" }, { "BOSSES", "bosses" }, { "LOG", "log" } }) do
+    for _, k in ipairs({ { "RAIDERS", "raiders" }, { "BOSSES", "bosses" }, { "WHERE", "where" }, { "LOG", "log" } }) do
         local b = CreateFrame("Button", nil, f)
         b:SetPoint("TOPLEFT", keyX, -6)
         b:SetSize(96, 18)
@@ -608,6 +617,9 @@ function K.Build()
         function(name) K.Go(name .. " <raider>") end)
     f.pages.boss = bp
 
+    -- WHERE: the map and who is where (Core/Where.lua builds it with the same kit)
+    if K.BuildWhere then f.pages.where = K.BuildWhere(Page(), bodyH) end
+
     -- the ticker along the bottom
     local tbg = f:CreateTexture(nil, "BORDER")
     tbg:SetPoint("BOTTOMLEFT", 0, 0)
@@ -624,6 +636,11 @@ function K.Build()
     -- THE TICKER MOVES ONLY WHILE THE WINDOW IS OPEN, and it costs one SetPoint a frame (the suite
     -- holds it to that): its OnUpdate lives on the window, which runs nothing while hidden.
     f:SetScript("OnUpdate", function(self, elapsed)
+        -- the WHERE page redraws every K.WHERE_EVERY s while it is showing - spots move
+        if K.page == "where" then
+            self.whereT = (self.whereT or 0) + (elapsed or 0)
+            if self.whereT >= K.WHERE_EVERY then self.whereT = 0 K.Paint() end
+        end
         local w = self.tickW or 0
         if w <= 0 then return end
         self.tickX = self.tickX - (elapsed or 0) * 40
@@ -829,6 +846,7 @@ function K.Paint()
     elseif K.page == "bosses" then PaintBosses(p)
     elseif K.page == "raider" then PaintRaider(p, K.key)
     elseif K.page == "boss" then PaintBoss(p, K.key)
+    elseif K.page == "where" and K.PaintWhere then K.PaintWhere(p)
     end
     p:Show()
     -- the tab you are on is lit; a card lights the list it belongs to
@@ -882,11 +900,12 @@ function K.Go(line)
         if ns.U and ns.U.Show then ns.U.Show() end
         return "log"
     end
-    if kind == "raiders" or kind == "bosses" then
+    if kind == "raiders" or kind == "bosses" or kind == "where" then
         K.trail = {}                                   -- a list is the top: nothing behind it
         K.Open(kind)
-        Say(kind == "raiders" and "every raider - click one, or type a name   (click NAME or ATTEND to sort)"
-            or "every boss - click one, or type a name")
+        Say((kind == "raiders" and "every raider - click one, or type a name   (click NAME or ATTEND to sort)")
+            or (kind == "bosses" and "every boss - click one, or type a name")
+            or "who is where - a dot is a guildmate sharing their spot from a BiS addon; click a row to see their map")
         return kind
     end
     if kind == "raider" or kind == "boss" then

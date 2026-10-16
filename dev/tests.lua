@@ -1181,6 +1181,104 @@ do
         K.Paint()
     end
 
+    -- WHERE (Arn: "a map too showing where all the raiders are at"): dots from BiS addons sharing
+    -- their spot, a list from the roster of everyone online
+    do
+        local Wh = NS.Where
+        local ROSTER = {
+            { "Kumlust", "Officer", "SHAMAN", "Durotar", true }, { "Bob", "Raider", "WARRIOR", "Durotar", true },
+            { "Cara", "Raider", "MAGE", "Orgrimmar", true }, { "Dax", "Raider", "PRIEST", "Durotar", false },
+        }
+        local realNum, realInfo = _G.GetNumGuildMembers, _G.GetGuildRosterInfo
+        _G.GetNumGuildMembers = function() return #ROSTER end
+        _G.GetGuildRosterInfo = function(i)
+            local r = ROSTER[i]
+            if not r then return nil end
+            return r[1], r[2], 0, 20, r[3], r[4], "", "", r[5], 0, r[3]
+        end
+        K._guildDirty = true
+        local files = {}
+        for i = 1, 12 do files[i] = 100000 + i end
+        _G.C_Map = {
+            GetMapArtLayers = function() return { { layerWidth = 1002, layerHeight = 668, tileWidth = 256, tileHeight = 256 } } end,
+            GetMapArtLayerTextures = function() return files end,
+            GetMapInfo = function(id) return { name = id == 1411 and "Durotar" or "Orgrimmar" } end,
+            GetBestMapForUnit = function() return 1454 end,
+        }
+        local realMySpot = lib.MySpot
+        lib.MySpot = function() return 1411, 0.40, 0.40 end
+        lib.spots.Bob = { map = 1411, x = 0.5, y = 0.5, at = H.clock }
+
+        f.keys.where:Click()
+        H.eq(K.page, "where", "the WHERE tab")
+        local wp = f.pages.where
+        H.ok(wp.map.title:GetText():find("DUROTAR", 1, true), "the map where the dots are, by name", wp.map.title:GetText())
+        local shownTiles = 0
+        for _, t in ipairs(wp.tiles) do if t:IsShown() then shownTiles = shownTiles + 1 end end
+        H.eq(shownTiles, 12, "the zone drawn from its twelve tiles")
+        H.eq(wp.map.right:GetText(), "2 on this map", "Bob's dot and mine")
+        local labels = {}
+        for i, l in ipairs(wp.labels) do if wp.dots[i]:IsShown() then labels[#labels + 1] = l:GetText() end end
+        table.sort(labels)
+        H.ok(deq(labels, { "Bob", "you" }), "each dot named, mine as 'you'", table.concat(labels, ","))
+
+        local rows = wp.grid.rows
+        H.eq(rows[1].cells[1]:GetText(), "Durotar", "the busiest zone first")
+        H.eq(rows[1].cells[2]:GetText(), "2", "with how many are there")
+        H.eq(rows[2].key, "bob", "then the people in it, alphabetical")
+        H.eq(rows[2].cells[4]:GetText(), "on map", "Bob shares his spot")
+        H.eq(rows[4].cells[1]:GetText(), "Orgrimmar", "the next zone")
+        H.eq(rows[5].cells[4]:GetText(), "", "Cara is listed but not on the map - no BiS addon sharing")
+        local listed = false
+        for _, r in ipairs(rows) do if r.key == "dax" then listed = true end end
+        H.ok(not listed, "an offline member is not listed")
+        H.ok(wp.who.right:GetText():find("3 online", 1, true), "the corner counts who is online")
+
+        -- clicking somebody on the map shows their map; somebody without a dot opens their card
+        lib.spots.Cara = { map = 1454, x = 0.3, y = 0.3, at = H.clock }
+        K.Paint()
+        rows[5]:Click()
+        H.eq(K.whereMap, 1454, "clicking Cara shows her map")
+        H.ok(wp.map.title:GetText():find("ORGRIMMAR", 1, true), "Orgrimmar", wp.map.title:GetText())
+        H.eq(wp.map.right:GetText(), "1 on this map", "with her dot on it")
+
+        -- it redraws itself while showing: a spot that moves, moves on the page
+        lib.spots.Cara = { map = 1454, x = 0.6, y = 0.6, at = H.clock }
+        local function dotX() local pt = wp.dots[1]._points and wp.dots[1]._points[1] return pt and pt.x end
+        local before = dotX()
+        local tick = f._scripts.OnUpdate
+        tick(f, 1)
+        H.eq(dotX(), before, "not redrawn every frame")
+        for _ = 1, 5 do tick(f, 1) end
+        H.ok(dotX() ~= before, "after five seconds the page draws the new spot", tostring(before) .. " -> " .. tostring(dotX()))
+
+        -- no map at all (an instance, no art): it says so instead of a blank box
+        K.whereMap = nil
+        lib.spots.Bob, lib.spots.Cara = nil, nil
+        lib.MySpot = function() return nil end
+        _G.C_Map = nil
+        K.Paint()
+        H.ok(wp.none:IsShown() and wp.none:GetText():find("No map yet", 1, true), "no map: it says why", wp.none:GetText())
+
+        local Cost = dofile("../_bisdev/dev/cost.lua")
+        _G.C_Map = {
+            GetMapArtLayers = function() return { { layerWidth = 1002, layerHeight = 668, tileWidth = 256, tileHeight = 256 } } end,
+            GetMapArtLayerTextures = function() return files end,
+            GetMapInfo = function() return { name = "Durotar" } end,
+            GetBestMapForUnit = function() return 1411 end,
+        }
+        local nw, byw = Cost.Count(function() K.Paint() end)
+        H.say(("   cost: one WHERE redraw = %d calls (%s)"):format(nw, Cost.Top(byw, 3)))
+        H.ok(nw <= 40, "one WHERE redraw (every 5 s) stays small: " .. nw, Cost.Top(byw, 4))
+
+        _G.C_Map = nil
+        lib.MySpot = realMySpot
+        K.whereMap = nil
+        _G.GetNumGuildMembers, _G.GetGuildRosterInfo = realNum, realInfo
+        K._guildDirty = true
+        f.keys.raiders:Click()
+    end
+
     -- THE LOG TAB PUTS ITS WINDOW IN FRONT, WHOLE (Arn, 16 Oct: "this windows kinda get
     -- overlapping" - the terminal's ticker drew across the log window)
     local uf = NS.U.Build()

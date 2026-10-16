@@ -1,0 +1,309 @@
+--[[
+  BiSGuild :: Core/Where.lua - the terminal's WHERE page: the map, and who is where.
+
+  Arn, 16 Oct 2026: "It'll have a map too showing where all the raiders are at".
+
+  TWO SOURCES, SAID APART ON THE PAGE:
+    * the DOTS are guildmates whose BiS addon shares their spot (LibBiSComm minor 12: every BiS
+      addon sends it on the guild channel while you move, outside instances; `/biscomm share off`
+      stops it). Exact, but only for people running a BiS addon with sharing on.
+    * the LIST is the guild roster: every online member and the zone the game says they are in -
+      everybody, BiS addon or not, but a zone name and no more.
+  A row that also has a dot says "on map"; clicking it shows their map.
+
+  The map is drawn the way BiS Tools' overlay draws it (Tools/Overlay.lua there): the zone's base
+  layer, the explored pieces over it, the torn paper edge trimmed off. The base layer always shows
+  here - this is a page about where OTHER people are, and your own fog of war would hide them.
+
+  Redrawn every K.WHERE_EVERY seconds while the page shows (Terminal.lua's OnUpdate), never hidden.
+]]
+local ADDON, ns = ...
+local K = ns.K
+
+local W = {}
+ns.Where = W
+
+W.TILE = 256
+W.EDGE = { 0.03, 0, 0.045 }     -- the paper's edge, left/right, top, bottom (BiS Tools' O.EDGE)
+W.MAP_W = 520                    -- the map panel's width; the list takes the rest
+
+local function hidden(v)
+    if v == nil or not issecretvalue then return false end
+    local ok, yes = pcall(issecretvalue, v)
+    return (not ok) or yes == true
+end
+local function num(v) if hidden(v) or type(v) ~= "number" then return nil end return v end
+local function fileSize(px)
+    local f = 16
+    while f < px do f = f * 2 end
+    return f
+end
+local function Lib() return _G.LibBiSComm end
+
+--------------------------------------------------------------------
+-- the words (the suite drives these)
+--------------------------------------------------------------------
+
+--- A map's art: its size in the art's pixels and the pieces that cover it, or nil.
+--- piece = { file, x, y, w, h, fileW, fileH }
+function W.Pieces(mapID)
+    if not (mapID and C_Map and C_Map.GetMapArtLayers) then return nil end
+    local ok, layers = pcall(C_Map.GetMapArtLayers, mapID)
+    local L = ok and type(layers) == "table" and layers[1] or nil
+    if not L then return nil end
+    local lw = num(L.layerWidth)
+    local lh = num(L.layerHeight)
+    if not (lw and lh and lw > 0 and lh > 0) then return nil end
+    local pieces = {}
+    local tw, th = num(L.tileWidth) or W.TILE, num(L.tileHeight) or W.TILE
+    local okF, files = pcall(C_Map.GetMapArtLayerTextures, mapID, 1)
+    files = okF and type(files) == "table" and files or {}
+    local cols = math.ceil(lw / tw)
+    for i, file in ipairs(files) do
+        local c, r = (i - 1) % cols, math.floor((i - 1) / cols)
+        pieces[#pieces + 1] = { file, c * tw, r * th, tw, th, tw, th }
+    end
+    -- the explored pieces over it, cut the way the client cuts them (BiS Tools' overlay, 14 Oct)
+    local info = C_MapExplorationInfo and C_MapExplorationInfo.GetExploredMapTextures
+    local okE, explored = false, nil
+    if info then okE, explored = pcall(info, mapID) end
+    if okE and type(explored) == "table" and not hidden(explored) then
+        for _, e in ipairs(explored) do
+            local tw2, th2 = num(e.textureWidth), num(e.textureHeight)
+            local ox, oy = num(e.offsetX) or 0, num(e.offsetY) or 0
+            if tw2 and th2 and type(e.fileDataIDs) == "table" then
+                local wide, tall = math.ceil(tw2 / W.TILE), math.ceil(th2 / W.TILE)
+                for j = 1, tall do
+                    local ph = (j < tall) and W.TILE or (th2 - W.TILE * (tall - 1))
+                    for k = 1, wide do
+                        local pw = (k < wide) and W.TILE or (tw2 - W.TILE * (wide - 1))
+                        local file = e.fileDataIDs[(j - 1) * wide + k]
+                        if file then
+                            pieces[#pieces + 1] = { file, ox + W.TILE * (k - 1), oy + W.TILE * (j - 1), pw, ph,
+                                (k < wide) and W.TILE or fileSize(pw), (j < tall) and W.TILE or fileSize(ph) }
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return lw, lh, pieces
+end
+
+function W.MapName(mapID)
+    if not (mapID and C_Map and C_Map.GetMapInfo) then return nil end
+    local ok, info = pcall(C_Map.GetMapInfo, mapID)
+    local name = ok and type(info) == "table" and info.name or nil
+    return type(name) == "string" and not hidden(name) and name or nil
+end
+
+--- Every spot we know: guildmates' from the lib, and our own. { name, key, map, x, y, me }
+function W.Spots()
+    local out = {}
+    local lib = Lib()
+    if lib and lib.Spots then
+        for sender, s in pairs(lib:Spots()) do
+            if type(sender) == "string" and type(s) == "table" and s.map then
+                out[#out + 1] = { name = sender, key = K.NameKey(sender), map = s.map, x = s.x, y = s.y }
+            end
+        end
+    end
+    if lib and lib.MySpot then
+        local ok, map, x, y = pcall(lib.MySpot, lib)
+        if ok and map then
+            local me = UnitName and UnitName("player") or "you"
+            out[#out + 1] = { name = me, key = K.NameKey(me), map = map, x = x, y = y, me = true }
+        end
+    end
+    return out
+end
+
+--- Which map to show when nobody picked one: where most dots are; else where I am.
+function W.AutoMap(spots)
+    local count, best = {}, nil
+    for _, s in ipairs(spots) do
+        count[s.map] = (count[s.map] or 0) + 1
+        if not best or count[s.map] > count[best] or (count[s.map] == count[best] and s.map < best) then best = s.map end
+    end
+    if best then return best end
+    if C_Map and C_Map.GetBestMapForUnit then
+        local ok, m = pcall(C_Map.GetBestMapForUnit, "player")
+        return ok and num(m) or nil
+    end
+    return nil
+end
+
+--- The list: online guild members grouped by zone, the busiest zone first, alphabetical inside.
+--- rows = { { zone = name, n = count } | { person } }
+function W.Rows(spots)
+    local bySpot = {}
+    for _, s in ipairs(spots) do bySpot[s.key] = s end
+    local zones, order = {}, {}
+    for key, m in pairs(K.Guild().members) do
+        if m.online then
+            local z = m.zone or "?"
+            if not zones[z] then zones[z] = {} order[#order + 1] = z end
+            table.insert(zones[z], { name = m.name or key, key = key, class = m.class, level = m.level,
+                                     rank = m.rank, spot = bySpot[key] })
+        end
+    end
+    table.sort(order, function(a, b)
+        if #zones[a] ~= #zones[b] then return #zones[a] > #zones[b] end
+        return a < b
+    end)
+    local rows = {}
+    for _, z in ipairs(order) do
+        rows[#rows + 1] = { zone = z, n = #zones[z] }
+        table.sort(zones[z], function(a, b) return a.name < b.name end)
+        for _, p in ipairs(zones[z]) do rows[#rows + 1] = p end
+    end
+    return rows
+end
+
+--------------------------------------------------------------------
+-- frames
+--------------------------------------------------------------------
+
+function K.BuildWhere(page, bodyH)
+    local ui = K.ui
+    page.map = ui.Panel(page, "MAP", 8, 0, W.MAP_W, bodyH - 4)
+    local canvas = CreateFrame("Frame", nil, page.map)
+    canvas:SetPoint("TOPLEFT", 4, -22)
+    canvas:SetSize(W.MAP_W - 8, bodyH - 30)
+    if canvas.SetClipsChildren then canvas:SetClipsChildren(true) end
+    page.canvas, page.cw, page.ch = canvas, W.MAP_W - 8, bodyH - 30
+    page.tiles, page.dots, page.labels = {}, {}, {}
+    page.none = ui.Text(canvas, 13, "ink2")
+    page.none:SetPoint("TOPLEFT", 12, -12)
+    page.none:SetWidth(W.MAP_W - 40)
+    if page.none.SetWordWrap then page.none:SetWordWrap(true) end
+
+    local lx = W.MAP_W + 16
+    page.who = ui.Panel(page, "WHO IS WHERE", lx, 0, K.W - lx - 8, bodyH - 4)
+    page.grid = ui.Grid(page.who, { "NAME", "LVL", "RANK", "" },
+        { { 120, "LEFT" }, { 30, "RIGHT" }, { 84, "LEFT" }, { 54, "RIGHT" } }, K.LIST_ROWS, 22,
+        function(key)
+            local row = W.byKey and W.byKey[key]
+            if row and row.spot then K.whereMap = row.spot.map K.Paint()
+            elseif row and row.name then K.Go(row.name .. " <raider>") end
+        end)
+    page.hint = ui.Text(page.who, 12, "ink2")
+    page.hint:SetPoint("TOPLEFT", 12, -44)
+    page.hint:SetWidth(K.W - lx - 40)
+    if page.hint.SetWordWrap then page.hint:SetWordWrap(true) end
+    return page
+end
+
+local function Tile(p, i)
+    local t = p.tiles[i]
+    if not t then
+        t = p.canvas:CreateTexture(nil, "BORDER")
+        p.tiles[i] = t
+    end
+    return t
+end
+
+local function Dot(p, i)
+    local d, l = p.dots[i], p.labels[i]
+    if not d then
+        d = p.canvas:CreateTexture(nil, "OVERLAY")
+        l = K.ui.Text(p.canvas, 10, "ink")
+        p.dots[i], p.labels[i] = d, l
+    end
+    return d, l
+end
+
+function K.PaintWhere(p)
+    local ui = K.ui
+    local spots = W.Spots()
+    local map = K.whereMap or W.AutoMap(spots)
+    W.shown = map
+    for _, t in ipairs(p.tiles) do t:Hide() end
+    for i, d in ipairs(p.dots) do d:Hide() p.labels[i]:Hide() end
+
+    -- the map
+    local lw, lh, pieces = W.Pieces(map)
+    local name = W.MapName(map)
+    p.map.title:SetText("MAP  " .. ns.T.text("ink", (name or "nowhere known"):upper()))
+    if not lw then
+        p.none:SetText(map and "No map for this place." or
+            "No map yet: nobody is sharing a spot, and the game will not say where you are (inside an instance?).")
+        p.none:Show()
+        p.map.right:SetText("")
+    else
+        p.none:Hide()
+        local x0, y0 = lw * W.EDGE[1], lh * W.EDGE[2]
+        local x1, y1 = lw - lw * W.EDGE[1], lh - lh * W.EDGE[3]
+        local s = math.min(p.cw / (x1 - x0), p.ch / (y1 - y0))
+        local ox = (p.cw - (x1 - x0) * s) / 2
+        local oy = (p.ch - (y1 - y0) * s) / 2
+        for i, pc in ipairs(pieces) do
+            local t = Tile(p, i)
+            t:SetTexture(pc[1])
+            t:SetTexCoord(0, pc[4] / pc[6], 0, pc[5] / pc[7])
+            t:SetSize(pc[4] * s, pc[5] * s)
+            t:ClearAllPoints()
+            t:SetPoint("TOPLEFT", p.canvas, "TOPLEFT", ox + (pc[2] - x0) * s, -(oy + (pc[3] - y0) * s))
+            t:SetVertexColor(0.78, 0.78, 0.78, 1)        -- a shade down, so the dots stand out
+            t:Show()
+        end
+        -- the dots on this map: class colours, me in gold and a size bigger
+        local colours = _G.RAID_CLASS_COLORS
+        local n = 0
+        for _, sp in ipairs(spots) do
+            if sp.map == map then
+                local px, py = (sp.x * lw - x0) * s + ox, (sp.y * lh - y0) * s + oy
+                if px >= 0 and py >= 0 and px <= p.cw and py <= p.ch then
+                    n = n + 1
+                    local d, l = Dot(p, n)
+                    local m = K.Guild().members[sp.key]
+                    local cc = m and m.class and colours and colours[m.class]
+                    local size = sp.me and 10 or 8
+                    d:SetSize(size, size)
+                    if sp.me then d:SetColorTexture(ui.rgb("gold")) elseif cc then d:SetColorTexture(cc.r, cc.g, cc.b, 1)
+                    else d:SetColorTexture(ui.rgb("ink")) end
+                    d:ClearAllPoints()
+                    d:SetPoint("CENTER", p.canvas, "TOPLEFT", px, -py)
+                    d:Show()
+                    l:SetText(sp.me and "you" or sp.name)
+                    l:SetTextColor(ui.rgb(sp.me and "gold" or "ink"))
+                    l:ClearAllPoints()
+                    l:SetPoint("LEFT", d, "RIGHT", 3, 0)
+                    l:Show()
+                end
+            end
+        end
+        p.map.right:SetText(("%d on this map"):format(n))
+    end
+
+    -- the list
+    local rows = W.Rows(spots)
+    W.byKey = {}
+    local off = ui.Scroll(p.grid, #rows)
+    local online = 0
+    for _, r in ipairs(rows) do if not r.zone then online = online + 1 end end
+    p.who.right:SetText(("%d online"):format(online) .. ui.Showing(p.grid))
+    if #rows == 0 then
+        p.hint:SetText(IsInGuild and IsInGuild() and "Nobody in the guild is online - or the roster has not arrived yet."
+            or "Not in a guild.")
+        p.hint:Show()
+    else
+        p.hint:Hide()
+    end
+    local colours = _G.RAID_CLASS_COLORS
+    for i, row in ipairs(p.grid.rows) do
+        local r = rows[i + off]
+        if not r then
+            ui.SetRow(row, nil, {})
+        elseif r.zone then
+            ui.SetRow(row, "#" .. r.zone, { r.zone, r.n, "", "" }, { "gold", "gold", "muted", "muted" })
+            W.byKey["#" .. r.zone] = r
+        else
+            local cc = r.class and colours and colours[r.class]
+            ui.SetRow(row, r.key, { "  " .. r.name, r.level or "", r.rank or "", r.spot and "on map" or "" },
+                { cc and { cc.r, cc.g, cc.b } or "ink", "ink2", "muted",
+                  (r.spot and r.spot.map == map) and "good" or "accent" })
+            W.byKey[r.key] = r
+        end
+    end
+end
