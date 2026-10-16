@@ -145,6 +145,17 @@ function K.Item(id)
     return "item " .. n, nil
 end
 
+--- An item string with the raider's permanent enchant in it - "item:<id>:<enchant>" - so the
+--- tooltip shows the enchant line. Gems are left out until a Forever raid log shows whether its gem
+--- field holds gem ids or (id, item level) pairs, as TBC's did: a wrong number there would show a
+--- gem the raider does not have. The weapon oil is a temporary enchant and has no place in the
+--- string; the CONSUMES panel carries it.
+function K.ItemString(g)
+    local id = type(g) == "table" and tonumber(g[1]) or 0
+    if id == 0 then return nil end
+    return ("item:%d:%d"):format(id, tonumber(g[3]) or 0)
+end
+
 --- The raiders list: name, attendance %, last night, flask on the last night, deaths, issues.
 function K.Rows(cards)
     local nights = #S().Dates()
@@ -451,6 +462,27 @@ function K.Build()
     rc.armory = Panel(rc, "ARMORY", 8, 0, leftW, bodyH - 4)
     rc.gear = Grid(rc.armory, { "SLOT", "ITEM", "ILVL", "" },
         { { 62, "LEFT" }, { 250, "LEFT" }, { 34, "RIGHT" }, { 84, "RIGHT" } }, #S().SLOTS, 22)
+    -- HOVER FOR THE ITEM, ENCHANT INCLUDED (Arn, 16 Oct: "click item and the tooltip come out,
+    -- ideally with the enchant"). The game's own tooltip, built from an item string that carries the
+    -- raider's enchant, so it reads exactly like inspecting them. Shift-click links it in chat.
+    for _, row in ipairs(rc.gear.rows) do
+        row:SetScript("OnEnter", function(self)
+            local tip = _G.GameTooltip
+            if not (self.link and tip) then return end
+            tip:SetOwner(self, "ANCHOR_RIGHT")
+            tip:SetHyperlink(self.link)
+            tip:Show()
+        end)
+        row:SetScript("OnLeave", function()
+            if _G.GameTooltip then _G.GameTooltip:Hide() end
+        end)
+        row:SetScript("OnClick", function(self)
+            if not self.link or not (IsShiftKeyDown and IsShiftKeyDown()) then return end
+            local get = (C_Item and C_Item.GetItemInfo) or GetItemInfo
+            local ok, _, link = pcall(get, self.link)
+            if ok and link and ChatEdit_InsertLink then ChatEdit_InsertLink(link) end
+        end)
+    end
     local rx, rw = leftW + 16, K.W - leftW - 24
     rc.att = Panel(rc, "ATTENDANCE", rx, 0, rw, 74)
     rc.attLine = Text(rc.att, 13, "ink")
@@ -599,8 +631,10 @@ local function PaintRaider(p, name)
             local item, q = K.Item(id)
             SetRow(row, slot, { slot, item, g[2], issues[slot] or "" },
                 { "muted", QUALITY[q or 1] or "ink", "ink2", "warn" })
+            row.link = K.ItemString(g)
         else
             SetRow(row, slot, { slot, card.gear and "-" or "", "", "" }, { "muted", "muted", "muted", "muted" })
+            row.link = nil
         end
     end
 

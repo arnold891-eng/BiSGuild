@@ -1055,6 +1055,32 @@ do
     H.eq(rc.gear.rows[2].cells[2]:GetText(), "item 1002", "or says its number until the client knows it")
     H.eq(rc.gear.rows[5].cells[4]:GetText(), "no enchant", "the unenchanted chest is flagged")
     H.eq(rc.gear.rows[18].cells[2]:GetText(), "-", "an empty slot is a dash")
+
+    -- HOVER FOR THE ITEM, ENCHANT INCLUDED (Arn: "the tooltip come out, ideally with the enchant")
+    local tipped
+    _G.GameTooltip = { SetOwner = function() end, Show = function() end, Hide = function() tipped = "hidden" end,
+                       SetHyperlink = function(_, l) tipped = l end }
+    rc.gear.rows[2]:Fire("OnEnter")
+    H.eq(tipped, "item:1002:9", "hovering the neck: the game's tooltip, with her enchant in it")
+    rc.gear.rows[2]:Fire("OnLeave")
+    H.eq(tipped, "hidden", "and it goes away")
+    tipped = nil
+    rc.gear.rows[18]:Fire("OnEnter")
+    H.eq(tipped, nil, "an empty slot has no tooltip")
+    local linked
+    _G.ChatEdit_InsertLink = function(l) linked = l end
+    _G.GetItemInfo = function(id)
+        if id == 1001 then return "Helm of Testing", nil, 4 end
+        if id == "item:1002:9" then return "Neck", "|cff1eff00|Hitem:1002:9|h[Neck]|h|r", 2 end
+    end
+    _G.IsShiftKeyDown = function() return false end
+    rc.gear.rows[2]:Click()
+    H.eq(linked, nil, "a plain click links nothing")
+    _G.IsShiftKeyDown = function() return true end
+    rc.gear.rows[2]:Click()
+    H.ok(linked and linked:find("item:1002:9", 1, true), "shift-click puts the link in chat", linked)
+    _G.GameTooltip, _G.ChatEdit_InsertLink, _G.IsShiftKeyDown = nil, nil, nil
+    _G.GetItemInfo = function(id) if id == 1001 then return "Helm of Testing", nil, 4 end return nil end
     H.ok(rc.attLine:GetText():find("2 of 2 nights", 1, true), "attendance in words", rc.attLine:GetText())
     H.ok(rc.consLines[1]:GetText():find("2 of 2 pulls", 1, true), "her flask on the latest night", rc.consLines[1]:GetText())
     H.eq(rc.lootLines[1]:GetText(), "BiS Loot has not run on this client", "no ledger: says so")
