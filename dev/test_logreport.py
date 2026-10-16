@@ -140,6 +140,15 @@ def main():
             r = subprocess.run([lua, "-p", report], capture_output=True, text=True)
             ok(r.returncode == 0, "Data/Report.lua is valid Lua", r.stderr.strip())
 
+        # THE GAME BUILDS THE SAME CARDS (Core/Store.lua rebuilds them from the nights, because a night
+        # shared over the guild channel has no reader behind it)
+        luaexe0 = r"C:\Program Files (x86)\Lua\5.1\lua.exe"
+        if os.path.exists(luaexe0):
+            r = subprocess.run([luaexe0, os.path.join(HERE, "store_matches.lua"), report,
+                                os.path.join(os.path.dirname(HERE), "Core", "Store.lua")],
+                               capture_output=True, text=True)
+            ok(r.returncode == 0, "the game's cards and boss pages match the reader's", (r.stdout + r.stderr)[-600:])
+
         # a re-run of the same log replaces its night, never doubles it
         logreport.main(path, write=True)
         ok(len(logreport.read_history(path)) == 1, "the same log twice is still one night")

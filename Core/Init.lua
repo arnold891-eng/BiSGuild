@@ -81,6 +81,10 @@ f:SetScript("OnEvent", function(_, event, name)
     local d = db()
     if d.nights ~= nil then d.nights = nil end
     if d.taught ~= nil then d.taught = nil end       -- and the consumables list, gone the same way
+    -- THE RECORD (16 Oct): the report file is folded into the guild's record, which every member
+    -- keeps and Core/Share.lua shares - so the numbers survive a deploy and a missed night
+    if ns.S then ns.S.Import(_G.BiSGuildReport) end
+    if ns.X then ns.X.Boot() end
   elseif event == "PLAYER_LOGOUT" then
     ns.Comm.Save()
   end

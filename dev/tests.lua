@@ -766,7 +766,206 @@ do
     _G.BiSGuildReport = nil
 end
 
-_G.UnitName = realUnitName
+--=============================================================================
+-- THE GUILD'S RECORD (16 Oct 2026). Arn: "All this data we are getting is from my computer, how are
+-- other people going to get all this info, so if I miss one raid night what stops the addon from
+-- updating". Every member keeps the nights; officers share them over the guild channel.
+--=============================================================================
+local function deq(a, b, skip)
+    if type(a) ~= type(b) then return false end
+    if type(a) ~= "table" then return a == b end
+    for k, v in pairs(a) do if not (skip and skip[k]) and not deq(v, b[k]) then return false end end
+    for k in pairs(b) do if not (skip and skip[k]) and a[k] == nil then return false end end
+    return true
+end
+local function raider(present, pulls, deaths)
+    return { present = present, ready = present, pulls = pulls, flask = pulls, elixir = 0, food = pulls,
+             weapon = 0, weaponSeen = pulls, pots = 1, deaths = deaths or 0 }
+end
+local function bigNight()
+    local n = { kills = 8, raiders = {}, bosses = {} }
+    local names = {}
+    for i = 1, 25 do
+        local name = ("Raider%02d"):format(i)
+        names[#names + 1] = name
+        n.raiders[name] = raider(8, 11, i % 3)
+    end
+    for b = 1, 8 do
+        n.bosses[("Boss Number %d"):format(b)] = { pulls = 2, kills = 1, best = 180000 + b, killers = names }
+    end
+    return n
+end
+local S, X = NS.S, NS.X
+
+H.section("the record: a report folds in, the fuller copy of a date wins")
+do
+    _G.BiSGuildDB.record = nil
+    local gear = {}
+    for i = 1, 19 do gear[i] = { 1000 + i, 30, i == 5 and 0 or 7, 0, {} } end
+    local report = {
+        rows = {},
+        nightly = {
+            ["2026-10-09"] = { kills = 3, raiders = { Alice = raider(3, 4), Bob = raider(1, 2, 1) }, bosses = {} },
+            ["2026-10-16"] = { kills = 2, raiders = { Alice = raider(2, 3) },
+                               bosses = { ["Boss One"] = { pulls = 3, kills = 2, best = 245000, killers = { "Alice" } } } },
+        },
+        cards = { Alice = { gear = gear, gearDate = "2026-10-16" } },
+    }
+    local n, g = S.Import(report)
+    H.eq(n, 2, "both nights taken in")
+    H.eq(g, 1, "and Alice's gear")
+    H.eq(S.Record().nights["2026-10-16"].by, "Kumlust", "a night says who imported it")
+    H.eq(select(1, S.Import(report)), 0, "the same report twice changes nothing")
+
+    -- Bob was there for 1 of 3 kills on the 9th: not half, so not his night
+    local cards = S.Cards()
+    H.ok(deq(cards.Alice.attended, { "2026-10-09", "2026-10-16" }), "Alice earned both nights")
+    H.ok(deq(cards.Bob.attended, {}), "Bob, at one kill of three, earned neither")
+    H.eq(cards.Alice.last.date, "2026-10-16", "her latest night's numbers")
+    H.eq(cards.Bob.deaths, 1, "deaths add up over the record")
+    H.eq(#cards.Alice.issues, 1, "her unenchanted chest is the one red flag")
+    H.eq(cards.Alice.issues[1].slot, "chest", "on the chest")
+    H.eq(S.Bosses()["Boss One"].best, 245000, "the boss page has its fastest kill")
+
+    -- a thinner copy of the 16th (somebody's log started late) does not replace a fuller one
+    H.ok(not S.Put("2026-10-16", { kills = 1, raiders = { Alice = raider(1, 1) }, bosses = {} }, "Late"),
+         "a thinner copy is refused")
+    H.ok(S.Put("2026-10-16", { kills = 2, raiders = { Alice = raider(2, 3), Cara = raider(2, 3) }, bosses = {} }, "Full"),
+         "a fuller copy wins")
+    H.ok(not S.Put("2026-10-16", { kills = 2, raiders = { Alice = raider(2, 3), Dan = raider(2, 3) }, bosses = {} }, "Tie"),
+         "an equal copy does not flip it back and forth")
+    H.ok(not S.Put("16 Oct", { kills = 1, raiders = {} }), "a date that is not a date is refused")
+
+    H.ok(not S.PutGear("Alice", "2026-10-09", gear), "older gear does not replace newer")
+
+    -- Init clears the old collector's `nights` on every load; the record is under another name
+    fire("ADDON_LOADED", "BiSGuild")
+    H.eq(#S.Dates(), 2, "a reload keeps the record")
+end
+
+H.section("a night on the wire: small, and the same night after")
+do
+    local night = bigNight()
+    local text = X.EncodeNight(night)
+    local parts = math.ceil(#text / X.CHUNK)
+    H.say(("   a 25-raider, 8-boss night: %d characters, %d parts"):format(#text, parts))
+    H.ok(parts <= 12, "a full raid night is a dozen parts at most: " .. parts)
+    H.ok(deq(X.DecodeNight(text), night), "and decodes to the same night")
+    H.eq(X.DecodeNight("garbage"), nil, "garbage decodes to nothing")
+    H.eq(X.DecodeNight("1#Bob:1.2#"), nil, "a raider short of numbers is refused")
+
+    local gear = {}
+    for i = 1, 19 do gear[i] = i == 18 and { 0, 0, 0, 0, {} } or { 30000 + i, 66, 2500 + i, i == 16 and 2623 or 0, i == 1 and { 4001, 4002 } or {} } end
+    local gtext = X.EncodeGear(gear)
+    H.ok(#gtext <= 2 * X.CHUNK, "a raider's gear is two parts at most: " .. #gtext)
+    H.ok(deq(X.DecodeGear(gtext), gear), "and decodes to the same gear")
+end
+
+H.section("sharing: officers answer, members are not believed")
+do
+    local ROSTER = { { "Kumlust-Dreamscythe", 1 }, { "Bigboss", 0 }, { "Memberguy", 4 } }
+    local realNum, realInfo = _G.GetNumGuildMembers, _G.GetGuildRosterInfo
+    _G.GetNumGuildMembers = function() return #ROSTER end
+    _G.GetGuildRosterInfo = function(i) local r = ROSTER[i] return r[1], "rank", r[2] end
+    lib._guildDirty = true
+    X._ranksDirty = true
+
+    H.ok(X.IsOfficer("Kumlust") and X.IsOfficer("Bigboss"), "ranks 0 and 1 are officers")
+    H.ok(not X.IsOfficer("Memberguy") and not X.IsOfficer("Stranger"), "a member and a stranger are not")
+
+    local function drain()
+        for _ = 1, 40 do H.clock = H.clock + 2 H.RunTimers() end
+    end
+    local function ours(cmd)
+        local out = {}
+        for _, w in ipairs(H.wire) do
+            if w.channel == "GUILD" and w.msg:find("|GLOG|" .. cmd .. "|", 1, true) then out[#out + 1] = w end
+        end
+        return out
+    end
+    local function hear(sender, w) lib:OnMessage("BiS", w.msg, "GUILD", sender) end
+
+    drain()
+    H.wire = {}
+    -- an officer with nights says so; the line fits one message
+    H.ok(X.Announce(), "an officer announces what they hold")
+    drain()
+    local have = ours("HAVE")
+    H.eq(#have, 1, "in one line")
+    H.ok(have[1] and have[1].msg:find("261016.2.2", 1, true), "newest first, with raiders and kills", have[1] and have[1].msg)
+
+    -- somebody missing the 16th hears it and asks - once
+    local mine = S.Record()
+    _G.BiSGuildDB.record = { nights = {}, gear = {} }
+    H.wire = {}
+    hear("Memberguy", have[1])
+    drain()
+    H.eq(#ours("WANT"), 0, "a member's HAVE is not worth asking about")
+    hear("Bigboss", have[1])
+    drain()
+    local want = ours("WANT")
+    H.eq(#want, 1, "an officer's HAVE: the missing night is asked for, once")
+    H.ok(want[1] and want[1].msg:find("2026-10-16", 1, true), "the newest missing date first")
+
+    -- the officer answers: a part every two seconds, every part under the client's limit
+    _G.BiSGuildDB.record = mine
+    H.wire = {}
+    X.handlers.WANT("Memberguy", "2026-10-16")
+    drain()
+    local parts = ours("NIGHT")
+    H.ok(#parts >= 1, "the officer answers the WANT: " .. #parts .. " part(s)")
+    local long = 0
+    for _, w in ipairs(parts) do long = math.max(long, #w.msg) end
+    H.ok(long <= 250, "every part fits the 255-byte limit: " .. long)
+
+    -- the parts, heard by a member with nothing: the same night arrives
+    local sent = mine.nights["2026-10-16"]
+    _G.BiSGuildDB.record = { nights = {}, gear = {} }
+    for _, w in ipairs(parts) do hear("Memberguy", w) end
+    H.eq(S.Record().nights["2026-10-16"], nil, "from a member it is not taken in")
+    for _, w in ipairs(parts) do hear("Bigboss", w) end
+    H.ok(deq(S.Record().nights["2026-10-16"], sent, { by = true }), "from an officer it arrives whole")
+    H.eq(S.Record().nights["2026-10-16"].by, "Bigboss", "and says who sent it")
+
+    -- ONE ANSWER, NOT TEN: an officer who hears another officer's first part stands down
+    _G.BiSGuildDB.record = mine
+    H.wire = {}
+    X.handlers.WANT("Memberguy", "2026-10-16")
+    hear("Bigboss", parts[1])
+    drain()
+    H.eq(#ours("NIGHT"), 0, "another officer already answering: we stay quiet")
+
+    -- a member never answers, even holding the night
+    ROSTER[1][2] = 4
+    X._ranksDirty = true
+    H.wire = {}
+    X.handlers.WANT("Bigboss", "2026-10-16")
+    drain()
+    H.eq(#ours("NIGHT"), 0, "a member holding the night does not answer")
+    H.ok(not X.Announce(), "nor announce")
+    ROSTER[1][2] = 1
+    X._ranksDirty = true
+
+    -- gear: asked for by name, answered only when ours is newer
+    H.wire = {}
+    X.handlers.GWANT("Memberguy", "Alice", "2026-10-16")
+    drain()
+    H.eq(#ours("GEAR"), 0, "nothing newer than what they have: no answer")
+    X.handlers.GWANT("Memberguy", "Alice", "")
+    drain()
+    local gparts = ours("GEAR")
+    H.ok(#gparts >= 1 and #gparts <= 2, "their gear goes out in one or two parts: " .. #gparts)
+    local had = mine.gear.Alice
+    _G.BiSGuildDB.record = { nights = {}, gear = {} }
+    for _, w in ipairs(gparts) do hear("Bigboss", w) end
+    H.ok(S.Record().gear.Alice and deq(S.Record().gear.Alice.gear, had.gear), "and arrives whole")
+
+    _G.BiSGuildDB.record = mine
+    _G.GetNumGuildMembers, _G.GetGuildRosterInfo = realNum, realInfo
+    lib._guildDirty = true
+    X._ranksDirty = true
+    H.wire = {}
+end
 
 -- WHAT AN OPEN WINDOW COSTS, IN CLIENT CALLS (7 Oct 2026). BiSHealing asked the client ~630,000
 -- things a second and every suite was green; Arn: "make sure stuff like this does not happen".
@@ -786,6 +985,26 @@ do
     H.say(("   cost: open window, 1 s = %d calls (%s)"):format(n, Cost.Top(by, 3)))
     H.ok(n <= 120, "a second of the open window asks the client at most two things a frame: " .. n,
          Cost.Top(by, 4))
+
+    -- hearing a whole 25-raider night from an officer: the roster is read once, not once a part
+    local text = NS.X.EncodeNight(bigNight())
+    local parts, N = {}, math.ceil(#text / NS.X.CHUNK)
+    for i = 1, N do parts[i] = text:sub((i - 1) * NS.X.CHUNK + 1, i * NS.X.CHUNK) end
+    local saved = _G.BiSGuildDB.record
+    _G.BiSGuildDB.record = { nights = {}, gear = {} }
+    local realNum, realInfo = _G.GetNumGuildMembers, _G.GetGuildRosterInfo
+    _G.GetNumGuildMembers = function() return 1 end
+    _G.GetGuildRosterInfo = function() return "Bigboss", "rank", 0 end
+    NS.X._ranksDirty = true
+    local n2, by2 = Cost.Count(function()
+        for i = 1, N do NS.X.handlers.NIGHT("Bigboss", "2026-10-23", i, N, parts[i]) end
+    end)
+    H.say(("   cost: hearing a %d-part night = %d calls (%s)"):format(N, n2, Cost.Top(by2, 3)))
+    H.ok(NS.S.Record().nights["2026-10-23"] ~= nil, "the night arrived")
+    H.ok(n2 <= 4 * N, "hearing a night costs a few client calls a part: " .. n2, Cost.Top(by2, 4))
+    _G.BiSGuildDB.record = saved
+    _G.GetNumGuildMembers, _G.GetGuildRosterInfo = realNum, realInfo
+    NS.X._ranksDirty = true
 end
 
 H.report()

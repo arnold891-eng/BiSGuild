@@ -27,7 +27,9 @@ gear issues, cooldowns, deaths per night) - and the Terminal's layout: tickers, 
 2. **The terminal window**: the raider card (armory + attendance + consumes + issues + loot), the boss
    page, a ticker along the top, function keys for views, a WHERE panel (guild map spots from
    LibBiSComm - "a map too showing where all the raiders are at").
-3. **Sharing** (Arn: "all this data is from my computer - if I miss one raid night what stops it"):
+3. **Sharing** - BUILT 16 Oct, not yet seen in game (Core/Store.lua keeps `BiSGuildDB.record`,
+   Core/Share.lua talks "GLOG" on the guild channel; officers = guild rank index <= 1, `officerRank`;
+   a 25-raider night is 8 parts, one every 2 s). Arn: "all this data is from my computer - if I miss one raid night what stops it":
    any raider who logs writes the same lines for the whole raid, so any officer can import a night;
    BiS Guild shares nights over LibBiSComm and every member keeps them in BiSGuildDB (saved variables
    survive restarts again - Arn, 16 Oct: ForeverAuras no longer needs re-importing). Merge by date;

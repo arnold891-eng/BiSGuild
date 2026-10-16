@@ -21,5 +21,7 @@ Data\Report.lua
 
 Core\Init.lua
 Core\Report.lua
+Core\Store.lua
+Core\Share.lua
 Core\Window.lua
 Core\Say.lua
