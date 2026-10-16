@@ -1085,6 +1085,23 @@ do
     K.Go("bo")
     H.ok(f.status:GetText():find("did you mean", 1, true), "a near miss offers names", f.status:GetText())
 
+    -- THE LISTS SCROLL (Arn's first real report: 34 raiders, 27 rows, everyone after Rollsy gone)
+    local keep = _G.BiSGuildDB.record.nights["2026-10-09"].raiders
+    for i = 1, 40 do keep[("Zed%02d"):format(i)] = raider(1, 1) end
+    f.keys.raiders:Click()
+    local grid, panel = f.pages.raiders.grid, f.pages.raiders.panel
+    H.ok(panel.right:GetText():find("rows 1-27 of 42", 1, true), "the corner says which rows show", panel.right:GetText())
+    panel:Fire("OnMouseWheel", -1)
+    H.eq(grid.offset, 3, "the wheel moves three rows")
+    for _ = 1, 20 do panel:Fire("OnMouseWheel", -1) end
+    H.eq(grid.offset, 15, "and stops at the last row")
+    H.eq(grid.rows[27].cells[1]:GetText(), "Zed40", "the last raider is reachable")
+    for _ = 1, 20 do panel:Fire("OnMouseWheel", 1) end
+    H.eq(grid.offset, 0, "and back to the top")
+    for i = 1, 40 do keep[("Zed%02d"):format(i)] = nil end
+    K.Paint()
+    H.eq(panel.right:GetText(), "2 raiders, 2 nights", "a list that fits says nothing about rows")
+
     -- THE LOG TAB PUTS ITS WINDOW IN FRONT, WHOLE (Arn, 16 Oct: "this windows kinda get
     -- overlapping" - the terminal's ticker drew across the log window)
     local uf = NS.U.Build()

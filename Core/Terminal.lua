@@ -241,8 +241,27 @@ local function Panel(parent, title, x, y, w, h)
 end
 
 --- A table of rows: column heads in muted, `n` clickable rows below. cols = { {w, justify}, ... }
+--- THE LISTS SCROLL (Arn's first real report, 16 Oct: 34 raiders, 27 rows - everyone after Rollsy
+--- was simply not there). The mouse wheel moves a list three rows at a time; the panel's corner
+--- says which rows are showing.
+local function Scroll(g, total)
+    local most = math.max(0, total - #g.rows)
+    g.offset = math.max(0, math.min(g.offset or 0, most))
+    g.total = total
+    return g.offset
+end
+local function Showing(g)
+    if (g.total or 0) <= #g.rows then return "" end
+    return ("   rows %d-%d of %d"):format(g.offset + 1, math.min(g.total, g.offset + #g.rows), g.total)
+end
+
 local function Grid(parent, heads, cols, n, y0, onClick)
-    local g = { rows = {} }
+    local g = { rows = {}, offset = 0 }
+    parent:EnableMouseWheel(true)
+    parent:SetScript("OnMouseWheel", function(_, delta)
+        g.offset = (g.offset or 0) - (delta or 0) * 3
+        K.Paint()
+    end)
     local x = 6
     for i, c in ipairs(cols) do
         local h = Text(parent, 11, "muted", c[2])
@@ -407,7 +426,7 @@ function K.Build()
     local pr = Page()
     local plist = Panel(pr, "RAIDERS", 8, 0, K.W - 16, bodyH - 4)
     Hint(plist)
-    pr.grid = Grid(plist, { "NAME", "ATTEND", "LAST RAID", "FLASK", "DEATHS", "GEAR ISSUES" },
+    pr.grid = Grid(plist, { "NAME", "ATTEND", "LAST RAID", "FLASK/ELIX", "DEATHS", "GEAR ISSUES" },
         { { 200, "LEFT" }, { 80, "RIGHT" }, { 110, "RIGHT" }, { 70, "RIGHT" }, { 70, "RIGHT" }, { 110, "RIGHT" } },
         K.LIST_ROWS, 22, function(name) K.Go(name .. " <raider>") end)
     pr.panel = plist
@@ -526,10 +545,11 @@ K.Say = Say
 
 local function PaintRaiders(p)
     local rows = K.Rows(S().Cards())
-    p.panel.right:SetText(("%d raiders, %d nights"):format(#rows, #S().Dates()))
+    local off = Scroll(p.grid, #rows)
+    p.panel.right:SetText(("%d raiders, %d nights"):format(#rows, #S().Dates()) .. Showing(p.grid))
     if #rows == 0 then p.panel.hint:Show() else p.panel.hint:Hide() end
     for i, row in ipairs(p.grid.rows) do
-        local r = rows[i]
+        local r = rows[i + off]
         if r then
             SetRow(row, r.name, { r.name, r.att .. "%", r.last, r.flask and "yes" or "no", r.deaths,
                                   r.issues > 0 and (r.issues .. " no enchant") or "clean" },
@@ -543,10 +563,11 @@ end
 
 local function PaintBosses(p)
     local rows = K.BossRows(S().Bosses())
-    p.panel.right:SetText(("%d bosses"):format(#rows))
+    local off = Scroll(p.grid, #rows)
+    p.panel.right:SetText(("%d bosses"):format(#rows) .. Showing(p.grid))
     if #rows == 0 then p.panel.hint:Show() else p.panel.hint:Hide() end
     for i, row in ipairs(p.grid.rows) do
-        local r = rows[i]
+        local r = rows[i + off]
         if r then
             SetRow(row, r.name, { r.name, r.kills, r.wipes, K.Clock(r.best), r.first },
                 { "ink", r.kills > 0 and "good" or "muted", r.wipes > 0 and "warn" or "ink2", "gold", "ink2" })
@@ -658,9 +679,10 @@ local function PaintBoss(p, name)
     local who = {}
     for n, c in pairs(pg.killers) do who[#who + 1] = { n, c } end
     table.sort(who, function(a, b) if a[2] ~= b[2] then return a[2] > b[2] end return a[1] < b[1] end)
-    p.killers.right:SetText(("%d raiders"):format(#who))
+    local off = Scroll(p.grid, #who)
+    p.killers.right:SetText(("%d raiders"):format(#who) .. Showing(p.grid))
     for i, row in ipairs(p.grid.rows) do
-        local w = who[i]
+        local w = who[i + off]
         if w then SetRow(row, w[1], { w[1], w[2] }, { "ink", "good" }) else SetRow(row, nil, {}) end
     end
     return true
@@ -692,6 +714,9 @@ end
 --------------------------------------------------------------------
 
 function K.Open(page, key)
+    -- a different boss starts its killers list at the top; the two big lists keep their place
+    local p = K.frame and K.frame.pages[page]
+    if p and p.grid and page == "boss" and key ~= K.key then p.grid.offset = 0 end
     K.page, K.key = page, key
     K.Paint()
 end
