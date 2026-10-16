@@ -130,6 +130,38 @@ def main():
         # a re-run of the same log replaces its night, never doubles it
         logreport.main(path, write=True)
         ok(len(logreport.read_history(path)) == 1, "the same log twice is still one night")
+
+        # THE POWERSHELL ONE SAYS THE SAME (raiders run that one): the same log in a second scratch
+        # client, both reports compared value by value
+        ps = shutil.which("powershell") or shutil.which("pwsh")
+        luaexe = r"C:\Program Files (x86)\Lua\5.1\lua.exe"
+        if ps and os.path.exists(luaexe):
+            root2 = tempfile.mkdtemp(prefix="bisguild-ps-")
+            try:
+                logs2 = os.path.join(root2, "Logs")
+                addon2 = os.path.join(root2, "Interface", "AddOns", "BiSGuild")
+                os.makedirs(logs2)
+                os.makedirs(addon2)
+                shutil.copy(path, logs2)
+                script = os.path.join(os.path.dirname(HERE), "Tools", "logreport.ps1")
+                r = subprocess.run([ps, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script,
+                                    "-Logs", logs2], capture_output=True, text=True)
+                ok(r.returncode == 0, "the PowerShell reader runs", (r.stdout + r.stderr)[-400:])
+                cmp = subprocess.run([luaexe, os.path.join(HERE, "same_report.lua"), report,
+                                      os.path.join(addon2, "Data", "Report.lua")],
+                                     capture_output=True, text=True)
+                ok(cmp.returncode == 0, "Python and PowerShell write the same report", cmp.stdout[-600:])
+                # and the PowerShell one KEEPS what the Python one wrote into the history
+                shutil.copy(logreport.history_path(path), os.path.join(root2, "WTF", "BiSGuild", "history.json"))
+                subprocess.run([ps, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, "-Logs", logs2],
+                               capture_output=True, text=True)
+                h2 = open(os.path.join(root2, "WTF", "BiSGuild", "history.json"), encoding="utf-8").read()
+                ok('"detail"' in h2 and '"bosses"' in h2 and "2623" in h2,
+                   "the PowerShell reader carries the per-raider detail through the history")
+            finally:
+                shutil.rmtree(root2, ignore_errors=True)
+        else:
+            print("skip PowerShell parity (no powershell or lua here)")
     finally:
         shutil.rmtree(root, ignore_errors=True)
     print("ALL OK" if fails == 0 else "%d FAILED" % fails)

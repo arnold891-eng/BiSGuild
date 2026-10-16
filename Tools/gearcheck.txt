@@ -1,0 +1,19 @@
+# BiSGuild :: which gear slots should carry an enchant (the raider card's "no enchant" flag).
+#
+# Arn, 16 Oct 2026: the raider card shows gear the way the old raid-prep sheet did, red where a slot
+# that should be enchanted is not. What Forever lets you enchant is the guild's call, so it is a list
+# here, not a rule in the code. Seeded from Arn's own 5 Oct log: back, chest, wrist, hands, legs,
+# feet and main hand all carried enchants.
+#
+# Off hand is left out on purpose: a caster's held-in-off-hand item cannot be enchanted, and the log
+# does not say which kind of off hand it is - flagging every one would cry wolf at half the raid.
+#
+#   enchant <slot>      slots: head neck shoulder chest waist legs feet wrist hands back mainhand ...
+
+enchant back
+enchant chest
+enchant wrist
+enchant hands
+enchant legs
+enchant feet
+enchant mainhand
