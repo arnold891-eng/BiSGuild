@@ -45,7 +45,8 @@ gear issues, cooldowns, deaths per night) - and the Terminal's layout: tickers, 
 
 ## Open questions
 
-- **Enchant ids 8481-8486** sit on legs, feet, chest and hands of most low-level dungeon players in
-  Arn's 5 Oct log - likely Forever runes/engravings stored in the enchant field, not enchants. Until
-  Arn checks what is on his own legs/hands/chest, "no enchant" may read a rune as an enchant.
+- ~~Enchant ids 8481-8486~~ ANSWERED 16 Oct: Forever's leatherworking armor kits (Arn's screenshot:
+  "Mystic Medium Armor Kit", item 252436 - spell power +2 and armor +16 on chest, legs, hands or
+  feet), so they are real enchants and "no enchant" is right to pass them. Later: a list of
+  raid-worthy enchant ids would let the card say "kit only" - the old sheet's cheap-enchant column.
 - Potion spell names in consumables.txt are the classic ones, unverified on Forever until a raid log.
