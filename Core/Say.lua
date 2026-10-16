@@ -16,8 +16,15 @@ function ns.Say(cmd, rest)
     -- THE WINDOW IS THE FRONT DOOR (5 Oct 2026). Arn: "give me a bis themed window for bis guild so
     -- i can copy and paste and not have to write out commands". A bare `/bisg` opens it; everything
     -- that was a command still is one, for anybody who prefers them.
-    if cmd == "" and ns.U and ns.U.Toggle then
-        ns.U.Toggle()
+    --
+    -- THE TERMINAL IS THE FRONT DOOR NOW (16 Oct 2026, the raider terminal). The script window is
+    -- still one key away (F3 LOG) and still `/bisg window`.
+    if cmd == "" and ns.K and ns.K.Toggle then
+        ns.K.Toggle()
+        return
+    end
+    if cmd == "terminal" or cmd == "t" then
+        if ns.K then ns.K.Show(rest ~= "" and rest or nil) end
         return
     end
     if cmd == "window" or cmd == "show" then
@@ -119,8 +126,9 @@ function ns.Say(cmd, rest)
     end
     if cmd == "help" then
         ns.Print("version %s", ns.VERSION)
-        ns.Print("  %s  the window: paste a path, copy a command, read the numbers",
-            ns.T.text("accent", "/bisg"))
+        ns.Print("  %s  the raider terminal: type a raider or a boss", ns.T.text("accent", "/bisg"))
+        ns.Print("  %s  straight to one raider or boss", ns.T.text("accent", "/bisg <name>"))
+        ns.Print("  %s  the log window: paste a path, copy a command", ns.T.text("accent", "/bisg window"))
         ns.Print("  %s  attendance and consumes from the combat log", ns.T.text("accent", "/bisg report"))
         ns.Print("  %s  where your logs are (once)", ns.T.text("accent", "/bisg logs <path>"))
         ns.Print("  %s  the line to run after a raid", ns.T.text("accent", "/bisg script"))
@@ -129,5 +137,15 @@ function ns.Say(cmd, rest)
     -- ANYTHING ELSE IS THE REPORT. There used to be an `all()` here reading the addon's own
     -- attendance; the addon does not keep any now, so the report IS the answer to "how is everyone
     -- doing" and there is nothing else it could have meant.
+    --
+    -- Unless it is a name on the record (16 Oct): `/bisg kumlust` opens his card in the terminal.
+    if ns.K and ns.S then
+        local name = (rest ~= "" and (cmd .. " " .. rest)) or cmd
+        local kind = ns.K.Parse(name, ns.S.Cards(), ns.S.Bosses())
+        if kind == "raider" or kind == "boss" then
+            ns.K.Show(name)
+            return
+        end
+    end
     return ns.Say("report")
 end

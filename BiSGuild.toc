@@ -24,4 +24,5 @@ Core\Report.lua
 Core\Store.lua
 Core\Share.lua
 Core\Window.lua
+Core\Terminal.lua
 Core\Say.lua

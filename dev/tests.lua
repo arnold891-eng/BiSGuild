@@ -974,6 +974,138 @@ do
     H.wire = {}
 end
 
+--=============================================================================
+-- THE RAIDER TERMINAL (16 Oct 2026). Arn: "type in a raider name, show all the gear they have ...
+-- what their attendance is, how much they consume" and "we type in a boss name, it's like its own
+-- company ticker".
+--=============================================================================
+H.section("the terminal: what a typed line asks for")
+do
+    local K = NS.K
+    local cards = { Kumlust = {}, Kumlance = {}, Margo = {}, Alice = {} }
+    local bosses = { ["Ragnaros"] = {}, ["Magmadar"] = {} }
+    local function p(line) return { K.Parse(line, cards, bosses) } end
+    H.ok(deq(p("kumlust"), { "raider", "Kumlust" }), "a bare name, any case")
+    H.ok(deq(p("KUMLUST <RAIDER> GO"), { "raider", "Kumlust" }), "the Bloomberg way works too")
+    H.ok(deq(p("RAGNAROS <BOSS> GO"), { "boss", "Ragnaros" }), "and for a boss")
+    H.ok(deq(p("rag"), { "boss", "Ragnaros" }), "the start of a name, when only one starts so")
+    H.ok(deq(p("margo"), { "raider", "Margo" }), "a name ending in 'go' is not a GO")
+    H.ok(deq(p("F2"), { "bosses" }) and deq(p("<raider> go"), { "raiders" }), "the lists by key or by word")
+    local kind, offer = K.Parse("kum", cards, bosses)
+    H.eq(kind, nil, "two raiders start with kum: not a guess")
+    H.ok(deq(offer, { "Kumlance", "Kumlust" }), "but both are offered", offer and table.concat(offer, ","))
+    H.eq(K.Parse("ma <boss>", cards, bosses), "boss", "<boss> narrows to bosses: Magmadar, not Margo")
+    H.eq(K.Clock(245000), "4:05", "a kill time reads m:ss")
+    H.eq(K.Clock(0), "-", "no kill, no time")
+    H.ok(math.abs(K.W / K.H - 1.43) < 0.01, "the window is the family's 1.43:1")
+end
+
+H.section("the terminal: the raider card and the boss ticker")
+do
+    local K = NS.K
+    local saved = _G.BiSGuildDB.record
+    local gear = {}
+    for i = 1, 19 do gear[i] = { 1000 + i, 30, (i == 5) and 0 or 9, 0, {} } end
+    gear[18] = { 0, 0, 0, 0, {} }
+    _G.BiSGuildDB.record = {
+        nights = {
+            ["2026-10-09"] = { kills = 2, raiders = { Alice = raider(2, 3), Bob = raider(2, 3, 2) },
+                               bosses = { ["Boss One"] = { pulls = 3, kills = 1, best = 250000, killers = { "Alice", "Bob" } } } },
+            ["2026-10-16"] = { kills = 2, raiders = { Alice = raider(2, 2) },
+                               bosses = { ["Boss One"] = { pulls = 1, kills = 1, best = 245000, killers = { "Alice" } } } },
+        },
+        gear = { Alice = { date = "2026-10-16", gear = gear } },
+    }
+    _G.GetItemInfo = function(id) if id == 1001 then return "Helm of Testing", nil, 4 end return nil end
+
+    -- empty first: the window says what to do instead of showing blank tables
+    local rec = _G.BiSGuildDB.record
+    _G.BiSGuildDB.record = { nights = {}, gear = {} }
+    K.page = nil
+    local f = K.Show()
+    H.ok(f and f:IsShown(), "the terminal opens")
+    H.eq(K.page, "empty", "with no nights it shows the empty page")
+    H.ok(f.pages.empty.text:GetText():find("F3 LOG", 1, true), "which says where the nights come from")
+    _G.BiSGuildDB.record = rec
+
+    K.Go("F1")
+    H.eq(K.page, "raiders", "F1: the raiders")
+    local row1 = f.pages.raiders.grid.rows[1]
+    H.eq(row1.key, "Alice", "best attendance first")
+    H.eq(row1.cells[2]:GetText(), "100%", "Alice made both nights")
+    H.eq(f.pages.raiders.grid.rows[2].cells[2]:GetText(), "50%", "Bob one of two")
+    H.ok(not f.pages.raiders.grid.rows[3]:IsShown(), "and no empty rows show")
+
+    H.wire = {}
+    row1:Click()
+    H.eq(K.page, "raider", "clicking a row opens the card")
+    H.eq(K.key, "Alice", "Alice's")
+    local rc = f.pages.raider
+    H.eq(rc.gear.rows[1].cells[2]:GetText(), "Helm of Testing", "the armory names the item")
+    H.eq(rc.gear.rows[2].cells[2]:GetText(), "item 1002", "or says its number until the client knows it")
+    H.eq(rc.gear.rows[5].cells[4]:GetText(), "no enchant", "the unenchanted chest is flagged")
+    H.eq(rc.gear.rows[18].cells[2]:GetText(), "-", "an empty slot is a dash")
+    H.ok(rc.attLine:GetText():find("2 of 2 nights", 1, true), "attendance in words", rc.attLine:GetText())
+    H.ok(rc.consLines[1]:GetText():find("2 of 2 pulls", 1, true), "her flask on the latest night", rc.consLines[1]:GetText())
+    H.eq(rc.lootLines[1]:GetText(), "BiS Loot has not run on this client", "no ledger: says so")
+    for _ = 1, 3 do H.clock = H.clock + 2 H.RunTimers() end
+    local asked = false
+    for _, w in ipairs(H.wire) do if w.msg:find("|GLOG|GWANT|Alice|", 1, true) then asked = true end end
+    H.ok(asked, "opening a card asks officers for newer gear")
+
+    -- loot won, straight from BiS Loot's ledger
+    _G.BiSLootDB = { lines = {
+        table.concat({ "1", "Kumlust", "1", "0", "1700000000", "award", "MC", "Boss One", "1001", "Alice", "MS", "hand", "", "", "sum" }, "\t"),
+        table.concat({ "1", "Kumlust", "2", "x", "1700000100", "award", "MC", "Boss One", "1003", "Bob", "MS", "hand", "", "", "sum" }, "\t"),
+    } }
+    K.Go("alice")
+    H.ok(rc.lootLines[1]:GetText():find("Helm of Testing", 1, true), "her loot from the ledger", rc.lootLines[1]:GetText())
+    H.eq(rc.lootLines[2]:GetText(), "", "and only hers")
+    _G.BiSLootDB = nil
+
+    -- the boss ticker
+    K.Go("BOSS ONE <BOSS> GO")
+    H.eq(K.page, "boss", "a boss name opens its page")
+    local bp = f.pages.boss
+    H.ok(bp.statLines[1]:GetText():find("2", 1, true), "two kills", bp.statLines[1]:GetText())
+    H.ok(bp.statLines[4]:GetText():find("4:05", 1, true), "the fastest", bp.statLines[4]:GetText())
+    H.eq(bp.statLines[5]:GetText(), "first kill   2026-10-09", "the first kill")
+    H.eq(bp.grid.rows[1].key, "Alice", "most kills first")
+    H.eq(bp.grid.rows[1].cells[2]:GetText(), "2", "Alice was there for both")
+    H.ok(f.tick:GetText():find("BOSS ONE DOWN 4:05", 1, true), "the ticker carries the newest night", f.tick:GetText())
+
+    -- a miss says what it could have meant
+    K.Go("bo")
+    H.ok(f.status:GetText():find("did you mean", 1, true), "a near miss offers names", f.status:GetText())
+
+    -- the F-keys work from the command line, and only there
+    f.cmd:Fire("OnKeyDown", "F2")
+    H.eq(K.page, "bosses", "F2 from the command line")
+    f.cmd:SetText("alice")
+    f.cmd:Fire("OnEnterPressed")
+    H.eq(K.key, "Alice", "typing a name and Enter")
+    H.eq(f.cmd:GetText(), "", "and the line clears for the next one")
+
+    -- ESC: the line gives up the keyboard first, then the window closes
+    H.ok(f.cmd:HasFocus(), "the command line has the keyboard while open")
+    f.cmd:Fire("OnEscapePressed")
+    H.ok(not f.cmd:HasFocus(), "the first ESC hands the keyboard back")
+    f:Fire("OnKeyDown", "ESCAPE")
+    H.ok(not f:IsShown(), "the next closes the window")
+
+    -- /bisg opens it; /bisg <name> opens a card
+    _G.SlashCmdList.BISGUILD("")
+    H.ok(f:IsShown(), "a bare /bisg opens the terminal")
+    _G.SlashCmdList.BISGUILD("")
+    H.ok(not f:IsShown(), "and closes it")
+    _G.SlashCmdList.BISGUILD("bob")
+    H.ok(f:IsShown() and K.key == "Bob", "/bisg bob opens Bob's card")
+    K.Hide()
+
+    _G.GetItemInfo = nil
+    _G.BiSGuildDB.record = saved
+end
+
 -- WHAT AN OPEN WINDOW COSTS, IN CLIENT CALLS (7 Oct 2026). BiSHealing asked the client ~630,000
 -- things a second and every suite was green; Arn: "make sure stuff like this does not happen".
 -- The window ticks every frame while it is open (the cursor, the prompt, the typing). A second of
@@ -992,6 +1124,17 @@ do
     H.say(("   cost: open window, 1 s = %d calls (%s)"):format(n, Cost.Top(by, 3)))
     H.ok(n <= 120, "a second of the open window asks the client at most two things a frame: " .. n,
          Cost.Top(by, 4))
+
+    -- a second of the open terminal: the ticker slides one SetPoint a frame
+    local K = NS.K
+    local kf = K.Show("F1")
+    local tick = kf._scripts.OnUpdate
+    local nk, byk = Cost.Count(function()
+        for _ = 1, 60 do H.clock = H.clock + 1 / 60 tick(kf, 1 / 60) end
+    end)
+    H.say(("   cost: open terminal, 1 s = %d calls (%s)"):format(nk, Cost.Top(byk, 3)))
+    H.ok(nk <= 120, "a second of the open terminal: at most two client calls a frame: " .. nk, Cost.Top(byk, 4))
+    K.Hide()
 
     -- hearing a whole 25-raider night from an officer: the roster is read once, not once a part
     local text = NS.X.EncodeNight(bigNight())
