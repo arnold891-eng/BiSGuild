@@ -568,6 +568,12 @@ function U.Show()
     if not f then return false end
     U.Refresh()
     f:Show()
+    -- IN FRONT, WHOLE (Arn, 16 Oct: "this windows kinda get overlapping"). The terminal opens this
+    -- from its LOG tab, and two windows on the same strata interleave their pieces - the terminal's
+    -- ticker bar drew across this one. Toplevel + Raise is the client's own answer: the window you
+    -- opened or clicked last is on top, all of it.
+    if f.SetToplevel then f:SetToplevel(true) end
+    if f.Raise then f:Raise() end
     return true
 end
 

@@ -1085,6 +1085,17 @@ do
     K.Go("bo")
     H.ok(f.status:GetText():find("did you mean", 1, true), "a near miss offers names", f.status:GetText())
 
+    -- THE LOG TAB PUTS ITS WINDOW IN FRONT, WHOLE (Arn, 16 Oct: "this windows kinda get
+    -- overlapping" - the terminal's ticker drew across the log window)
+    local uf = NS.U.Build()
+    local raised, top = false, false
+    uf.Raise = function() raised = true end
+    uf.SetToplevel = function(_, v) top = v end
+    f.keys.log:Click()
+    H.ok(uf:IsShown() and raised and top, "the LOG tab raises the log window over the terminal")
+    NS.U.Hide()
+    uf.Raise, uf.SetToplevel = nil, nil
+
     -- NO FUNCTION KEYS (Arn: "i have stuff keybound to those keys")
     local before = K.page
     f.cmd:Fire("OnKeyDown", "F2")

@@ -733,6 +733,9 @@ function K.Show(page, key)
     local f = K.Build()
     if not f then return end
     f:Show()
+    -- in front, whole, and back in front when clicked (the log window does the same - Window.lua)
+    if f.SetToplevel then f:SetToplevel(true) end
+    if f.Raise then f:Raise() end
     if f.con then f.con:Say("guild record", "accent") end
     if page then K.Go(page) elseif not K.page then K.Go("raiders") else K.Paint() end
     f.cmd:SetFocus()
