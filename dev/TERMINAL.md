@@ -24,7 +24,8 @@ gear issues, cooldowns, deaths per night) - and the Terminal's layout: tickers, 
    attended nights, consumes (flask / elixirs / food / weapon / in-pull potions), deaths; per boss -
    kills, wipes, first kill, best time (ENCOUNTER_END ms), who was there. Written into Data/Report.lua
    as `days`, `cards`, `bosses` beside the old `rows`.
-2. **The terminal window**: the raider card (armory + attendance + consumes + issues + loot), the boss
+2. **The terminal window** - FIRST CUT on the beta 16 Oct (Core/Terminal.lua; the WHERE map panel is
+   still to come): the raider card (armory + attendance + consumes + issues + loot), the boss
    page, a ticker along the top, function keys for views, a WHERE panel (guild map spots from
    LibBiSComm - "a map too showing where all the raiders are at").
 3. **Sharing** - BUILT 16 Oct, not yet seen in game (Core/Store.lua keeps `BiSGuildDB.record`,
