@@ -121,6 +121,19 @@ def main():
            "who was there for the kill, and the first-kill date", b1.get("killers"))
         ok("bosses = {" in text, "the report carries the boss pages")
 
+        # THE NIGHT AS ONE RECORD - what the addon keeps and shares (Arn, 16 Oct: "if I miss one raid
+        # night what stops the addon from updating")
+        nl = logreport.build_nightly(hist).get("2026-10-16", {})
+        ok(nl.get("kills") == 1 and set(nl.get("raiders", {})) == {"Alice", "Bob"},
+           "the night: one kill, both raiders", nl.get("kills"))
+        ra, rb = nl["raiders"]["Alice"], nl["raiders"]["Bob"]
+        ok(ra["present"] == 1 and ra["flask"] == 1 and ra["pots"] == 1 and rb["deaths"] == 1,
+           "each raider's numbers ride in it", (ra, rb))
+        nb = nl["bosses"].get("Boss One", {})
+        ok(nb.get("pulls") == 2 and nb.get("kills") == 1 and nb.get("best") == 245000
+           and nb.get("killers") == ["Alice", "Bob"], "and each boss, its killers in one order", nb)
+        ok("nightly = {" in text, "the report carries the nights")
+
         # the report is Lua the client can load
         lua = r"C:\Program Files (x86)\Lua\5.1\luac.exe"
         if os.path.exists(lua):

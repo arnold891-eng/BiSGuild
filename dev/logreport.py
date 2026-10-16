@@ -399,7 +399,8 @@ def main(path, kills_only=True, paste=False, review=False, write=False, include_
         print("BISGUILD1|" + "|".join("%s,%d,%d" % r for r in rows))
 
     if write:
-        wrote = write_data(rows, total, zones, path, raided, cards, sorted(days), bosscards)
+        wrote = write_data(rows, total, zones, path, raided, cards, sorted(days), bosscards,
+                           build_nightly(nights))
         print()
         if wrote:
             for w in wrote:
@@ -448,6 +449,39 @@ def build_bosses(nights):
             for who in b.get("killers", []):
                 pg["killers"][who] = pg["killers"].get(who, 0) + 1
     return pages
+
+
+NIGHT_FIELDS = ("present", "ready", "pulls", "flask", "elixir", "food", "weapon", "weaponSeen", "pots", "deaths")
+
+
+def build_nightly(nights):
+    """EVERY RAID DAY AS ONE RECORD - what BiS Guild keeps in its saved variables and shares with the
+    guild (Arn, 16 Oct: "if I miss one raid night what stops the addon from updating"). Logs from one
+    date are added together, the same rule the attendance count uses. Gear is not in here: only the
+    latest matters, and the cards carry it."""
+    out = {}
+    for n in sorted(nights.values(), key=lambda n: (n.get("date") or n["log"])):
+        date = n.get("date") or n["log"]
+        d = out.setdefault(date, {"kills": 0, "raiders": {}, "bosses": {}})
+        d["kills"] += n["kills"]
+        detail = n.get("detail") or {}
+        for who in set(n["present"]) | set(detail):
+            r = d["raiders"].setdefault(who, {k: 0 for k in NIGHT_FIELDS})
+            r["present"] += n["present"].get(who, 0)
+            r["ready"] += n["ready"].get(who, 0)
+            for k in NIGHT_FIELDS[2:]:
+                r[k] += (detail.get(who) or {}).get(k, 0)
+        for boss, b in (n.get("bosses") or {}).items():
+            pb = d["bosses"].setdefault(boss, {"pulls": 0, "kills": 0, "best": 0, "killers": []})
+            pb["pulls"] += b["pulls"]
+            pb["kills"] += b["kills"]
+            if b.get("best") and (not pb["best"] or b["best"] < pb["best"]):
+                pb["best"] = b["best"]
+            pb["killers"].extend(b.get("killers", []))
+    for d in out.values():
+        for pb in d["bosses"].values():
+            pb["killers"].sort()          # one order, so both readers and every copy say the same
+    return out
 
 
 def build_cards(nights, attended, want):
@@ -573,7 +607,7 @@ def lua_val(v, ind=""):
     return lua_str(v)
 
 
-def write_data(rows, kills, zones, log_path=None, nights=1, cards=None, days=None, bosses=None):
+def write_data(rows, kills, zones, log_path=None, nights=1, cards=None, days=None, bosses=None, nightly=None):
     """Write Data/Report.lua into each installed copy.
 
     Arn: "am I expected to copy and paste a whole 108mb of text into a text box in wow?" No - and
@@ -601,6 +635,8 @@ def write_data(rows, kills, zones, log_path=None, nights=1, cards=None, days=Non
     body.append("    days = %s," % lua_val(list(days or [])))
     body.append("    cards = %s," % lua_val(cards or {}, "    "))
     body.append("    bosses = %s," % lua_val(bosses or {}, "    "))
+    # every raid day as one record: what the addon keeps and shares with the guild
+    body.append("    nightly = %s," % lua_val(nightly or {}, "    "))
     body.append("}")
     text = "\n".join(body) + "\n"
 

@@ -522,6 +522,51 @@ foreach ($n in $byDate) {
     }
 }
 
+# EVERY RAID DAY AS ONE RECORD (same rules as dev/logreport.py build_nightly): what BiS Guild keeps
+# in its saved variables and shares with the guild. Logs from one date are added together.
+$nightFields = @("present", "ready", "pulls", "flask", "elixir", "food", "weapon", "weaponSeen", "pots", "deaths")
+$nightly = @{}
+foreach ($n in $byDate) {
+    $date = Get-NightKey $n
+    if (-not $nightly.ContainsKey($date)) { $nightly[$date] = @{ kills = 0; raiders = @{}; bosses = @{} } }
+    $nd = $nightly[$date]
+    $nd['kills'] += [int]$n.kills
+    $whoAll = @{}
+    foreach ($who in @($n.present.Keys)) { $whoAll[$who] = $true }
+    if ($n.detail) { foreach ($who in @($n.detail.Keys)) { $whoAll[$who] = $true } }
+    foreach ($who in @($whoAll.Keys)) {
+        if (-not $nd.raiders.ContainsKey($who)) {
+            $r = @{}
+            foreach ($k in $nightFields) { $r[$k] = 0 }
+            $nd.raiders[$who] = $r
+        }
+        $r = $nd.raiders[$who]
+        if ($n.present.ContainsKey($who)) { $r['present'] += [int]$n.present[$who] }
+        if ($n.ready.ContainsKey($who)) { $r['ready'] += [int]$n.ready[$who] }
+        if ($n.detail -and $n.detail.ContainsKey($who)) {
+            $dd = $n.detail[$who]
+            foreach ($k in $nightFields[2..($nightFields.Count - 1)]) { $r[$k] += [int]$dd[$k] }
+        }
+    }
+    if ($n.bosses) {
+        foreach ($boss in @($n.bosses.Keys)) {
+            $b = $n.bosses[$boss]
+            if (-not $nd.bosses.ContainsKey($boss)) {
+                $nd.bosses[$boss] = @{ pulls = 0; kills = 0; best = 0; killers = (New-Object System.Collections.ArrayList) }
+            }
+            $pb = $nd.bosses[$boss]
+            $pb['pulls'] += [int]$b.pulls
+            $pb['kills'] += [int]$b.kills
+            if ([int]$b.best -and (-not $pb['best'] -or [int]$b.best -lt $pb['best'])) { $pb['best'] = [int]$b.best }
+            foreach ($who in @($b.killers)) { if ($null -ne $who) { [void]$pb['killers'].Add([string]$who) } }
+        }
+    }
+}
+# one order, so both readers and every copy say the same - ORDINAL, as Python sorts, not the culture's
+foreach ($nd in @($nightly.Values)) {
+    foreach ($pb in @($nd.bosses.Values)) { $pb['killers'].Sort([System.StringComparer]::Ordinal) }
+}
+
 # any value as Lua: numbers, strings, lists, string-keyed tables (a $null is left out)
 function ConvertTo-Lua($v, [string]$ind) {
     if ($null -eq $v) { return "nil" }
@@ -597,6 +642,8 @@ foreach ($root in $roots) {
     [void]$sb.AppendLine(("    days = {0}," -f (ConvertTo-Lua (@($days.Keys | Sort-Object)) "    ")))
     [void]$sb.AppendLine(("    cards = {0}," -f (ConvertTo-Lua $cards "    ")))
     [void]$sb.AppendLine(("    bosses = {0}," -f (ConvertTo-Lua $bossPages "    ")))
+    # every raid day as one record: what the addon keeps and shares with the guild
+    [void]$sb.AppendLine(("    nightly = {0}," -f (ConvertTo-Lua $nightly "    ")))
     [void]$sb.AppendLine("}")
 
     $out = Join-Path $data "Report.lua"

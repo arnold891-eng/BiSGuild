@@ -32,7 +32,7 @@ end
 
 local a, b = load(arg[1]), load(arg[2])
 local out = {}
-for _, k in ipairs({ "days", "cards", "bosses", "rows", "kills", "nights", "zones" }) do
+for _, k in ipairs({ "days", "cards", "bosses", "nightly", "rows", "kills", "nights", "zones" }) do
     same(a[k], b[k], k, out)
 end
 if #out == 0 then
