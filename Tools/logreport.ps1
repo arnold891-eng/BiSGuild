@@ -36,11 +36,45 @@ $ErrorActionPreference = "Stop"
 # ---------------------------------------------------------------- the log ----
 if (-not (Test-Path -LiteralPath $Logs)) { throw "no such folder: $Logs" }
 
+# EVERY LOG NOT READ YET, OLDEST FIRST (16 Oct 2026). Arn put four logs in the folder and the script
+# read one: "there are 4 logs tho". It took only the newest, which is right for "run it after every
+# raid" and wrong for the worry the whole record exists for - "if I miss one raid night". Miss one
+# run and that night was never read. So the folder is the to-do list: a log is remembered in
+# WTF\BiSGuild\seen.txt by name, size and whether -Dungeons was on, and every log not on that list
+# is read, oldest first, each by this same script with -Log. A log still being written has grown
+# since, so it is read again; a log with no kills is remembered too, so it is not re-read forever.
+$seenPath = Join-Path (Join-Path (Join-Path (Split-Path $Logs -Parent) "WTF") "BiSGuild") "seen.txt"
+function Get-SeenKey($f) { "{0}|{1}|{2}" -f $f.Name, $f.Length, $(if ($Dungeons) { "d" } else { "r" }) }
+function Set-Seen($f) {
+    $dir = Split-Path $seenPath -Parent
+    if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
+    [System.IO.File]::AppendAllText($seenPath, (Get-SeenKey $f) + "`n", (New-Object System.Text.UTF8Encoding $false))
+}
+
 if ($Log) {
     $file = Get-Item -LiteralPath $Log
 } else {
-    $file = Get-ChildItem -LiteralPath $Logs -Filter "WoWCombatLog*.txt" |
-            Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    $all = @(Get-ChildItem -LiteralPath $Logs -Filter "WoWCombatLog*.txt" | Sort-Object LastWriteTime)
+    if ($all.Count -eq 0) { throw "no WoWCombatLog*.txt in $Logs" }
+    $seen = @{}
+    if (Test-Path -LiteralPath $seenPath) {
+        foreach ($l in [System.IO.File]::ReadAllLines($seenPath)) { if ($l) { $seen[$l] = $true } }
+    }
+    $todo = @($all | Where-Object { -not $seen.ContainsKey((Get-SeenKey $_)) })
+    if ($todo.Count -eq 0) {
+        Write-Host "every log in the folder has been read already - writing the report again from the record"
+        $file = $all[$all.Count - 1]
+    } else {
+        if ($todo.Count -gt 1) { Write-Host ("{0} logs not read yet - reading them oldest first" -f $todo.Count) }
+        for ($i = 0; $i -lt $todo.Count - 1; $i++) {
+            $one = @{ Logs = $Logs; Log = $todo[$i].FullName }
+            if ($Dungeons) { $one.Dungeons = $true }
+            if ($AllPulls) { $one.AllPulls = $true }
+            try { & $PSCommandPath @one } catch { Write-Host ("  {0} could not be read: {1}" -f $todo[$i].Name, $_) }
+            Write-Host ""
+        }
+        $file = $todo[$todo.Count - 1]
+    }
 }
 if (-not $file) { throw "no WoWCombatLog*.txt in $Logs" }
 
@@ -250,6 +284,7 @@ if ($counted.Count -eq 0) {
         Write-Host ("  {0} five-man boss kill(s) were left out - a dungeon boss is not a raid night." -f $fiveMans.Count)
         Write-Host "  -Dungeons counts them, which is useful for testing and wrong for a record."
     }
+    Set-Seen $file          # read, and nothing in it: not worth reading again
     exit 1
 }
 
@@ -414,6 +449,7 @@ if (-not (Test-Path -LiteralPath $histDir)) { New-Item -ItemType Directory -Forc
 $out = [ordered]@{ version = 1; nights = @($nights.Values | Sort-Object { $_.log }) }
 [System.IO.File]::WriteAllText($histPath, ($out | ConvertTo-Json -Depth 12),
                                (New-Object System.Text.UTF8Encoding $false))
+Set-Seen $file              # its night is in the history now
 
 # ------------------------------------------------- the numbers, over all of it
 # A RAID DAY IS THE WHOLE DAY (Arn, 5 Oct: "i guess we can count a raid day as the whole day not

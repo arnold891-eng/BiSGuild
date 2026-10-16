@@ -180,6 +180,27 @@ def main():
                 h2 = open(os.path.join(root2, "WTF", "BiSGuild", "history.json"), encoding="utf-8").read()
                 ok('"detail"' in h2 and '"bosses"' in h2 and "2623" in h2,
                    "the PowerShell reader carries the per-raider detail through the history")
+
+                # EVERY LOG NOT READ YET (Arn, 16 Oct: "there are 4 logs tho" - it read only the
+                # newest). A second night's log, plus one with no kills at all, in the same folder:
+                # one run reads both new ones, and a run after that reads nothing new.
+                older = os.path.join(logs2, "WoWCombatLog-100926_190000.txt")
+                shutil.copy(path, older)
+                os.utime(older, (1, 1))                      # older than the first by its clock
+                with open(os.path.join(logs2, "WoWCombatLog-101726_190000.txt"), "w", encoding="utf-8") as fh:
+                    fh.write(T + 'SPELL_AURA_APPLIED,Player-1-A,"Alice",0x511,0x0,Player-1-A,"Alice",0x511,0x0,1,"x",0x1,BUFF\n')
+                r = subprocess.run([ps, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, "-Logs", logs2],
+                                   capture_output=True, text=True)
+                h3 = open(os.path.join(root2, "WTF", "BiSGuild", "history.json"), encoding="utf-8").read()
+                ok("2 logs not read yet" in r.stdout and "WoWCombatLog-100926_190000.txt" in h3,
+                   "one run reads every log it has not read, oldest first", r.stdout[-400:])
+                rep = open(os.path.join(addon2, "Data", "Report.lua"), encoding="utf-8").read()
+                ok('days = { "2026-10-09", "2026-10-16" }' in rep, "and the report has both nights",
+                   re.search(r"days = [^\n]*", rep) and re.search(r"days = [^\n]*", rep).group(0))
+                r = subprocess.run([ps, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, "-Logs", logs2],
+                                   capture_output=True, text=True)
+                ok("read already" in r.stdout and "not read yet" not in r.stdout,
+                   "a run after that has nothing new to read", r.stdout[-300:])
             finally:
                 shutil.rmtree(root2, ignore_errors=True)
         else:
