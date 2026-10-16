@@ -32,6 +32,9 @@ K.ROW = 16
 K.FONT = "Fonts\\ARIALN.TTF"   -- narrow, closest the client ships to a terminal face
 K.LIST_ROWS = 27
 K.STRIP = 12                   -- nights in an attendance strip
+-- THE HOVER IS A TINT, NOT A COVER (Arn's screenshot, 16 Oct: the hovered row's item went faded).
+-- The client draws the HIGHLIGHT layer above the text, so a highlight at 0.8 washes the words out.
+K.HOVER = 0.18
 
 local function T() return ns.T end
 local function S() return ns.S end
@@ -346,7 +349,7 @@ local function Grid(parent, heads, cols, n, y0, onClick, onHead)
             b:SetSize(c[1], K.ROW)
             local hi = b:CreateTexture(nil, "HIGHLIGHT")
             hi:SetAllPoints()
-            Fill(hi, "accentSoft", 0.6)
+            Fill(hi, "accent", K.HOVER)
             b:SetScript("OnClick", function() g.offset = 0 onHead[i]() end)
             g.headButtons[i] = b
         end
@@ -358,7 +361,7 @@ local function Grid(parent, heads, cols, n, y0, onClick, onHead)
         row:SetSize(x - 2, K.ROW)
         local hi = row:CreateTexture(nil, "HIGHLIGHT")
         hi:SetAllPoints()
-        Fill(hi, "accentSoft", 0.8)
+        Fill(hi, "accent", K.HOVER)
         row.cells = {}
         local cx = 4
         for i, c in ipairs(cols) do
@@ -428,7 +431,7 @@ function K.Build()
         Fill(b.bg, "sunken")
         local hi = b:CreateTexture(nil, "HIGHLIGHT")
         hi:SetAllPoints()
-        Fill(hi, "accentSoft", 0.8)
+        Fill(hi, "accent", K.HOVER)
         b.fs = Text(b, 11, "ink", "CENTER")
         b.fs:SetPoint("CENTER", 0, 0)
         b.fs:SetText(k[1])
