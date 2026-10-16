@@ -990,7 +990,7 @@ do
     H.ok(deq(p("RAGNAROS <BOSS> GO"), { "boss", "Ragnaros" }), "and for a boss")
     H.ok(deq(p("rag"), { "boss", "Ragnaros" }), "the start of a name, when only one starts so")
     H.ok(deq(p("margo"), { "raider", "Margo" }), "a name ending in 'go' is not a GO")
-    H.ok(deq(p("F2"), { "bosses" }) and deq(p("<raider> go"), { "raiders" }), "the lists by key or by word")
+    H.ok(deq(p("bosses"), { "bosses" }) and deq(p("<raider> go"), { "raiders" }), "the lists by word")
     local kind, offer = K.Parse("kum", cards, bosses)
     H.eq(kind, nil, "two raiders start with kum: not a guess")
     H.ok(deq(offer, { "Kumlance", "Kumlust" }), "but both are offered", offer and table.concat(offer, ","))
@@ -1024,12 +1024,19 @@ do
     K.page = nil
     local f = K.Show()
     H.ok(f and f:IsShown(), "the terminal opens")
-    H.eq(K.page, "empty", "with no nights it shows the empty page")
-    H.ok(f.pages.empty.text:GetText():find("F3 LOG", 1, true), "which says where the nights come from")
+    H.eq(K.page, "raiders", "it opens on the raiders")
+    H.ok(f.pages.raiders.panel.hint:IsShown(), "an empty list says why")
+    H.ok(f.pages.raiders.panel.hint:GetText():find("LOG", 1, true), "and where the nights come from")
+    -- Arn, 16 Oct: clicking BOSSES on a fresh install did "nothing" - it must open its own page
+    f.keys.bosses:Click()
+    H.eq(K.page, "bosses", "the BOSSES tab opens the bosses, even empty")
+    H.ok(f.pages.bosses:IsShown() and not f.pages.raiders:IsShown(), "and the page changes")
+    H.ok(f.pages.bosses.panel.hint:IsShown(), "with its own why")
     _G.BiSGuildDB.record = rec
 
-    K.Go("F1")
-    H.eq(K.page, "raiders", "F1: the raiders")
+    f.keys.raiders:Click()
+    H.eq(K.page, "raiders", "the RAIDERS tab")
+    H.ok(not f.pages.raiders.panel.hint:IsShown(), "with nights, no hint")
     local row1 = f.pages.raiders.grid.rows[1]
     H.eq(row1.key, "Alice", "best attendance first")
     H.eq(row1.cells[2]:GetText(), "100%", "Alice made both nights")
@@ -1078,9 +1085,12 @@ do
     K.Go("bo")
     H.ok(f.status:GetText():find("did you mean", 1, true), "a near miss offers names", f.status:GetText())
 
-    -- the F-keys work from the command line, and only there
+    -- NO FUNCTION KEYS (Arn: "i have stuff keybound to those keys")
+    local before = K.page
     f.cmd:Fire("OnKeyDown", "F2")
-    H.eq(K.page, "bosses", "F2 from the command line")
+    H.eq(K.page, before, "F2 does nothing here - it is the raider's keybind")
+    f.keys.bosses:Click()
+    H.eq(K.page, "bosses", "the tab does it")
     f.cmd:SetText("alice")
     f.cmd:Fire("OnEnterPressed")
     H.eq(K.key, "Alice", "typing a name and Enter")
@@ -1127,7 +1137,7 @@ do
 
     -- a second of the open terminal: the ticker slides one SetPoint a frame
     local K = NS.K
-    local kf = K.Show("F1")
+    local kf = K.Show("raiders")
     local tick = kf._scripts.OnUpdate
     local nk, byk = Cost.Count(function()
         for _ = 1, 60 do H.clock = H.clock + 1 / 60 tick(kf, 1 / 60) end

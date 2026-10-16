@@ -12,15 +12,15 @@
 
     KUMLUST <RAIDER> GO     the raider card: armory, attendance, consumes, gear issues, loot won
     RAGNAROS <BOSS> GO      the boss ticker: kills, wipes, first kill, fastest, who has downed it
-    F1 RAIDERS  F2 BOSSES   the two lists, every row clickable
-    F3 LOG                  the script window (Core/Window.lua), for the officer who imports
+    RAIDERS  BOSSES         tabs: the two lists, every row clickable
+    LOG                     tab: the script window (Core/Window.lua), for the officer who imports
 
   The Bloomberg words are optional: a bare name works, and a start of one does when only one thing
   starts that way. Everything shown is built from the guild's record (Core/Store.lua), so a night that
   arrived over the guild channel is on the card exactly like one imported from a log.
 
-  F-KEYS ARE READ ONLY WHILE THE COMMAND LINE HAS FOCUS. F1 targets yourself in the default
-  keybinds; a window that swallowed it whenever it was open would steal a raid healer's key.
+  NO FUNCTION KEYS (Arn, 16 Oct: "those tabs - i have stuff keybound to those keys"). Bloomberg's
+  F1/F2 are a raider's keybinds, so the tabs are clicked, and they say only what they are.
 ]]
 local ADDON, ns = ...
 
@@ -51,7 +51,7 @@ local function lower(s) return tostring(s or ""):lower() end
 
 --- What a typed line asks for. Returns kind, key - kind is "raider", "boss", "raiders", "bosses",
 --- "log" - or nil and a list of near names to offer.
----   "kumlust", "KUMLUST <RAIDER> GO", "kum" (if only one name starts so), "rag <boss>", "F2"
+---   "kumlust", "KUMLUST <RAIDER> GO", "kum" (if only one name starts so), "rag <boss>", "bosses"
 function K.Parse(line, cards, bosses)
     local s = tostring(line or ""):gsub("^%s+", ""):gsub("%s+$", "")
     local want
@@ -67,9 +67,9 @@ function K.Parse(line, cards, bosses)
         if want == "boss" or want == "bosses" then return "bosses" end
         return nil, {}
     end
-    if l == "f1" or l == "raiders" then return "raiders" end
-    if l == "f2" or l == "bosses" then return "bosses" end
-    if l == "f3" or l == "log" then return "log" end
+    if l == "raiders" then return "raiders" end
+    if l == "bosses" then return "bosses" end
+    if l == "log" then return "log" end
     if want == "raider" or want == "player" then bosses = {} end
     if want == "boss" then cards = {} end
 
@@ -317,18 +317,21 @@ function K.Build()
     end
     f.keys = {}
     local keyX = 300
-    for _, k in ipairs({ { "F1", "RAIDERS", "raiders" }, { "F2", "BOSSES", "bosses" }, { "F3", "LOG", "log" } }) do
+    for _, k in ipairs({ { "RAIDERS", "raiders" }, { "BOSSES", "bosses" }, { "LOG", "log" } }) do
         local b = CreateFrame("Button", nil, f)
         b:SetPoint("TOPLEFT", keyX, -6)
         b:SetSize(96, 18)
-        local kbg = b:CreateTexture(nil, "BACKGROUND")
-        kbg:SetAllPoints()
-        Fill(kbg, "sunken")
+        b.bg = b:CreateTexture(nil, "BACKGROUND")
+        b.bg:SetAllPoints()
+        Fill(b.bg, "sunken")
+        local hi = b:CreateTexture(nil, "HIGHLIGHT")
+        hi:SetAllPoints()
+        Fill(hi, "accentSoft", 0.8)
         b.fs = Text(b, 11, "ink", "CENTER")
         b.fs:SetPoint("CENTER", 0, 0)
-        b.fs:SetText(T().text("gold", k[1]) .. " " .. k[2])
-        b:SetScript("OnClick", function() K.Go(k[3]) end)
-        f.keys[k[3]] = b
+        b.fs:SetText(k[1])
+        b:SetScript("OnClick", function() K.Go(k[2]) end)
+        f.keys[k[2]] = b
         keyX = keyX + 102
     end
     local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
@@ -357,9 +360,6 @@ function K.Build()
         K.Go(line)
     end)
     e:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-    e:SetScript("OnKeyDown", function(_, key)
-        if key == "F1" then K.Go("raiders") elseif key == "F2" then K.Go("bosses") elseif key == "F3" then K.Go("log") end
-    end)
     f.cmd = e
     f.status = Text(f, 11, "muted")
     f.status:SetPoint("TOPLEFT", 12, -56)
@@ -389,18 +389,34 @@ function K.Build()
     end
     f.pages = {}
 
-    -- F1: every raider
+    -- AN EMPTY LIST SAYS WHY (Arn clicked RAIDERS on a fresh install and "nothing" happened: the
+    -- tab sent him to the same blank page he was already on). Each list keeps its own page and says
+    -- where the nights come from when it has none.
+    local EMPTY = "No raid nights on record yet.\n\nAfter a raid, an officer runs the log script (the LOG "
+        .. "tab) and types /reload - the night is kept here and shared with the guild.\n\nOr wait: when "
+        .. "an officer who has the nights is online, they arrive by themselves."
+    local function Hint(panel)
+        panel.hint = Text(panel, 13, "ink2")
+        panel.hint:SetPoint("TOPLEFT", 16, -44)
+        panel.hint:SetWidth(K.W - 64)
+        if panel.hint.SetWordWrap then panel.hint:SetWordWrap(true) end
+        panel.hint:SetText(EMPTY)
+    end
+
+    -- every raider
     local pr = Page()
     local plist = Panel(pr, "RAIDERS", 8, 0, K.W - 16, bodyH - 4)
+    Hint(plist)
     pr.grid = Grid(plist, { "NAME", "ATTEND", "LAST RAID", "FLASK", "DEATHS", "GEAR ISSUES" },
         { { 200, "LEFT" }, { 80, "RIGHT" }, { 110, "RIGHT" }, { 70, "RIGHT" }, { 70, "RIGHT" }, { 110, "RIGHT" } },
         K.LIST_ROWS, 22, function(name) K.Go(name .. " <raider>") end)
     pr.panel = plist
     f.pages.raiders = pr
 
-    -- F2: every boss
+    -- every boss
     local pb = Page()
     local blist = Panel(pb, "BOSSES", 8, 0, K.W - 16, bodyH - 4)
+    Hint(blist)
     pb.grid = Grid(blist, { "BOSS", "KILLS", "WIPES", "FASTEST", "FIRST KILL" },
         { { 260, "LEFT" }, { 70, "RIGHT" }, { 70, "RIGHT" }, { 90, "RIGHT" }, { 120, "RIGHT" } },
         K.LIST_ROWS, 22, function(name) K.Go(name .. " <boss>") end)
@@ -464,14 +480,6 @@ function K.Build()
         function(name) K.Go(name .. " <raider>") end)
     f.pages.boss = bp
 
-    -- nothing on record yet
-    local pe = Page()
-    pe.text = Text(pe, 13, "ink")
-    pe.text:SetPoint("TOPLEFT", 24, -24)
-    pe.text:SetWidth(K.W - 48)
-    if pe.text.SetWordWrap then pe.text:SetWordWrap(true) end
-    f.pages.empty = pe
-
     -- the ticker along the bottom
     local tbg = f:CreateTexture(nil, "BORDER")
     tbg:SetPoint("BOTTOMLEFT", 0, 0)
@@ -519,6 +527,7 @@ K.Say = Say
 local function PaintRaiders(p)
     local rows = K.Rows(S().Cards())
     p.panel.right:SetText(("%d raiders, %d nights"):format(#rows, #S().Dates()))
+    if #rows == 0 then p.panel.hint:Show() else p.panel.hint:Hide() end
     for i, row in ipairs(p.grid.rows) do
         local r = rows[i]
         if r then
@@ -535,6 +544,7 @@ end
 local function PaintBosses(p)
     local rows = K.BossRows(S().Bosses())
     p.panel.right:SetText(("%d bosses"):format(#rows))
+    if #rows == 0 then p.panel.hint:Show() else p.panel.hint:Hide() end
     for i, row in ipairs(p.grid.rows) do
         local r = rows[i]
         if r then
@@ -665,13 +675,14 @@ function K.Paint()
     elseif K.page == "bosses" then PaintBosses(p)
     elseif K.page == "raider" then PaintRaider(p, K.key)
     elseif K.page == "boss" then PaintBoss(p, K.key)
-    elseif K.page == "empty" then
-        p.text:SetText("No raid nights on record yet.\n\n"
-            .. "After a raid, an officer runs the log script (F3 LOG) and types /reload - the night is "
-            .. "kept here and shared with the guild.\n\nOr wait: when an officer who has the nights is "
-            .. "online, they arrive by themselves.")
     end
     p:Show()
+    -- the tab you are on is lit; a card lights the list it belongs to
+    local on = (K.page == "raider" and "raiders") or (K.page == "boss" and "bosses") or K.page
+    for name, b in pairs(f.keys) do
+        Fill(b.bg, name == on and "accentSoft" or "sunken")
+        b.fs:SetTextColor(rgb(name == on and "gold" or "ink"))
+    end
     f.tick:SetText(K.TickerText())
     f.tickW = f.tick:GetStringWidth() or 0
 end
@@ -681,7 +692,6 @@ end
 --------------------------------------------------------------------
 
 function K.Open(page, key)
-    if #S().Dates() == 0 and page ~= "log" then page, key = "empty", nil end
     K.page, K.key = page, key
     K.Paint()
 end
@@ -695,7 +705,8 @@ function K.Go(line)
     end
     if kind == "raiders" or kind == "bosses" then
         K.Open(kind)
-        Say(kind == "raiders" and "F1  every raider, best attendance first - click one" or "F2  every boss - click one")
+        Say(kind == "raiders" and "every raider, best attendance first - click one, or type a name"
+            or "every boss - click one, or type a name")
         return kind
     end
     if kind == "raider" then
