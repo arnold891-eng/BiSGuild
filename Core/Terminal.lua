@@ -430,8 +430,11 @@ function K.Build()
         f.con:Set("name", "Guild Terminal")
     end
     f.keys = {}
-    local keyX = 300
-    for _, k in ipairs({ { "RAIDERS", "raiders" }, { "BOSSES", "bosses" }, { "WHERE", "where" }, { "LOG", "log" } }) do
+    -- CENTRED ON THE WINDOW, however many there are (Arn, 16 Oct: a fourth tab, and "the top tabs
+    -- shifted a little to the right" - they started at a fixed x)
+    local TABS = { { "RAIDERS", "raiders" }, { "BOSSES", "bosses" }, { "WHERE", "where" }, { "LOG", "log" } }
+    local keyX = math.floor((K.W - (#TABS * 102 - 6)) / 2)
+    for _, k in ipairs(TABS) do
         local b = CreateFrame("Button", nil, f)
         b:SetPoint("TOPLEFT", keyX, -6)
         b:SetSize(96, 18)

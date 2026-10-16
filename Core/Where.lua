@@ -26,6 +26,17 @@ ns.Where = W
 W.TILE = 256
 W.EDGE = { 0.03, 0, 0.045 }     -- the paper's edge, left/right, top, bottom (BiS Tools' O.EDGE)
 W.MAP_W = 520                    -- the map panel's width; the list takes the rest
+--- THE CAPITALS' BOXES, measured by eye with Arn on 14 Oct for BiS Tools' overlay (O.CROP there): a
+--- capital is one painted picture, parchment and city in the same pixels, so the edge trim cannot find
+--- the city - this box replaces it. left, top, right, bottom as shares of the map.
+W.CROP = {
+    [1454] = { 0.08, 0.015, 0.88, 0.985 },   -- Orgrimmar
+    [1456] = { 0.10, 0.03, 0.88, 0.96 },     -- Thunder Bluff
+    [1458] = { 0.03, 0.01, 0.91, 0.975 },    -- Undercity
+    [1453] = { 0.03, 0.05, 0.92, 0.97 },     -- Stormwind
+    [1455] = { 0.08, 0.005, 0.915, 0.98 },   -- Ironforge
+    [1457] = { 0.05, 0.005, 0.93, 0.98 },    -- Darnassus
+}
 
 local function hidden(v)
     if v == nil or not issecretvalue then return false end
@@ -172,6 +183,10 @@ function K.BuildWhere(page, bodyH)
     canvas:SetSize(W.MAP_W - 8, bodyH - 30)
     if canvas.SetClipsChildren then canvas:SetClipsChildren(true) end
     page.canvas, page.cw, page.ch = canvas, W.MAP_W - 8, bodyH - 30
+    -- THE LAND: a frame exactly the size of the land shown, clipping what lies past it - a capital's
+    -- trimmed parchment would otherwise show again in the panel's spare room (16 Oct, Orgrimmar)
+    page.land = CreateFrame("Frame", nil, canvas)
+    if page.land.SetClipsChildren then page.land:SetClipsChildren(true) end
     page.tiles, page.dots, page.labels = {}, {}, {}
     page.none = ui.Text(canvas, 13, "ink2")
     page.none:SetPoint("TOPLEFT", 12, -12)
@@ -197,7 +212,7 @@ end
 local function Tile(p, i)
     local t = p.tiles[i]
     if not t then
-        t = p.canvas:CreateTexture(nil, "BORDER")
+        t = p.land:CreateTexture(nil, "BORDER")
         p.tiles[i] = t
     end
     return t
@@ -206,8 +221,8 @@ end
 local function Dot(p, i)
     local d, l = p.dots[i], p.labels[i]
     if not d then
-        d = p.canvas:CreateTexture(nil, "OVERLAY")
-        l = K.ui.Text(p.canvas, 10, "ink")
+        d = p.land:CreateTexture(nil, "OVERLAY")
+        l = K.ui.Text(p.land, 10, "ink")
         p.dots[i], p.labels[i] = d, l
     end
     return d, l
@@ -234,16 +249,21 @@ function K.PaintWhere(p)
         p.none:Hide()
         local x0, y0 = lw * W.EDGE[1], lh * W.EDGE[2]
         local x1, y1 = lw - lw * W.EDGE[1], lh - lh * W.EDGE[3]
+        local box = W.CROP[map]
+        if box then x0, y0, x1, y1 = lw * box[1], lh * box[2], lw * box[3], lh * box[4] end
         local s = math.min(p.cw / (x1 - x0), p.ch / (y1 - y0))
-        local ox = (p.cw - (x1 - x0) * s) / 2
-        local oy = (p.ch - (y1 - y0) * s) / 2
+        local landW, landH = (x1 - x0) * s, (y1 - y0) * s
+        p.land:ClearAllPoints()
+        p.land:SetPoint("TOPLEFT", p.canvas, "TOPLEFT", (p.cw - landW) / 2, -(p.ch - landH) / 2)
+        p.land:SetSize(landW, landH)
+        p.land:Show()
         for i, pc in ipairs(pieces) do
             local t = Tile(p, i)
             t:SetTexture(pc[1])
             t:SetTexCoord(0, pc[4] / pc[6], 0, pc[5] / pc[7])
             t:SetSize(pc[4] * s, pc[5] * s)
             t:ClearAllPoints()
-            t:SetPoint("TOPLEFT", p.canvas, "TOPLEFT", ox + (pc[2] - x0) * s, -(oy + (pc[3] - y0) * s))
+            t:SetPoint("TOPLEFT", p.land, "TOPLEFT", (pc[2] - x0) * s, -(pc[3] - y0) * s)
             t:SetVertexColor(0.78, 0.78, 0.78, 1)        -- a shade down, so the dots stand out
             t:Show()
         end
@@ -252,8 +272,8 @@ function K.PaintWhere(p)
         local n = 0
         for _, sp in ipairs(spots) do
             if sp.map == map then
-                local px, py = (sp.x * lw - x0) * s + ox, (sp.y * lh - y0) * s + oy
-                if px >= 0 and py >= 0 and px <= p.cw and py <= p.ch then
+                local px, py = (sp.x * lw - x0) * s, (sp.y * lh - y0) * s
+                if px >= 0 and py >= 0 and px <= landW and py <= landH then
                     n = n + 1
                     local d, l = Dot(p, n)
                     local m = K.Guild().members[sp.key]
@@ -263,7 +283,7 @@ function K.PaintWhere(p)
                     if sp.me then d:SetColorTexture(ui.rgb("gold")) elseif cc then d:SetColorTexture(cc.r, cc.g, cc.b, 1)
                     else d:SetColorTexture(ui.rgb("ink")) end
                     d:ClearAllPoints()
-                    d:SetPoint("CENTER", p.canvas, "TOPLEFT", px, -py)
+                    d:SetPoint("CENTER", p.land, "TOPLEFT", px, -py)
                     d:Show()
                     l:SetText(sp.me and "you" or sp.name)
                     l:SetTextColor(ui.rgb(sp.me and "gold" or "ink"))

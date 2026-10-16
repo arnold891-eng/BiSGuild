@@ -1209,6 +1209,11 @@ do
         lib.MySpot = function() return 1411, 0.40, 0.40 end
         lib.spots.Bob = { map = 1411, x = 0.5, y = 0.5, at = H.clock }
 
+        -- the tabs sit in the middle of the window (Arn: "the top tabs shifted a little to the right")
+        local first = f.keys.raiders:OffsetFor("TOPLEFT")
+        local last = f.keys.log:OffsetFor("TOPLEFT") + f.keys.log:GetWidth()
+        H.ok(math.abs(first - (K.W - last)) <= 1, "the tabs are centred: " .. first .. " left, " .. (K.W - last) .. " right")
+
         f.keys.where:Click()
         H.eq(K.page, "where", "the WHERE tab")
         local wp = f.pages.where
@@ -1240,6 +1245,11 @@ do
         rows[5]:Click()
         H.eq(K.whereMap, 1454, "clicking Cara shows her map")
         H.ok(wp.map.title:GetText():find("ORGRIMMAR", 1, true), "Orgrimmar", wp.map.title:GetText())
+        -- a capital is cut to its city with the box measured for BiS Tools' overlay (14 Oct)
+        local box = Wh.CROP[1454]
+        local want = ((box[3] - box[1]) * 1002) / ((box[4] - box[2]) * 668)
+        H.ok(math.abs(wp.land:GetWidth() / wp.land:GetHeight() - want) < 0.01,
+             "Orgrimmar's land is its crop box, not the parchment", wp.land:GetWidth() / wp.land:GetHeight())
         H.eq(wp.map.right:GetText(), "1 on this map", "with her dot on it")
 
         -- it redraws itself while showing: a spot that moves, moves on the page
