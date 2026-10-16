@@ -117,7 +117,8 @@ function U.Build()
 
     local bg = f:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
-    bg:SetColorTexture(0, 0, 0, 0.82)
+    -- nearly solid (16 Oct): at 0.82 the terminal behind it read through its lower half
+    bg:SetColorTexture(0, 0, 0, 0.96)
 
     local head = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     head:SetPoint("TOPLEFT", 12, -10)
