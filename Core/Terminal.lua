@@ -476,7 +476,7 @@ function K.Build()
     f:SetScript("OnKeyDown", function(self, key)
         if key == "ESCAPE" then
             self:SetPropagateKeyboardInput(false)
-            K.Hide()
+            if not K.Back() then K.Hide() end            -- a card steps back; a list closes
         else
             self:SetPropagateKeyboardInput(true)
         end
@@ -853,6 +853,28 @@ function K.Open(page, key)
     K.Paint()
 end
 
+--- ESC WALKS BACK (Arn, 16 Oct: "if i click on someone its hard to go back to the tab - esc only
+--- closes the window from the main page and the other pages go back, so someone can spam esc to get
+--- back fast and close the window too"). From a card: the page before it, the way you came. With
+--- nothing behind it, the list the card belongs to. From a list: false - the window closes.
+K.trail = {}
+function K.Back()
+    if K.page ~= "raider" and K.page ~= "boss" then return false end
+    local prev = table.remove(K.trail)
+    K._backing = true
+    if not prev then
+        K.Go(K.page == "raider" and "raiders" or "bosses")
+    elseif prev[1] == "raider" or prev[1] == "boss" then
+        K.Go(prev[2] .. " <" .. prev[1] .. ">")
+    else
+        local trail = K.trail
+        K.Go(prev[1])
+        K.trail = trail
+    end
+    K._backing = false
+    return true
+end
+
 --- Run a typed line (or a key). Returns what it did, for the suite.
 function K.Go(line)
     local kind, key = K.Parse(line, S().Cards(), S().Bosses())
@@ -861,20 +883,21 @@ function K.Go(line)
         return "log"
     end
     if kind == "raiders" or kind == "bosses" then
+        K.trail = {}                                   -- a list is the top: nothing behind it
         K.Open(kind)
-        Say(kind == "raiders" and "every raider, best attendance first - click one, or type a name"
+        Say(kind == "raiders" and "every raider - click one, or type a name   (click NAME or ATTEND to sort)"
             or "every boss - click one, or type a name")
         return kind
     end
-    if kind == "raider" then
-        K.Open("raider", key)
-        Say(("%s <RAIDER>"):format(key:upper()), "accent")
-        if ns.X and ns.X.WantGear then ns.X.WantGear(key) end    -- a newer armory from an officer?
-        return kind, key
-    end
-    if kind == "boss" then
-        K.Open("boss", key)
-        Say(("%s <BOSS>"):format(key:upper()), "accent")
+    if kind == "raider" or kind == "boss" then
+        -- the page we came from, so ESC can walk back the same way
+        if not K._backing and K.page and (K.page ~= kind or K.key ~= key) then
+            table.insert(K.trail, { K.page, K.key })
+            if #K.trail > 20 then table.remove(K.trail, 1) end
+        end
+        K.Open(kind, key)
+        Say(("%s <%s>      esc: back"):format(key:upper(), kind:upper()), "accent")
+        if kind == "raider" and ns.X and ns.X.WantGear then ns.X.WantGear(key) end    -- newer armory?
         return kind, key
     end
     local what = tostring(line or ""):gsub("^%s+", ""):gsub("%s+$", "")
@@ -889,6 +912,10 @@ end
 function K.Show(page, key)
     local f = K.Build()
     if not f then return end
+    -- a window opened fresh has nothing behind it: ESC from `/bisg alice` goes to the raiders list,
+    -- not to whatever page was showing when the window was last closed
+    if not f:IsShown() then K.trail = {} end
+    local fresh = not f:IsShown()
     f:Show()
     -- in front, whole, and back in front when clicked (the log window does the same - Window.lua)
     if f.SetToplevel then f:SetToplevel(true) end
@@ -896,7 +923,11 @@ function K.Show(page, key)
     -- ask the server for a fresh roster: who is still in the guild (its answer repaints the list)
     if C_GuildInfo and C_GuildInfo.GuildRoster then C_GuildInfo.GuildRoster() elseif GuildRoster then GuildRoster() end
     if f.con then f.con:Say("guild record", "accent") end
-    if page then K.Go(page) elseif not K.page then K.Go("raiders") else K.Paint() end
+    if page then
+        K._backing = fresh            -- not "came from": the page before is from the last opening
+        K.Go(page)
+        K._backing = false
+    elseif not K.page then K.Go("raiders") else K.Paint() end
     f.cmd:SetFocus()
     return f
 end

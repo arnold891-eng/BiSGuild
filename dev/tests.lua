@@ -1203,12 +1203,29 @@ do
     H.eq(K.key, "Alice", "typing a name and Enter")
     H.eq(f.cmd:GetText(), "", "and the line clears for the next one")
 
-    -- ESC: the line gives up the keyboard first, then the window closes
+    -- ESC: the line gives up the keyboard first, then each press walks back the way you came, and
+    -- only a list closes the window (Arn: "so someone can spam esc to get back fast and close too")
     H.ok(f.cmd:HasFocus(), "the command line has the keyboard while open")
     f.cmd:Fire("OnEscapePressed")
     H.ok(not f.cmd:HasFocus(), "the first ESC hands the keyboard back")
-    f:Fire("OnKeyDown", "ESCAPE")
-    H.ok(not f:IsShown(), "the next closes the window")
+    f.keys.bosses:Click()
+    f.pages.bosses.grid.rows[1]:Click()                    -- BOSSES -> Boss One
+    f.pages.boss.grid.rows[1]:Click()                      -- -> Alice, who killed it
+    H.eq(K.key, "Alice", "boss page to a killer's card")
+    H.ok(f.status:GetText():find("esc: back", 1, true), "a card says esc goes back")
+    local function esc() f:Fire("OnKeyDown", "ESCAPE") end
+    esc()
+    H.ok(f:IsShown() and K.page == "boss" and K.key == "Boss One", "ESC: back to the boss she came from")
+    esc()
+    H.ok(f:IsShown() and K.page == "bosses", "ESC: back to the bosses list")
+    esc()
+    H.ok(not f:IsShown(), "ESC on a list closes the window")
+    K.Show("alice")
+    H.eq(K.page, "raider", "a card opened straight from /bisg alice")
+    esc()
+    H.ok(f:IsShown() and K.page == "raiders", "with nothing behind it, ESC goes to its list")
+    esc()
+    H.ok(not f:IsShown(), "and then closes")
 
     -- /bisg opens it; /bisg <name> opens a card
     _G.SlashCmdList.BISGUILD("")
