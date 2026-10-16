@@ -157,12 +157,72 @@ function K.ItemString(g)
 end
 
 --- The raiders list: name, attendance %, last night, flask on the last night, deaths, issues.
+--- STILL IN THE GUILD? (Arn, 16 Oct: "the sheet had a check to see if someone was still in the
+--- guild ... group the people that are pugs all the way in the bottom"). The roster gives each
+--- member's rank and class. Names are matched on the first word, lowercased: Forever writes "Name
+--- Surname" in places and the log writes "Name".
+---
+--- A PUG IS ONLY CALLED A PUG WHEN THE ROSTER IS WHOLE. If the client handed over fewer members
+--- than it says the guild has (offline members hidden, or the roster not arrived yet), somebody
+--- missing from it may just be offline - so they read "?" and are not sunk to the bottom.
+function K.NameKey(name)
+    local s = tostring(name or ""):match("^([^%-%s]+)")
+    return s and s:lower() or ""
+end
+
+function K.Guild()
+    if K._guild and not K._guildDirty then return K._guild end
+    local g = { members = {}, complete = false }
+    if IsInGuild and IsInGuild() and GetNumGuildMembers and GetGuildRosterInfo then
+        local total = tonumber((GetNumGuildMembers())) or 0
+        local seen = 0
+        for i = 1, total do
+            local name, rank, _, _, _, _, _, _, _, _, class = GetGuildRosterInfo(i)
+            if type(name) == "string" then
+                local ok, key = pcall(K.NameKey, name)
+                if ok and key ~= "" then
+                    seen = seen + 1
+                    g.members[key] = { rank = rank, class = class }
+                end
+            end
+        end
+        g.complete = total > 0 and seen == total
+    end
+    K._guild, K._guildDirty = g, false
+    return g
+end
+
+--- Warriors first, the way a raid sheet reads - roughly tanks, healers, then damage. Within a class,
+--- alphabetical (Arn: "i like the alphabetical"). By class, not by role: neither the roster nor the
+--- log says what spec anybody plays, and a sheet that guesses roles is wrong where it matters.
+K.CLASS_ORDER = { WARRIOR = 1, PALADIN = 2, DRUID = 3, PRIEST = 4, SHAMAN = 5,
+                  ROGUE = 6, HUNTER = 7, MAGE = 8, WARLOCK = 9 }
+K.sort = "class"
+
+function K.Sort(rows, mode)
+    table.sort(rows, function(a, b)
+        if a.pug ~= b.pug then return b.pug end                      -- pugs at the bottom, always
+        if mode == "attend" and a.att ~= b.att then return a.att > b.att end
+        if mode ~= "attend" then
+            local ca, cb = K.CLASS_ORDER[a.class or ""] or 99, K.CLASS_ORDER[b.class or ""] or 99
+            if ca ~= cb then return ca < cb end
+        end
+        return a.name < b.name
+    end)
+    return rows
+end
+
 function K.Rows(cards)
     local nights = #S().Dates()
+    local guild = K.Guild()
     local out = {}
     for name, c in pairs(cards) do
+        local m = guild.members[K.NameKey(name)]
         out[#out + 1] = {
             name = name,
+            rank = m and m.rank or (guild.complete and "pug" or "?"),
+            class = m and m.class or nil,
+            pug = (m == nil and guild.complete) or false,
             att = nights > 0 and math.floor(100 * #c.attended / nights + 0.5) or 0,
             last = c.last and c.last.date or "-",
             flask = c.last and ((c.last.flask or 0) + (c.last.elixir or 0) > 0) or false,
@@ -173,11 +233,7 @@ function K.Rows(cards)
             geared = c.gear ~= nil,
         }
     end
-    table.sort(out, function(a, b)
-        if a.att ~= b.att then return a.att > b.att end
-        return a.name < b.name
-    end)
-    return out
+    return K.Sort(out, K.sort)
 end
 
 function K.BossRows(pages)
@@ -269,8 +325,9 @@ local function Showing(g)
     return ("   rows %d-%d of %d"):format(g.offset + 1, math.min(g.total, g.offset + #g.rows), g.total)
 end
 
-local function Grid(parent, heads, cols, n, y0, onClick)
-    local g = { rows = {}, offset = 0 }
+--- onHead: optional { [column] = function } - a column title that sorts the list when clicked.
+local function Grid(parent, heads, cols, n, y0, onClick, onHead)
+    local g = { rows = {}, offset = 0, heads = {}, headButtons = {} }
     parent:EnableMouseWheel(true)
     parent:SetScript("OnMouseWheel", function(_, delta)
         g.offset = (g.offset or 0) - (delta or 0) * 3
@@ -282,6 +339,17 @@ local function Grid(parent, heads, cols, n, y0, onClick)
         h:SetPoint("TOPLEFT", x, -y0)
         h:SetWidth(c[1])
         h:SetText(heads[i])
+        g.heads[i] = h
+        if onHead and onHead[i] then
+            local b = CreateFrame("Button", nil, parent)
+            b:SetPoint("TOPLEFT", x, -y0 + 2)
+            b:SetSize(c[1], K.ROW)
+            local hi = b:CreateTexture(nil, "HIGHLIGHT")
+            hi:SetAllPoints()
+            Fill(hi, "accentSoft", 0.6)
+            b:SetScript("OnClick", function() g.offset = 0 onHead[i]() end)
+            g.headButtons[i] = b
+        end
         x = x + c[1] + 6
     end
     for r = 1, n do
@@ -310,7 +378,8 @@ local function SetRow(row, key, values, colours)
     row.key = key
     for i, fs in ipairs(row.cells) do
         fs:SetText(values[i] ~= nil and tostring(values[i]) or "")
-        fs:SetTextColor(rgb(colours and colours[i] or "ink"))
+        local c = colours and colours[i] or "ink"
+        if type(c) == "table" then fs:SetTextColor(c[1], c[2], c[3]) else fs:SetTextColor(rgb(c)) end
     end
     if key then row:Show() else row:Hide() end
 end
@@ -440,9 +509,11 @@ function K.Build()
     local pr = Page()
     local plist = Panel(pr, "RAIDERS", 8, 0, K.W - 16, bodyH - 4)
     Hint(plist)
-    pr.grid = Grid(plist, { "NAME", "ATTEND", "LAST RAID", "FLASK/ELIX", "DEATHS", "GEAR ISSUES" },
-        { { 200, "LEFT" }, { 80, "RIGHT" }, { 110, "RIGHT" }, { 70, "RIGHT" }, { 70, "RIGHT" }, { 110, "RIGHT" } },
-        K.LIST_ROWS, 22, function(name) K.Go(name .. " <raider>") end)
+    -- NAME sorts by class then name, ATTEND by attendance; pugs stay at the bottom either way
+    pr.grid = Grid(plist, { "NAME", "RANK", "ATTEND", "LAST RAID", "FLASK/ELIX", "DEATHS", "GEAR ISSUES" },
+        { { 170, "LEFT" }, { 110, "LEFT" }, { 60, "RIGHT" }, { 100, "RIGHT" }, { 80, "RIGHT" }, { 60, "RIGHT" }, { 110, "RIGHT" } },
+        K.LIST_ROWS, 22, function(name) K.Go(name .. " <raider>") end,
+        { [1] = function() K.sort = "class" K.Paint() end, [3] = function() K.sort = "attend" K.Paint() end })
     pr.panel = plist
     f.pages.raiders = pr
 
@@ -560,8 +631,20 @@ function K.Build()
     end)
 
     f:RegisterEvent("GET_ITEM_INFO_RECEIVED")
-    f:SetScript("OnEvent", function()
-        if K.waiting and f:IsShown() and K.page == "raider" then K.Paint() end
+    f:RegisterEvent("GUILD_ROSTER_UPDATE")
+    f:SetScript("OnEvent", function(_, event)
+        if event == "GUILD_ROSTER_UPDATE" then
+            -- only marked here; the roster is read again the next time the list is drawn
+            K._guildDirty = true
+            if f:IsShown() and K.page == "raiders" and not K._rosterPaintArmed then
+                K._rosterPaintArmed = true
+                if C_Timer and C_Timer.After then
+                    C_Timer.After(1, function() K._rosterPaintArmed = false if f:IsShown() then K.Paint() end end)
+                end
+            end
+        elseif K.waiting and f:IsShown() and K.page == "raider" then
+            K.Paint()
+        end
     end)
     return f
 end
@@ -581,14 +664,22 @@ K.Say = Say
 local function PaintRaiders(p)
     local rows = K.Rows(S().Cards())
     local off = Scroll(p.grid, #rows)
-    p.panel.right:SetText(("%d raiders, %d nights"):format(#rows, #S().Dates()) .. Showing(p.grid))
+    local pugs = 0
+    for _, r in ipairs(rows) do if r.pug then pugs = pugs + 1 end end
+    p.panel.right:SetText(("%d raiders, %d pugs, %d nights"):format(#rows - pugs, pugs, #S().Dates()) .. Showing(p.grid))
     if #rows == 0 then p.panel.hint:Show() else p.panel.hint:Hide() end
+    -- the sort you are on is lit
+    p.grid.heads[1]:SetTextColor(rgb(K.sort ~= "attend" and "gold" or "muted"))
+    p.grid.heads[3]:SetTextColor(rgb(K.sort == "attend" and "gold" or "muted"))
+    local colours = _G.RAID_CLASS_COLORS
     for i, row in ipairs(p.grid.rows) do
         local r = rows[i + off]
         if r then
-            SetRow(row, r.name, { r.name, r.att .. "%", r.last, r.flask and "yes" or "no", r.deaths,
+            local cc = r.class and colours and colours[r.class]
+            local nameColour = r.pug and "muted" or (cc and { cc.r, cc.g, cc.b } or "ink")
+            SetRow(row, r.name, { r.name, r.rank, r.att .. "%", r.last, r.flask and "yes" or "no", r.deaths,
                                   not r.geared and "no gear seen" or (r.issues > 0 and (r.issues .. " no enchant") or "clean") },
-                { "ink", r.att >= 75 and "good" or (r.att >= 50 and "gold" or "warn"), "ink2",
+                { nameColour, r.pug and "muted" or "ink2", r.att >= 75 and "good" or (r.att >= 50 and "gold" or "warn"), "ink2",
                   r.flask and "good" or "warn", r.deaths > 0 and "warn" or "ink2",
                   not r.geared and "muted" or (r.issues > 0 and "warn" or "good") })
         else
@@ -799,6 +890,8 @@ function K.Show(page, key)
     -- in front, whole, and back in front when clicked (the log window does the same - Window.lua)
     if f.SetToplevel then f:SetToplevel(true) end
     if f.Raise then f:Raise() end
+    -- ask the server for a fresh roster: who is still in the guild (its answer repaints the list)
+    if C_GuildInfo and C_GuildInfo.GuildRoster then C_GuildInfo.GuildRoster() elseif GuildRoster then GuildRoster() end
     if f.con then f.con:Say("guild record", "accent") end
     if page then K.Go(page) elseif not K.page then K.Go("raiders") else K.Paint() end
     f.cmd:SetFocus()

@@ -1038,12 +1038,12 @@ do
     H.eq(K.page, "raiders", "the RAIDERS tab")
     H.ok(not f.pages.raiders.panel.hint:IsShown(), "with nights, no hint")
     local row1 = f.pages.raiders.grid.rows[1]
-    H.eq(row1.key, "Alice", "best attendance first")
-    H.eq(row1.cells[2]:GetText(), "100%", "Alice made both nights")
-    H.eq(f.pages.raiders.grid.rows[2].cells[2]:GetText(), "50%", "Bob one of two")
+    H.eq(row1.key, "Alice", "Alice first")
+    H.eq(row1.cells[3]:GetText(), "100%", "Alice made both nights")
+    H.eq(f.pages.raiders.grid.rows[2].cells[3]:GetText(), "50%", "Bob one of two")
     H.ok(not f.pages.raiders.grid.rows[3]:IsShown(), "and no empty rows show")
-    H.eq(row1.cells[6]:GetText(), "1 no enchant", "Alice's gear: one flag")
-    H.eq(f.pages.raiders.grid.rows[2].cells[6]:GetText(), "no gear seen",
+    H.eq(row1.cells[7]:GetText(), "1 no enchant", "Alice's gear: one flag")
+    H.eq(f.pages.raiders.grid.rows[2].cells[7]:GetText(), "no gear seen",
          "Bob has no gear on record: not 'clean' - nobody saw it")
 
     H.wire = {}
@@ -1129,7 +1129,57 @@ do
     H.eq(grid.offset, 0, "and back to the top")
     for i = 1, 40 do keep[("Zed%02d"):format(i)] = nil end
     K.Paint()
-    H.eq(panel.right:GetText(), "2 raiders, 2 nights", "a list that fits says nothing about rows")
+    H.eq(panel.right:GetText(), "0 raiders, 2 pugs, 2 nights", "a list that fits says nothing about rows")
+
+    -- STILL IN THE GUILD? (Arn: "the sheet had a check ... group the people that are pugs all the
+    -- way in the bottom ... by class, all shaman alphabetical")
+    do
+        local nights = _G.BiSGuildDB.record.nights["2026-10-09"].raiders
+        nights.Cara, nights.Dax, nights.Eve = raider(2, 3), raider(2, 3), raider(2, 3)
+        local ROSTER = {
+            { "Eve Surname", "Raider", "MAGE" }, { "Bob-Dreamscythe", "Officer", "WARRIOR" },
+            { "Alice", "Raider", "MAGE" }, { "Dax", "Initiate", "SHAMAN" },
+        }
+        local realNum, realInfo, realColours = _G.GetNumGuildMembers, _G.GetGuildRosterInfo, _G.RAID_CLASS_COLORS
+        _G.GetNumGuildMembers = function() return #ROSTER end
+        _G.GetGuildRosterInfo = function(i)
+            local r = ROSTER[i]
+            if not r then return nil end
+            return r[1], r[2], 0, 60, r[3], "", "", "", false, 0, r[3]
+        end
+        _G.RAID_CLASS_COLORS = { MAGE = { r = 0.25, g = 0.78, b = 0.92 } }
+        K._guildDirty = true
+        K.sort = "class"
+        f.keys.raiders:Click()
+        local rows = f.pages.raiders.grid.rows
+        local order = {}
+        for i = 1, 5 do order[i] = rows[i].key end
+        H.ok(deq(order, { "Bob", "Dax", "Alice", "Eve", "Cara" }, nil),
+             "by class (warrior, shaman, mage), alphabetical inside, the pug last", table.concat(order, ","))
+        H.eq(rows[1].cells[2]:GetText(), "Officer", "the guild rank, matched across a realm suffix")
+        H.eq(rows[4].cells[2]:GetText(), "Raider", "and across a Forever surname")
+        H.eq(rows[5].cells[2]:GetText(), "pug", "somebody not on the roster is a pug")
+        H.ok(f.pages.raiders.panel.right:GetText():find("4 raiders, 1 pugs", 1, true), "the corner counts them",
+             f.pages.raiders.panel.right:GetText())
+
+        -- ATTEND sorts by attendance - the pug still at the bottom
+        f.pages.raiders.grid.headButtons[3]:Click()
+        H.eq(K.sort, "attend", "clicking ATTEND sorts by attendance")
+        H.eq(rows[5].key, "Cara", "the pug stays last")
+        f.pages.raiders.grid.headButtons[1]:Click()
+        H.eq(K.sort, "class", "clicking NAME goes back to by class")
+
+        -- A ROSTER THAT IS NOT WHOLE CALLS NOBODY A PUG: they may only be offline
+        _G.GetNumGuildMembers = function() return #ROSTER + 10 end
+        K._guildDirty = true
+        K.Paint()
+        H.eq(rows[5].cells[2]:GetText(), "?", "missing from half a roster reads ?, not pug")
+
+        nights.Cara, nights.Dax, nights.Eve = nil, nil, nil
+        _G.GetNumGuildMembers, _G.GetGuildRosterInfo, _G.RAID_CLASS_COLORS = realNum, realInfo, realColours
+        K._guildDirty = true
+        K.Paint()
+    end
 
     -- THE LOG TAB PUTS ITS WINDOW IN FRONT, WHOLE (Arn, 16 Oct: "this windows kinda get
     -- overlapping" - the terminal's ticker drew across the log window)
