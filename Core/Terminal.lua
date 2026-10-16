@@ -157,6 +157,9 @@ function K.Rows(cards)
             flask = c.last and ((c.last.flask or 0) + (c.last.elixir or 0) > 0) or false,
             deaths = c.deaths or 0,
             issues = #(c.issues or {}),
+            -- "clean" is a claim about gear somebody saw; with none on record it is "no gear seen"
+            -- (Arn, 16 Oct: a whole night of raiders read "clean" with empty armories)
+            geared = c.gear ~= nil,
         }
     end
     table.sort(out, function(a, b)
@@ -552,9 +555,10 @@ local function PaintRaiders(p)
         local r = rows[i + off]
         if r then
             SetRow(row, r.name, { r.name, r.att .. "%", r.last, r.flask and "yes" or "no", r.deaths,
-                                  r.issues > 0 and (r.issues .. " no enchant") or "clean" },
+                                  not r.geared and "no gear seen" or (r.issues > 0 and (r.issues .. " no enchant") or "clean") },
                 { "ink", r.att >= 75 and "good" or (r.att >= 50 and "gold" or "warn"), "ink2",
-                  r.flask and "good" or "warn", r.deaths > 0 and "warn" or "ink2", r.issues > 0 and "warn" or "good" })
+                  r.flask and "good" or "warn", r.deaths > 0 and "warn" or "ink2",
+                  not r.geared and "muted" or (r.issues > 0 and "warn" or "good") })
         else
             SetRow(row, nil, {})
         end

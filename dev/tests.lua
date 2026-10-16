@@ -1042,6 +1042,9 @@ do
     H.eq(row1.cells[2]:GetText(), "100%", "Alice made both nights")
     H.eq(f.pages.raiders.grid.rows[2].cells[2]:GetText(), "50%", "Bob one of two")
     H.ok(not f.pages.raiders.grid.rows[3]:IsShown(), "and no empty rows show")
+    H.eq(row1.cells[6]:GetText(), "1 no enchant", "Alice's gear: one flag")
+    H.eq(f.pages.raiders.grid.rows[2].cells[6]:GetText(), "no gear seen",
+         "Bob has no gear on record: not 'clean' - nobody saw it")
 
     H.wire = {}
     row1:Click()
