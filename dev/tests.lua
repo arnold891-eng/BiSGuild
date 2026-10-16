@@ -872,6 +872,13 @@ do
 
     H.ok(X.IsOfficer("Kumlust") and X.IsOfficer("Bigboss"), "ranks 0 and 1 are officers")
     H.ok(not X.IsOfficer("Memberguy") and not X.IsOfficer("Stranger"), "a member and a stranger are not")
+    -- a guild laid out differently says so once, in the Guild Information text every member reads
+    _G.GetGuildInfoText = function() return "Raids Tue/Thu 8pm\nBiSGuild officers: 4\nBe nice" end
+    H.eq(X.OfficerRank(), 4, "the guild's info text moves the cutoff")
+    H.ok(X.IsOfficer("Memberguy"), "and rank 4 counts then")
+    _G.GetGuildInfoText = function() return "no line here" end
+    H.eq(X.OfficerRank(), 1, "without the line: the guild master and the rank under")
+    _G.GetGuildInfoText = nil
 
     local function drain()
         for _ = 1, 40 do H.clock = H.clock + 2 H.RunTimers() end

@@ -59,8 +59,22 @@ end
 -- who is an officer
 --------------------------------------------------------------------
 
+--- HOW FAR DOWN THE RANKS "OFFICER" GOES (Arn, 16 Oct, his roster: Guild Master, Officer, Veteran -
+--- "but it's not always like that"). Every member's client has to agree on who is believed, and
+--- members will never set anything, so the answer lives where every member can read it: a line in
+--- the guild's Guild Information text, written once by the guild master -
+---     BiSGuild officers: 2
+--- counts ranks 0..2 (rank 0 is the guild master; the line is ranks DOWN from the top). Without the
+--- line it is 1: the guild master and the rank under. `officerRank` in the saved variables is for
+--- testing on one client only.
 function X.OfficerRank()
     local n = tonumber(ns.DB().officerRank)
+    if not n and GetGuildInfoText then
+        local ok, text = pcall(GetGuildInfoText)
+        if ok and type(text) == "string" then
+            n = tonumber(text:lower():match("bisguild%s*officers%s*[:=]%s*(%d+)"))
+        end
+    end
     return n and n >= 0 and math.floor(n) or 1
 end
 
