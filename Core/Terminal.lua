@@ -543,11 +543,25 @@ function K.Build()
     local bg = f:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
     Fill(bg, "bg", 0.97)
-    local edge = f:CreateTexture(nil, "BORDER")
-    edge:SetPoint("TOPLEFT", 0, 0)
-    edge:SetPoint("TOPRIGHT", 0, 0)
-    edge:SetHeight(2)
-    Fill(edge, "accent")
+    -- A HAIRLINE ROUND THE WINDOW, in the options kit's own edge colour (Arn, 16 Oct: "there is a
+    -- white line on top of the window ... how come our other addons dont put that white line tho?").
+    -- It was a 2 px bar in "accent" along the top only, and the accent is borrowed from EllesmereUI
+    -- when it is installed - Arn's is white. BiS Tools' windows draw this, fixed, never borrowed.
+    f.edges = {}
+    for _, side in ipairs({ "TOP", "BOTTOM", "LEFT", "RIGHT" }) do
+        local e = f:CreateTexture(nil, "BORDER")
+        if side == "TOP" or side == "BOTTOM" then
+            e:SetPoint(side .. "LEFT", 0, 0)
+            e:SetPoint(side .. "RIGHT", 0, 0)
+            e:SetHeight(1)
+        else
+            e:SetPoint("TOP" .. side, 0, 0)
+            e:SetPoint("BOTTOM" .. side, 0, 0)
+            e:SetWidth(1)
+        end
+        Fill(e, "edge")
+        f.edges[side] = e
+    end
 
     -- the top bar: the console prompt, then the function keys
     f.head = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
