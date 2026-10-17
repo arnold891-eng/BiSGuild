@@ -125,6 +125,34 @@ function L.Mark(key, start, entry)
     return true
 end
 
+--- ANOTHER OFFICER'S VERDICT (Arn, 16 Oct: "share the punctuality with the other officers too").
+--- Merged person by person, because each officer's client saw different logins: on time beats late
+--- (one officer saw them online at the start; a relog another caught is not lateness), late beats
+--- no-show (they came), and of two lates the smaller stands. True when it changed ours.
+local function Rank(v) if v.noshow then return 1 elseif v.late then return 2 end return 3 end
+function L.Merge(key, start, entry)
+    local book = L.Book()
+    local p = book[key]
+    local have = p and p[start]
+    if not have then return L.Mark(key, start, entry) end
+    local a, b = Rank(entry), Rank(have)
+    if a > b or (a == 2 and b == 2 and (entry.d or 0) < (have.d or 0))
+       or (a == 3 and b == 3 and have.d == nil and entry.d ~= nil) then
+        p[start] = entry
+        return true
+    end
+    return false
+end
+
+--- The raids on record and how many people each: start -> count.
+function L.Starts()
+    local out = {}
+    for _, p in pairs(L.Book()) do
+        for s in pairs(p) do out[s] = (out[s] or 0) + 1 end
+    end
+    return out
+end
+
 --- Seen logging in now: remember when, and if the raid has started, they are late by that much.
 --- Answers the seconds after the start (negative = early), or nil without a start time.
 function L.Logged(key)
@@ -177,7 +205,11 @@ function L.Tick()
     end
     if now >= e.start + L.AFTER and now < e.start + L.AFTER + 86400 and not L.done["end:" .. e.start] then
         L.done["end:" .. e.start] = true
-        if ns.Inv.Leads() then L.AtEnd(e) end
+        if ns.Inv.Leads() then
+            L.AtEnd(e)
+            -- the raid's record is whole: tell the other officers (Core/Share.lua)
+            if ns.X and ns.X.Announce then ns.X.Announce() end
+        end
     end
 end
 

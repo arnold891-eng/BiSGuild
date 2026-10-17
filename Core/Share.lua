@@ -268,11 +268,12 @@ end
 --- Officers say what they hold. Members never do: nobody would believe them anyway.
 function X.Announce()
     if not X.IsOfficer(X.Me()) then return false end
-    local line = X.HaveLine()
-    if line == "" then return false end
-    X.Send("HAVE", line)
-    return true
+    local line, punct = X.HaveLine(), X.PunctHaveLine()
+    if line ~= "" then X.Send("HAVE", line) end
+    if punct ~= "" then X.Send("PHAVE", punct) end
+    return line ~= "" or punct ~= ""
 end
+
 
 --- Ask for the newest date we are missing that nobody has asked for in the last 90 s.
 function X.AskNext()
@@ -399,6 +400,102 @@ X.handlers.GEAR = function(sender, name, date, i, n, part)
     if not text or not X.IsOfficer(sender) then return end
     local gear = X.DecodeGear(text)
     if gear then ns.S.PutGear(name, date, gear) end
+end
+
+--------------------------------------------------------------------
+-- punctuality (Arn, 16 Oct: "share the punctuality with the other officers too")
+--
+--   PHAVE |1793840400.24,1793235600.22     an officer: the raids it holds a record for, and how many
+--                                          people each (newest X.PUNCT_RAIDS)
+--   PWANT |1793840400                      anyone holding fewer people for that raid
+--   PUNC  |1793840400|i|n|<part>           one officer answers: name:o-600;name:l720;name:n;...
+--                                          (o on time, minus = early; l late by seconds; n no-show)
+-- Merged person by person on arrival (Logins.lua L.Merge), never replaced wholesale: two officers
+-- each saw different logins, and both are true.
+--------------------------------------------------------------------
+
+X.PUNCT_RAIDS = 8
+X.MAX_PUNCT_PARTS = 6
+
+function X.PunctHaveLine()
+    if not ns.Login then return "" end
+    local starts, list = ns.Login.Starts(), {}
+    for s, n in pairs(starts) do list[#list + 1] = { s, n } end
+    table.sort(list, function(a, b) return a[1] > b[1] end)
+    local out = {}
+    for i = 1, math.min(#list, X.PUNCT_RAIDS) do out[i] = ("%d.%d"):format(list[i][1], list[i][2]) end
+    return table.concat(out, ",")
+end
+
+function X.EncodePunct(start)
+    local out = {}
+    for key, p in pairs(ns.Login.Book()) do
+        local v = p[start]
+        if v and clean(key) then
+            local code = v.noshow and "n" or (v.late and ("l" .. int(v.d)) or ("o" .. (v.d and int(v.d) or "")))
+            out[#out + 1] = key .. ":" .. code
+        end
+    end
+    table.sort(out)
+    return table.concat(out, ";")
+end
+
+function X.DecodePunct(s)
+    if type(s) ~= "string" then return nil end
+    local out = {}
+    for _, e in ipairs(split(s, ";")) do
+        local key, kind, num = e:match("^([^:]+):([oln])(%-?%d*)$")
+        if not key then return nil end
+        local d = tonumber(num)
+        if kind == "n" then out[key] = { noshow = true }
+        elseif kind == "l" then out[key] = { late = true, d = d or 0 }
+        else out[key] = { late = false, d = d } end
+    end
+    return out
+end
+
+X.punctWanted = {}            -- start -> true
+
+X.handlers.PHAVE = function(sender, line)
+    if not X.IsOfficer(sender) or type(line) ~= "string" or not ns.Login then return end
+    local mine = ns.Login.Starts()
+    local ask
+    for entry in line:gmatch("[^,]+") do
+        local s, n = entry:match("^(%d+)%.(%d+)$")
+        s, n = tonumber(s), tonumber(n)
+        if s and n and n > (mine[s] or 0) and not X.punctWanted[s] then
+            X.punctWanted[s] = true
+            ask = ask or {}
+            ask[#ask + 1] = s
+        end
+    end
+    for _, s in ipairs(ask or {}) do X.Send("PWANT", s) end
+end
+
+X.handlers.PWANT = function(sender, start)
+    start = tonumber(start)
+    if not start or not ns.Login or not X.IsOfficer(X.Me()) then return end
+    if not ns.Login.Starts()[start] then return end
+    local key = "PUNC|" .. start
+    if X.answering[key] then return end
+    X.answering[key] = true
+    local asked = Now()
+    After(1 + math.random() * 3, function()
+        X.answering[key] = nil
+        if (X.started[key] or -1) >= asked then return end
+        X.SendParts("PUNC", { start }, X.EncodePunct(start), X.MAX_PUNCT_PARTS)
+    end)
+end
+
+X.handlers.PUNC = function(sender, start, i, n, part)
+    start = tonumber(start)
+    if not start or not ns.Login then return end
+    local text = collect(sender, "PUNC", tostring(start), i, n, part, X.MAX_PUNCT_PARTS)
+    if not text or not X.IsOfficer(sender) then return end
+    local got = X.DecodePunct(text)
+    if not got then return end
+    for key, v in pairs(got) do ns.Login.Merge(key, start, v) end
+    X.punctWanted[start] = nil
 end
 
 --------------------------------------------------------------------

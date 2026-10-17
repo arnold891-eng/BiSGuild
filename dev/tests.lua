@@ -1001,6 +1001,54 @@ do
     ROSTER[1][2] = 1
     X._ranksDirty = true
 
+    -- PUNCTUALITY, SHARED (Arn, 16 Oct: "share the punctuality with the other officers too")
+    local Lg = NS.Login
+    local S0 = 1793840400
+    _G.BiSGuildDB.punctual = {
+        kio = { [S0] = { late = false, d = -600 } }, bob = { [S0] = { late = true, d = 720 } }, zed = { [S0] = { noshow = true } },
+    }
+    local ptext = X.EncodePunct(S0)
+    H.eq(ptext, "bob:l720;kio:o-600;zed:n", "a raid's record on the wire: short, sorted")
+    local back = X.DecodePunct(ptext)
+    H.ok(back.kio.d == -600 and back.kio.late == false and back.bob.late and back.zed.noshow, "and back")
+    H.eq(X.DecodePunct("kio:x1"), nil, "garbage is refused")
+    H.wire = {}
+    X.Announce()
+    drain()
+    local ph = ours("PHAVE")
+    H.ok(ph[1] and ph[1].msg:find(S0 .. ".3", 1, true), "an officer announces its punctuality: this raid, 3 people", ph[1] and ph[1].msg)
+    -- an officer who saw fewer people asks, and gets the record merged into its own
+    local keepBook = _G.BiSGuildDB.punctual
+    _G.BiSGuildDB.punctual = { bob = { [S0] = { late = false, d = -60 } } }   -- this officer saw Bob online at the start
+    X.punctWanted = {}
+    H.wire = {}
+    hear("Memberguy", ph[1])
+    drain()
+    H.eq(#ours("PWANT"), 0, "a member's PHAVE is not asked about")
+    hear("Bigboss", ph[1])
+    drain()
+    H.eq(#ours("PWANT"), 1, "an officer's PHAVE with more people: asked for")
+    local mineNow = _G.BiSGuildDB.punctual
+    _G.BiSGuildDB.punctual = keepBook
+    H.wire = {}
+    X.handlers.PWANT("Memberguy", tostring(S0))
+    drain()
+    local pp = ours("PUNC")
+    H.ok(#pp >= 1, "the officer answers with the record")
+    _G.BiSGuildDB.punctual = mineNow
+    for _, w in ipairs(pp) do hear("Bigboss", w) end
+    local mb = _G.BiSGuildDB.punctual
+    H.ok(mb.kio and mb.kio[S0].d == -600, "Kio's on-time arrives")
+    H.ok(mb.zed and mb.zed[S0].noshow, "Zed's no-show arrives")
+    H.ok(mb.bob[S0].late == false and mb.bob[S0].d == -60,
+         "Bob stays on time: one officer saw him online at the start - the other's 'late' was a relog")
+    -- the merge's order: on time, then late (the smaller), then no-show
+    H.ok(Lg.Merge("zed", S0, { late = true, d = 300 }) and mb.zed[S0].late, "late beats no-show - he came")
+    H.ok(Lg.Merge("zed", S0, { late = true, d = 120 }) and mb.zed[S0].d == 120, "of two lates, the smaller stands")
+    H.ok(not Lg.Merge("zed", S0, { noshow = true }), "and a no-show cannot undo either")
+    _G.BiSGuildDB.punctual = nil
+    H.wire = {}
+
     -- gear: asked for by name, answered only when ours is newer
     H.wire = {}
     X.handlers.GWANT("Memberguy", "Alice", "2026-10-16")
