@@ -147,6 +147,7 @@ f:RegisterEvent("GUILD_ROSTER_UPDATE")
 f:SetScript("OnEvent", function(_, event, name)
   if event == "ADDON_LOADED" and name == ADDON then
     db()
+    ns.loaded = true                 -- the saved variables are in: the APIs may answer (API.lua, Loot.lua)
     ns.Comm.Boot()
     -- THE ADDON WATCHES NOTHING NOW (5 Oct 2026). Arn: "we can get rid of the attendence and
     -- consume check lets do logs for that". It used to count boss kills and who was standing

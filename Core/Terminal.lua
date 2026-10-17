@@ -984,7 +984,7 @@ local function PaintRaider(p, name)
             fs:SetText(item .. ((e.boss and e.boss ~= "") and T().text("muted", "  " .. e.boss) or ""))
             fs:SetTextColor(rgb(QUALITY[q or 1] or "ink"))
         elseif i == 1 then
-            fs:SetText(have and "nothing awarded in BiS Loot" or "BiS Loot has not run on this client")
+            fs:SetText(have and "nothing awarded yet" or "the loot ledger is not ready yet")
             fs:SetTextColor(rgb("muted"))
         else
             fs:SetText("")

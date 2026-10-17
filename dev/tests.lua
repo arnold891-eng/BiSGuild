@@ -13,6 +13,8 @@ local ALLOWED = {
     LibStub = true, HBD_PINS_WORLDMAP_SHOW_PARENT = true, HBD_PINS_WORLDMAP_SHOW_CONTINENT = true,
     HBD_PINS_WORLDMAP_SHOW_WORLD = true,
     BiSGuildAPI = true,    -- API.lua, for other addons (16 Oct; _bisdev playbook 5a)
+    -- the loot ledger, folded in from BiS Loot (Core/Loot.lua): its API, its library, its slash words
+    BiSLootAPI = true, LibBiSLedger = true, SLASH_BISLOOT1 = true, SLASH_BISLOOT2 = true, SLASH_BISLOOT3 = true,
 }
 -- HEREBEDRAGONS DRIVES THE CLIENT'S OWN MAP ENGINE (the world map's data providers, the minimap's
 -- zoom tables), which a headless mock cannot stand in for honestly - BiS Tools' suite found the same.
@@ -1229,21 +1231,21 @@ do
     _G.GetItemInfo = function(id) if id == 1001 then return "Helm of Testing", nil, 4 end return nil end
     H.ok(rc.attLine:GetText():find("2 of 2 nights", 1, true), "attendance in words", rc.attLine:GetText())
     H.ok(rc.consLines[1]:GetText():find("2 of 2 pulls", 1, true), "her flask on the latest night", rc.consLines[1]:GetText())
-    H.eq(rc.lootLines[1]:GetText(), "BiS Loot has not run on this client", "no ledger: says so")
+    H.eq(rc.lootLines[1]:GetText(), "nothing awarded yet", "an empty ledger: says so (BiS Guild keeps it now)")
     for _ = 1, 3 do H.clock = H.clock + 2 H.RunTimers() end
     local asked = false
     for _, w in ipairs(H.wire) do if w.msg:find("|GLOG|GWANT|Alice|", 1, true) then asked = true end end
     H.ok(asked, "opening a card asks officers for newer gear")
 
     -- loot won, straight from BiS Loot's ledger
-    _G.BiSLootDB = { lines = {
-        table.concat({ "1", "Kumlust", "1", "0", "1700000000", "award", "MC", "Boss One", "1001", "Alice", "MS", "hand", "", "", "sum" }, "\t"),
-        table.concat({ "1", "Kumlust", "2", "x", "1700000100", "award", "MC", "Boss One", "1003", "Bob", "MS", "hand", "", "", "sum" }, "\t"),
-    } }
+    -- the ledger is BiS Guild's own now (Core/Loot.lua, LibBiSLedger): two awards, one hers
+    local LG = NS.Loot.Ledger()
+    LG:Add("Kumlust", { kind = "award", who = "Alice", item = "1001", resp = "MS", raid = "MC", boss = "Boss One", t = 1700000000 })
+    LG:Add("Kumlust", { kind = "award", who = "Bob", item = "1003", resp = "MS", raid = "MC", boss = "Boss One", t = 1700000100 })
     K.Go("alice")
     H.ok(rc.lootLines[1]:GetText():find("Helm of Testing", 1, true), "her loot from the ledger", rc.lootLines[1]:GetText())
     H.eq(rc.lootLines[2]:GetText(), "", "and only hers")
-    _G.BiSLootDB = nil
+    LG:Reset()
 
     -- the boss ticker
     K.Go("BOSS ONE <BOSS> GO")
@@ -2206,11 +2208,12 @@ do
     NS.K.Hide()
 
     -- BiS Guild's own loot panel asks BiSLootAPI first (it used to read BiSLootDB's lines)
+    local keepLootAPI = _G.BiSLootAPI
     _G.BiSLootAPI = { major = 1, version = 1, AwardsTo = function(who)
         return who == "Alice" and { { itemId = 28830, item = "[Dragonspine Trophy]", boss = "Gruul", t = 5 } } or {} end }
     local loot, have = NS.K.Loot("Alice")
     H.ok(have and loot[1] and loot[1].item == 28830 and loot[1].boss == "Gruul", "the terminal's loot comes from BiSLootAPI")
-    _G.BiSLootAPI = nil
+    _G.BiSLootAPI = keepLootAPI
 
     -- not ready: before the addon has its pieces
     local keepS = NS.S
@@ -2218,6 +2221,80 @@ do
     H.eq(select(2, A.Raiders()), "not ready", "before the record exists: nil, 'not ready' - never an error")
     NS.S = keepS
     NS.Books().record = saved
+end
+
+--=============================================================================
+-- THE LOOT LEDGER, FOLDED IN FROM BiS LOOT (16 Oct 2026). Arn: "if they are going to install one thing
+-- it's BiS Guild ... or maybe we put it into the library thing".
+--=============================================================================
+H.section("the loot ledger lives in BiS Guild now")
+do
+    local LT, Lib = NS.Loot, _G.LibBiSLedger
+    -- the library is the canon's bytes
+    local canon = bytes((os.getenv("BISDEV") or (ROOT .. "/../_bisdev")) .. "/LibBiSLedger-1.0/LibBiSLedger-1.0.lua")
+    if canon then H.ok(bytes(ROOT .. "/Libs/LibBiSLedger-1.0/LibBiSLedger-1.0.lua") == canon, "LibBiSLedger byte-identical to _bisdev")
+    else H.say("  (note) no _bisdev beside the checkout - ledger bytes fence skipped") end
+    H.ok(listed("Libs/LibBiSLedger-1.0/LibBiSLedger-1.0.lua"), "the TOC carries it")
+
+    local L = LT.Ledger()
+    L:Reset()
+    NS.Books().loot = { lines = {}, meta = {} }
+    -- BiS LOOT'S SAVED LINES, taken in once and never doubled
+    local function line(seq, prev, who, item, t)
+        return Lib.pack({ v = "1", author = "Kumlust", seq = seq, prev = prev, t = t, kind = "award", who = who,
+                          item = item, resp = "bis", boss = "Gruul", raid = "K-1" })
+    end
+    local l1 = line(1, "0", "Kio Alpha", "|cffa335ee|Hitem:28830::::::::70:::::|h[Dragonspine Trophy]|h|r", 1700000100)
+    local l2 = line(2, Lib.unpack(l1).sum, "Bob", "[Eye of Gruul]", 1700000200)
+    _G.BiSLootDB = { lines = { l1, l2 }, snapshot = { l1 } }
+    local before = #said
+    H.eq(LT.ImportBiSLoot(), 2, "BiS Loot's two awards are taken in")
+    H.ok(said[before + 1] and said[before + 1]:find("BiS Loot can be removed", 1, true), "and the player is told, once", said[before + 1])
+    H.eq(LT.ImportBiSLoot(), 0, "a second login takes in nothing new - nothing doubles")
+    H.eq(#said, before + 1, "and does not say it again")
+    _G.BiSLootDB = { lines = { line(1, "0", "Kio Alpha", "[Forged]", 1) } }    -- a tampered copy
+    H.eq(LT.ImportBiSLoot(), 0, "a line that clashes with the chain is a fork, never taken in")
+    _G.BiSLootDB = nil
+    H.ok(L:Verify().ok == false and L:Verify().forks == 1, "and is reported as a fork, as BiS Loot did")
+    L.forks = {}
+
+    -- BiSLootAPI, answered by BiS Guild
+    local A = _G.BiSLootAPI
+    H.ok(A and A.major == 1 and A.provider == "BiSGuild", "BiSLootAPI is BiS Guild's while BiS Loot is not installed")
+    local kio = A.AwardsTo("Kio")
+    H.ok(kio and #kio == 1 and kio[1].itemId == 28830, "AwardsTo: Kio's trophy, the id from the link")
+    H.eq(#A.AwardsFrom("gruul"), 2, "AwardsFrom a boss")
+    kio[1].who = "Hacker"
+    H.eq(A.AwardsTo("Kio")[1].who, "Kio Alpha", "answers are copies")
+    local heard = {}
+    A.RegisterCallback("t", "BiSLoot_Award", function(a) heard[#heard + 1] = a.who end)
+
+    -- /bisl: BiS Loot's words, kept
+    local keepClock = clock
+    clock = 1800000000                    -- now: after the imported awards
+    _G.SlashCmdList.BISLOOT("award Zed [Gruul's Dragonslayer] os")
+    clock = keepClock
+    H.ok(heard[1] == "Zed", "/bisl award writes an award - and BiSLoot_Award fires")
+    A.UnregisterCallback("t", "BiSLoot_Award")
+    before = #said
+    _G.SlashCmdList.BISLOOT("status")
+    H.ok(said[before + 1] and said[before + 1]:find("3 events", 1, true), "/bisl status", said[before + 1])
+    _G.SlashCmdList.BISLOOT("last 2")
+    H.ok(said[before + 2] and said[before + 2]:find("Zed", 1, true), "/bisl last: newest first", said[before + 2])
+
+    -- logout and back: the ledger is in this guild's books
+    fire("PLAYER_LOGOUT")
+    H.eq(#NS.Books().loot.lines, 3, "logout writes the three lines into the guild's books")
+    LT.ledgers = {}
+    H.eq(LT.Ledger().count, 3, "a new session reads them back")
+    H.ok(LT.Ledger():Verify().ok, "verified on the way in")
+    -- an alt in another guild has its own ledger
+    local realGI = _G.GetGuildInfo
+    _G.GetGuildInfo = function() return "Some Other Guild" end
+    H.eq(LT.Ledger().count, 0, "an alt in another guild: an empty ledger of its own")
+    _G.GetGuildInfo = realGI
+    LT.ledgers = {}
+    NS.Books().loot = nil
 end
 
 -- WHAT AN OPEN WINDOW COSTS, IN CLIENT CALLS (7 Oct 2026). BiSHealing asked the client ~630,000

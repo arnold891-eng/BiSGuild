@@ -13,6 +13,7 @@
 
 Libs\BiSTheme\Console.lua
 Libs\LibBiSComm-1.0\LibBiSComm-1.0.lua
+Libs\LibBiSLedger-1.0\LibBiSLedger-1.0.lua
 Libs\LibStub\LibStub.lua
 Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
 Libs\HereBeDragons\HereBeDragons-2.0.lua
@@ -33,5 +34,6 @@ Core\Where.lua
 Core\Pins.lua
 Core\Invite.lua
 Core\Logins.lua
+Core\Loot.lua
 API.lua
 Core\Say.lua
