@@ -2,6 +2,8 @@
 
 ## 0.1.0
 
+Fingerprint (SHA-256 of the whole addon, check it with the command on the CurseForge page): `D0375501644F887783CC69320842BDA7696F962DE882782BFE520070D68B3F33`
+
 The first public release. Loot night, two raiders, one trinket, and everyone thinks they remember who showed up. BiS Guild read the log instead.
 
 - **The raider terminal** (`/bisg`): RAIDERS, BOSSES, WHERE, ROSTER and LOG. Attendance, deaths, flasks and food, gear issues in red, item tooltips with the enchant, the game's own right-click menu on every name. Esc steps back a page.
