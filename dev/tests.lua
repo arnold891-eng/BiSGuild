@@ -1300,6 +1300,32 @@ do
              "Orgrimmar's land is its crop box, not the parchment", wp.land:GetWidth() / wp.land:GetHeight())
         H.eq(wp.map.right:GetText(), "1 on this map", "with her dot on it")
 
+        -- THE BIG MAP: OpenMap's close-up when it is installed, the game's map when not
+        local opened, glided, setTo
+        _G.OpenWorldMap = function(m) opened = m end
+        _G.WorldMapFrame = { SetMapID = function(_, m) setTo = m end }
+        H.eq(wp.open.fs:GetText(), "OPEN WORLD MAP", "no OpenMap: the button opens the game's map")
+        wp.open:Click()
+        H.ok(opened == 1454 and setTo == 1454 and not f:IsShown(), "on Cara's zone, the terminal out of the way")
+        _G.OpenMapAPI = {
+            WorldFromMap = function(m, x, y) return m == 1454 and 0.2 + x / 10 or nil, 0.3 + y / 10 end,
+            IsStitched = function() return true end,
+            ShowWorld = function(u, v, z) glided = { u, v, z } end,
+        }
+        K.Show("where")
+        rows[5]:Click()
+        H.eq(wp.open.fs:GetText(), "ZOOM IN OPENMAP", "with OpenMap and somebody picked: zoom in on them")
+        wp.open:Click()
+        H.RunTimers()
+        H.ok(glided and math.abs(glided[1] - 0.23) < 1e-9 and glided[3] == Wh.ZOOM,
+             "OpenMap glides to Cara, zoomed in", glided and table.concat(glided, ","))
+        _G.InCombatLockdown = function() return true end
+        K.Show("where")
+        opened = nil
+        H.ok(not Wh.OpenBig() and opened == nil, "never in combat - OpenMap's own notes: the map in a fight is blocked")
+        H.ok(f.status:GetText():find("not in combat", 1, true), "and it says so")
+        _G.InCombatLockdown, _G.OpenMapAPI, _G.OpenWorldMap, _G.WorldMapFrame = nil, nil, nil, nil
+
         -- it redraws itself while showing: a spot that moves, moves on the page
         lib.spots.Cara = { map = 1454, x = 0.6, y = 0.6, at = H.clock }
         local function dotX() local pt = wp.dots[1]._points and wp.dots[1]._points[1] return pt and pt.x end

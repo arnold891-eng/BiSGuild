@@ -171,6 +171,41 @@ function W.Rows(spots)
     return rows
 end
 
+--- THE CLOSE-UP LIVES IN OPENMAP (Arn, 16 Oct: OpenMap zooms down to the ground; "if the addon is
+--- installed"). Its API (OpenMapAPI, major 1) does not lend its terrain to other windows, but it moves
+--- its own map: WorldFromMap turns a zone spot into its stitched world, ShowWorld glides there. So the
+--- button opens the world map and, with OpenMap, glides in on whoever was clicked (else the middle of
+--- the zone shown). Without OpenMap: the game's map on that zone. Our dots are on both (Pins.lua).
+---
+--- NEVER IN COMBAT: OpenMap's own notes - opening the map in a fight drew "action blocked".
+W.ZOOM = 40              -- OpenMap's zoom: 1 is the whole world; this is a few hundred yards across
+function W.OpenMapHere() return type(_G.OpenMapAPI) == "table" and _G.OpenMapAPI.WorldFromMap ~= nil end
+
+function W.OpenBig()
+    if InCombatLockdown and InCombatLockdown() then
+        K.Say("not in combat - the map cannot be opened in a fight", "warn")
+        return false
+    end
+    local map = W.shown
+    if not map then K.Say("no map to open", "warn") return false end
+    local x, y = 0.5, 0.5
+    if W.focus and W.focus.map == map then x, y = W.focus.x, W.focus.y end
+    K.Hide()                                           -- the terminal sits above the map's strata
+    if OpenWorldMap then pcall(OpenWorldMap, map) elseif ToggleWorldMap then pcall(ToggleWorldMap) end
+    local api = W.OpenMapHere() and _G.OpenMapAPI
+    if api then
+        -- a moment for the map to come up and switch to the stitched view, then glide
+        local function glide()
+            local ok, u, v = pcall(api.WorldFromMap, map, x, y)
+            if ok and u and api.IsStitched and api.IsStitched() then pcall(api.ShowWorld, u, v, W.ZOOM) end
+        end
+        if C_Timer and C_Timer.After then C_Timer.After(0.2, glide) else glide() end
+    elseif WorldMapFrame and WorldMapFrame.SetMapID then
+        pcall(WorldMapFrame.SetMapID, WorldMapFrame, map)
+    end
+    return true
+end
+
 --------------------------------------------------------------------
 -- frames
 --------------------------------------------------------------------
@@ -194,12 +229,28 @@ function K.BuildWhere(page, bodyH)
     if page.none.SetWordWrap then page.none:SetWordWrap(true) end
 
     local lx = W.MAP_W + 16
+    -- OPEN THE BIG MAP HERE: zoomed right in on OpenMap when it is installed, the game's own map on
+    -- this zone when it is not
+    local open = CreateFrame("Button", nil, page.map)
+    open:SetPoint("TOPRIGHT", -96, -1)
+    open:SetSize(120, 16)
+    local obg = open:CreateTexture(nil, "BACKGROUND")
+    obg:SetAllPoints()
+    ui.Fill(obg, "sunken")
+    local ohi = open:CreateTexture(nil, "HIGHLIGHT")
+    ohi:SetAllPoints()
+    ui.Fill(ohi, "accent", K.HOVER)
+    open.fs = ui.Text(open, 11, "gold", "CENTER")
+    open.fs:SetPoint("CENTER", 0, 0)
+    open:SetScript("OnClick", function() W.OpenBig() end)
+    page.open = open
+
     page.who = ui.Panel(page, "WHO IS WHERE", lx, 0, K.W - lx - 8, bodyH - 4)
     page.grid = ui.Grid(page.who, { "NAME", "LVL", "RANK", "" },
         { { 120, "LEFT" }, { 30, "RIGHT" }, { 84, "LEFT" }, { 54, "RIGHT" } }, K.LIST_ROWS, 22,
         function(key)
             local row = W.byKey and W.byKey[key]
-            if row and row.spot then K.whereMap = row.spot.map K.Paint()
+            if row and row.spot then K.whereMap, W.focus = row.spot.map, row.spot K.Paint()
             elseif row and row.name then K.Go(row.name .. " <raider>") end
         end)
     page.hint = ui.Text(page.who, 12, "ink2")
@@ -233,6 +284,10 @@ function K.PaintWhere(p)
     local spots = W.Spots()
     local map = K.whereMap or W.AutoMap(spots)
     W.shown = map
+    if W.focus and W.focus.map ~= map then W.focus = nil end
+    -- the button says where it goes: OpenMap's close-up when it is here, the game's map when not
+    p.open.fs:SetText(W.OpenMapHere() and (W.focus and "ZOOM IN OPENMAP" or "OPEN IN OPENMAP") or "OPEN WORLD MAP")
+    if map then p.open:Show() else p.open:Hide() end
     for _, t in ipairs(p.tiles) do t:Hide() end
     for i, d in ipairs(p.dots) do d:Hide() p.labels[i]:Hide() end
 
