@@ -1747,6 +1747,23 @@ do
     H.eq(NS.Books().roster, pasted, "READ IT keeps the paste across a reload")
     H.eq(rp.send.fs:GetText(), "INVITE 2 ONLINE", "two of them online and not you")
 
+    -- THE GREYED HINT (Arn: "a greyed out button <needs BiS Tools> ... only if it makes sense")
+    _G.BiSToolsAPI = nil
+    K.Paint()
+    H.ok(rp.toolsHint:IsShown() and rp.toolsHint.fs:GetText():find("needs BiS Tools", 1, true),
+         "no BiS Tools, a roster to review: the dim 'confirm list - needs BiS Tools' beside INVITE")
+    local tiplines = {}
+    _G.GameTooltip = { SetOwner = function() end, Show = function() end, Hide = function() end,
+                       AddLine = function(_, s) tiplines[#tiplines + 1] = s end }
+    rp.toolsHint:Fire("OnEnter")
+    H.ok(tiplines[2] and tiplines[2]:find("work without it", 1, true), "its tooltip says what BiS Tools adds - and that ours works without it")
+    _G.GameTooltip = nil
+    _G.BiSToolsAPI = { major = 1, version = 1, PartyReady = function() return true end }
+    K.Paint()
+    H.ok(not rp.toolsHint:IsShown(), "BiS Tools here: no hint")
+    _G.BiSToolsAPI = nil
+    K.Paint()
+
     -- WITHOUT BiS Tools: the second click sends, one invite at a time, whole names
     local invited = {}
     local keepPI = _G.C_PartyInfo

@@ -478,6 +478,28 @@ function K.BuildRoster(page, bodyH)
         end
         I.Send(members, "on the pasted roster")
     end)
+    -- THE ONE GREYED HINT (Arn, 16 Oct: "on the light way we have a greyed out button <needs BiS Tools>
+    -- ... but only if it makes sense ... we are not overbearing"; _bisdev playbook 5b). Here, where a
+    -- leader reviews a whole raid's invites, BiS Tools' confirm list really helps. Dim, beside the
+    -- button, hidden when BiS Tools is here; its tooltip says what it adds. Nowhere else, never a pop-up.
+    local tip = CreateFrame("Button", nil, page.list)
+    tip:SetPoint("BOTTOMLEFT", 176, 8)
+    tip:SetSize(200, 20)
+    tip.fs = ui.Text(tip, 11, "muted", "LEFT")
+    tip.fs:SetPoint("LEFT", 4, 0)
+    tip.fs:SetText("confirm list - needs BiS Tools")
+    tip:SetAlpha(0.6)
+    tip:SetScript("OnEnter", function(self)
+        local gt = _G.GameTooltip
+        if not gt then return end
+        gt:SetOwner(self, "ANCHOR_TOP")
+        gt:AddLine("BiS Tools' confirm list")
+        gt:AddLine("Look the invites over before they go: sorted by class, an x to leave someone out, a little "
+            .. "inviting box, and refusals shown in red. BiS Guild's own invites work without it.", 1, 1, 1, true)
+        gt:Show()
+    end)
+    tip:SetScript("OnLeave", function() if _G.GameTooltip then _G.GameTooltip:Hide() end end)
+    page.toolsHint = tip
     page.hint = ui.Text(page.list, 12, "ink2")
     page.hint:SetPoint("TOPLEFT", 12, -44)
     page.hint:SetWidth(K.W - rx - 40)
@@ -518,6 +540,10 @@ function K.PaintRoster(p)
     p.list.right:SetText(#rows == 0 and "" or ("%d on it, %d online, %d not in guild"):format(#rows, counts.online,
         counts["not in guild"] or 0) .. ui.Showing(p.grid))
     p.send.fs:SetText(("INVITE %d ONLINE"):format(counts.online))
+    -- the hint only when BiS Tools is not doing the job, and only once there is a roster to review
+    if p.toolsHint then
+        if I.Tools() or #rows == 0 then p.toolsHint:Hide() else p.toolsHint:Show() end
+    end
     local off = ui.Scroll(p.grid, #rows)
     local colours = _G.RAID_CLASS_COLORS
     for i, row in ipairs(p.grid.rows) do
