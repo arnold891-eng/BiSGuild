@@ -419,7 +419,7 @@ function K.BuildRoster(page, bodyH)
         return b
     end
     local function Read()
-        ns.DB().roster = page.box:GetText()
+        ns.Books().roster = page.box:GetText()
         page.box:ClearFocus()
         K.Paint()
     end
@@ -433,7 +433,7 @@ function K.BuildRoster(page, bodyH)
     end)
     page.read = Button(page.paste, "READ IT", 100, 8, 86, Read)
     page.clear = Button(page.paste, "CLEAR", 192, 8, 70, function()
-        ns.DB().roster = nil
+        ns.Books().roster = nil
         page.box:SetText("")
         K.Paint()
     end)
@@ -443,7 +443,7 @@ function K.BuildRoster(page, bodyH)
         local jump = n - (page.lastLen or 0)
         page.lastLen = n
         if userInput and jump > 20 and C_Timer and C_Timer.After then
-            C_Timer.After(0.1, function() if page.box:GetText() ~= ns.DB().roster then Read() end end)
+            C_Timer.After(0.1, function() if page.box:GetText() ~= ns.Books().roster then Read() end end)
         end
     end)
 
@@ -456,7 +456,7 @@ function K.BuildRoster(page, bodyH)
             if r and r.member then K.Go(r.member.name .. " <raider>") end
         end)
     page.send = Button(page.list, "INVITE ONLINE", 8, 8, 160, function()
-        local rows, members = I.Read(ns.DB().roster), {}
+        local rows, members = I.Read(ns.Books().roster), {}
         local here = I.Here()
         for _, r in ipairs(rows) do
             if r.member and I.Status(r, here) == "online" then members[#members + 1] = r.member end
@@ -474,7 +474,7 @@ end
 
 function K.PaintRoster(p)
     local ui = K.ui
-    local text = ns.DB().roster
+    local text = ns.Books().roster
     if type(text) == "string" and p.box:GetText() ~= text and not p.box:HasFocus() then p.box:SetText(text) end
     local rows = I.Read(text)
     local here = I.Here()

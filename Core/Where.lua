@@ -382,32 +382,52 @@ local function Tile(p, i)
     return t
 end
 
---- A zone marker: a hollow muted square, and "Zone N" under it.
+--- A zone marker: a purple square on a dark middle (gold on gold parchment was lost - Arn, 16 Oct),
+--- and "Zone N" outlined under it.
 local function Mark(p, i)
     local m = p.marks[i]
     if not m then
         m = CreateFrame("Frame", nil, p.land)
         m:SetSize(12, 12)
+        local mid = m:CreateTexture(nil, "ARTWORK")
+        mid:SetPoint("TOPLEFT", -1, 1)
+        mid:SetPoint("BOTTOMRIGHT", 1, -1)
+        mid:SetColorTexture(0, 0, 0, 0.6)
         for _, side in ipairs({ { "TOPLEFT", "TOPRIGHT", nil, 2 }, { "BOTTOMLEFT", "BOTTOMRIGHT", nil, 2 },
                                 { "TOPLEFT", "BOTTOMLEFT", 2, nil }, { "TOPRIGHT", "BOTTOMRIGHT", 2, nil } }) do
             local t = m:CreateTexture(nil, "OVERLAY")
             t:SetPoint(side[1], 0, 0)
             t:SetPoint(side[2], 0, 0)
             if side[3] then t:SetWidth(side[3]) else t:SetHeight(side[4]) end
-            t:SetColorTexture(K.ui.rgb("gold"))
+            t:SetColorTexture(K.ui.rgb("accent"))
         end
-        m.label = K.ui.Text(p.land, 10, "gold")
+        m.label = W.MapText(p.land, 10, "ink")
         m.label:SetPoint("TOP", m, "BOTTOM", 0, -1)
         p.marks[i] = m
     end
     return m
 end
 
+--- MAP WORDS ARE OUTLINED (Arn, 16 Oct: "yellow is getting lost on the yellow background of the map"):
+--- black round the letters, as the game draws its own map text, so any colour reads on parchment.
+local function MapText(parent, size, colour)
+    local fs = K.ui.Text(parent, size, colour)
+    if fs.SetFont then pcall(fs.SetFont, fs, K.FONT, size, "OUTLINE") end
+    if fs.SetShadowOffset then fs:SetShadowOffset(1, -1) end
+    return fs
+end
+W.MapText = MapText
+
 local function Dot(p, i)
     local d, l = p.dots[i], p.labels[i]
     if not d then
-        d = p.land:CreateTexture(nil, "OVERLAY")
-        l = K.ui.Text(p.land, 10, "ink")
+        -- a black edge under every dot: a gold "you" on gold parchment was invisible
+        d = p.land:CreateTexture(nil, "OVERLAY", nil, 2)
+        d.edge = p.land:CreateTexture(nil, "OVERLAY", nil, 1)
+        d.edge:SetColorTexture(0, 0, 0, 1)
+        d.edge:SetPoint("TOPLEFT", d, "TOPLEFT", -1, 1)
+        d.edge:SetPoint("BOTTOMRIGHT", d, "BOTTOMRIGHT", 1, -1)
+        l = MapText(p.land, 10, "ink")
         p.dots[i], p.labels[i] = d, l
     end
     return d, l
@@ -514,7 +534,8 @@ function K.PaintWhere(p)
                 end
             end
         end
-        p.map.right:SetText(("%d on this map"):format(n) .. (marks > 0 and ("  +%d zone(s) without a dot"):format(marks) or ""))
+        -- short: the title bar is shared with WORLD and OPEN (16 Oct: the long form ran under them)
+        p.map.right:SetText(("%d dot%s"):format(n, n == 1 and "" or "s") .. (marks > 0 and ("  +%d zone%s"):format(marks, marks == 1 and "" or "s") or ""))
     end
     if p.world then
         if map == W.WORLD or not W.WorldReady() then p.world:Hide() else p.world:Show() end

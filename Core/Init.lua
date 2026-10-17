@@ -47,6 +47,46 @@ local function db()
 end
 ns.DB = db
 
+--- EACH GUILD ITS OWN BOOKS (Arn, 16 Oct: "some people have alts in other guilds - when I opened it on
+--- my hunter it still had the pasted JSON"). BiSGuildDB is the account's, every character shares it,
+--- so the pasted roster, the raid record and the punctuality are filed per guild - realm and guild
+--- name - and a character sees and SHARES only its own guild's. (A hunter that is an officer in
+--- another guild would otherwise have announced the main's raid nights to that guild.) Settings -
+--- logins, map dots, the logs folder - stay the account's.
+---
+--- The client names your guild a moment after login. Until it has, ns.Books() is an unsaved, empty
+--- stand-in: an empty terminal for a second, never another guild's books.
+function ns.GuildKey()
+    if not (IsInGuild and IsInGuild()) then
+        local me = UnitName and UnitName("player")
+        return me and ("-|" .. tostring(GetRealmName and GetRealmName() or "") .. "|" .. me) or nil
+    end
+    local ok, name = pcall(GetGuildInfo, "player")
+    if not ok or type(name) ~= "string" or name == "" then return nil end
+    return tostring(GetRealmName and GetRealmName() or "") .. "|" .. name
+end
+
+ns.unfiled = {}
+function ns.Books()
+    local key = ns.GuildKey()
+    if not key then return ns.unfiled end
+    local d = db()
+    if type(d.guilds) ~= "table" then d.guilds = {} end
+    local g = d.guilds[key]
+    if not g then
+        g = {}
+        d.guilds[key] = g
+        -- the books kept account-wide before 16 Oct go to the first guild seen after the change
+        -- (Arn's main, logged first) - once, and never again
+        if not d.filedTo and (d.record or d.roster or d.punctual) then
+            g.record, g.roster, g.punctual = d.record, d.roster, d.punctual
+            d.record, d.roster, d.punctual = nil, nil, nil
+            d.filedTo = key
+        end
+    end
+    return g
+end
+
 --- ESC FOR A WINDOW, SAFE IN COMBAT (16 Oct 2026). Arn opened the terminal mid-fight and got
 --- ADDON_ACTION_BLOCKED: SetPropagateKeyboardInput is protected in combat. So:
 ---   * in combat it is never called - the keyboard is switched on when combat ends instead;
@@ -102,6 +142,8 @@ end
 local f = CreateFrame("Frame")
 f:RegisterEvent("ADDON_LOADED")
 f:RegisterEvent("PLAYER_LOGOUT")
+f:RegisterEvent("PLAYER_GUILD_UPDATE")
+f:RegisterEvent("GUILD_ROSTER_UPDATE")
 f:SetScript("OnEvent", function(_, event, name)
   if event == "ADDON_LOADED" and name == ADDON then
     db()
@@ -118,8 +160,12 @@ f:SetScript("OnEvent", function(_, event, name)
     if d.taught ~= nil then d.taught = nil end       -- and the consumables list, gone the same way
     -- THE RECORD (16 Oct): the report file is folded into the guild's record, which every member
     -- keeps and Core/Share.lua shares - so the numbers survive a deploy and a missed night
-    if ns.S then ns.S.Import(_G.BiSGuildReport) end
+    -- ...into THIS character's guild's books, once the client has named the guild and its raiders
+    -- are in it (16 Oct: an alt in another guild must not take in the main's raids) - Store.lua
+    if ns.S then ns.S.ImportWhenReady() end
     if ns.X then ns.X.Boot() end
+  elseif event == "PLAYER_GUILD_UPDATE" or event == "GUILD_ROSTER_UPDATE" then
+    if ns.S then ns.S.ImportWhenReady() end
   elseif event == "PLAYER_LOGOUT" then
     ns.Comm.Save()
   end

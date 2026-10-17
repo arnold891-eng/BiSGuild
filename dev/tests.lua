@@ -847,7 +847,7 @@ local S, X = NS.S, NS.X
 
 H.section("the record: a report folds in, the fuller copy of a date wins")
 do
-    _G.BiSGuildDB.record = nil
+    NS.Books().record = nil
     local gear = {}
     for i = 1, 19 do gear[i] = { 1000 + i, 30, i == 5 and 0 or 7, 0, {} } end
     local report = {
@@ -889,6 +889,55 @@ do
     -- Init clears the old collector's `nights` on every load; the record is under another name
     fire("ADDON_LOADED", "BiSGuild")
     H.eq(#S.Dates(), 2, "a reload keeps the record")
+end
+
+H.section("each guild its own books (Arn, 16 Oct: 'some people have alts in other guilds')")
+do
+    local main = NS.Books()
+    main.roster = "Bob, Kio"
+    local realGI = _G.GetGuildInfo
+    _G.GetGuildInfo = function() return "Some Other Guild" end
+    local alt = NS.Books()
+    H.ok(alt ~= main, "an alt in another guild has other books")
+    H.eq(alt.roster, nil, "and does not see the main guild's pasted roster")
+    H.eq(#S.Dates(), 0, "nor its raid nights - so it can never share them with its own guild")
+    _G.GetGuildInfo = function() return nil end
+    H.ok(NS.Books() == NS.unfiled and next(NS.unfiled) == nil, "before the client names the guild: an empty stand-in, never a guess")
+    _G.GetGuildInfo = realGI
+    H.ok(NS.Books() == main and main.roster == "Bob, Kio", "back on the main: its own books, as they were")
+    main.roster = nil
+
+    -- the report from this computer is filed only where its raiders are
+    local keepRep = _G.BiSGuildReport
+    _G.BiSGuildReport = { rows = {}, nightly = { ["2026-10-20"] = { kills = 1, raiders = {
+        Kumlust = { present = 1 }, Stranger1 = { present = 1 }, Stranger2 = { present = 1 } }, bosses = {} } } }
+    S.imported = {}
+    _G.GetGuildInfo = function() return "Some Other Guild" end
+    local realInfo = _G.GetGuildRosterInfo
+    _G.GetGuildRosterInfo = function() return "Nobodyhere" end
+    NS.K._guildDirty = true
+    H.ok(not S.ImportWhenReady(), "an alt's guild with none of the report's raiders: not filed there")
+    H.eq(NS.Books().record and NS.Books().record.nights["2026-10-20"], nil, "nothing in its books")
+    _G.GetGuildInfo, _G.GetGuildRosterInfo = realGI, realInfo
+    NS.K._guildDirty = true
+    S.imported = {}
+    H.ok(S.ImportWhenReady(), "the main's guild, where Kumlust is: filed")
+    H.ok(S.Record().nights["2026-10-20"] ~= nil, "the night is in the main guild's books")
+    S.Record().nights["2026-10-20"] = nil
+    _G.BiSGuildReport = keepRep
+
+    -- the books kept account-wide before the change go to the first guild seen after it - once
+    local d = _G.BiSGuildDB
+    local keepGuilds, keepFiled = d.guilds, d.filedTo
+    d.guilds, d.filedTo = nil, nil
+    d.record, d.roster = { nights = { ["2026-09-29"] = { kills = 1, raiders = {} } }, gear = {} }, "old paste"
+    local b = NS.Books()
+    H.ok(b.record and b.record.nights["2026-09-29"] and b.roster == "old paste", "the old books move into this guild's")
+    H.ok(d.record == nil and d.roster == nil and d.filedTo ~= nil, "and are not left account-wide")
+    _G.GetGuildInfo = function() return "Some Other Guild" end
+    H.eq(NS.Books().record, nil, "a second guild does not get them too")
+    _G.GetGuildInfo = realGI
+    d.guilds, d.filedTo = keepGuilds, keepFiled
 end
 
 H.section("a night on the wire: small, and the same night after")
@@ -951,7 +1000,7 @@ do
 
     -- somebody missing the 16th hears it and asks - once
     local mine = S.Record()
-    _G.BiSGuildDB.record = { nights = {}, gear = {} }
+    NS.Books().record = { nights = {}, gear = {} }
     H.wire = {}
     hear("Memberguy", have[1])
     drain()
@@ -963,7 +1012,7 @@ do
     H.ok(want[1] and want[1].msg:find("2026-10-16", 1, true), "the newest missing date first")
 
     -- the officer answers: a part every two seconds, every part under the client's limit
-    _G.BiSGuildDB.record = mine
+    NS.Books().record = mine
     H.wire = {}
     X.handlers.WANT("Memberguy", "2026-10-16")
     drain()
@@ -975,7 +1024,7 @@ do
 
     -- the parts, heard by a member with nothing: the same night arrives
     local sent = mine.nights["2026-10-16"]
-    _G.BiSGuildDB.record = { nights = {}, gear = {} }
+    NS.Books().record = { nights = {}, gear = {} }
     for _, w in ipairs(parts) do hear("Memberguy", w) end
     H.eq(S.Record().nights["2026-10-16"], nil, "from a member it is not taken in")
     for _, w in ipairs(parts) do hear("Bigboss", w) end
@@ -983,7 +1032,7 @@ do
     H.eq(S.Record().nights["2026-10-16"].by, "Bigboss", "and says who sent it")
 
     -- ONE ANSWER, NOT TEN: an officer who hears another officer's first part stands down
-    _G.BiSGuildDB.record = mine
+    NS.Books().record = mine
     H.wire = {}
     X.handlers.WANT("Memberguy", "2026-10-16")
     hear("Bigboss", parts[1])
@@ -1004,7 +1053,7 @@ do
     -- PUNCTUALITY, SHARED (Arn, 16 Oct: "share the punctuality with the other officers too")
     local Lg = NS.Login
     local S0 = 1793840400
-    _G.BiSGuildDB.punctual = {
+    NS.Books().punctual = {
         kio = { [S0] = { late = false, d = -600 } }, bob = { [S0] = { late = true, d = 720 } }, zed = { [S0] = { noshow = true } },
     }
     local ptext = X.EncodePunct(S0)
@@ -1018,8 +1067,8 @@ do
     local ph = ours("PHAVE")
     H.ok(ph[1] and ph[1].msg:find(S0 .. ".3", 1, true), "an officer announces its punctuality: this raid, 3 people", ph[1] and ph[1].msg)
     -- an officer who saw fewer people asks, and gets the record merged into its own
-    local keepBook = _G.BiSGuildDB.punctual
-    _G.BiSGuildDB.punctual = { bob = { [S0] = { late = false, d = -60 } } }   -- this officer saw Bob online at the start
+    local keepBook = NS.Books().punctual
+    NS.Books().punctual = { bob = { [S0] = { late = false, d = -60 } } }   -- this officer saw Bob online at the start
     X.punctWanted = {}
     H.wire = {}
     hear("Memberguy", ph[1])
@@ -1028,16 +1077,16 @@ do
     hear("Bigboss", ph[1])
     drain()
     H.eq(#ours("PWANT"), 1, "an officer's PHAVE with more people: asked for")
-    local mineNow = _G.BiSGuildDB.punctual
-    _G.BiSGuildDB.punctual = keepBook
+    local mineNow = NS.Books().punctual
+    NS.Books().punctual = keepBook
     H.wire = {}
     X.handlers.PWANT("Memberguy", tostring(S0))
     drain()
     local pp = ours("PUNC")
     H.ok(#pp >= 1, "the officer answers with the record")
-    _G.BiSGuildDB.punctual = mineNow
+    NS.Books().punctual = mineNow
     for _, w in ipairs(pp) do hear("Bigboss", w) end
-    local mb = _G.BiSGuildDB.punctual
+    local mb = NS.Books().punctual
     H.ok(mb.kio and mb.kio[S0].d == -600, "Kio's on-time arrives")
     H.ok(mb.zed and mb.zed[S0].noshow, "Zed's no-show arrives")
     H.ok(mb.bob[S0].late == false and mb.bob[S0].d == -60,
@@ -1046,7 +1095,7 @@ do
     H.ok(Lg.Merge("zed", S0, { late = true, d = 300 }) and mb.zed[S0].late, "late beats no-show - he came")
     H.ok(Lg.Merge("zed", S0, { late = true, d = 120 }) and mb.zed[S0].d == 120, "of two lates, the smaller stands")
     H.ok(not Lg.Merge("zed", S0, { noshow = true }), "and a no-show cannot undo either")
-    _G.BiSGuildDB.punctual = nil
+    NS.Books().punctual = nil
     H.wire = {}
 
     -- gear: asked for by name, answered only when ours is newer
@@ -1059,11 +1108,11 @@ do
     local gparts = ours("GEAR")
     H.ok(#gparts >= 1 and #gparts <= 2, "their gear goes out in one or two parts: " .. #gparts)
     local had = mine.gear.Alice
-    _G.BiSGuildDB.record = { nights = {}, gear = {} }
+    NS.Books().record = { nights = {}, gear = {} }
     for _, w in ipairs(gparts) do hear("Bigboss", w) end
     H.ok(S.Record().gear.Alice and deq(S.Record().gear.Alice.gear, had.gear), "and arrives whole")
 
-    _G.BiSGuildDB.record = mine
+    NS.Books().record = mine
     _G.GetNumGuildMembers, _G.GetGuildRosterInfo = realNum, realInfo
     lib._guildDirty = true
     X._ranksDirty = true
@@ -1099,11 +1148,11 @@ end
 H.section("the terminal: the raider card and the boss ticker")
 do
     local K = NS.K
-    local saved = _G.BiSGuildDB.record
+    local saved = NS.Books().record
     local gear = {}
     for i = 1, 19 do gear[i] = { 1000 + i, 30, (i == 5) and 0 or 9, 0, {} } end
     gear[18] = { 0, 0, 0, 0, {} }
-    _G.BiSGuildDB.record = {
+    NS.Books().record = {
         nights = {
             ["2026-10-09"] = { kills = 2, raiders = { Alice = raider(2, 3), Bob = raider(2, 3, 2) },
                                bosses = { ["Boss One"] = { pulls = 3, kills = 1, best = 250000, killers = { "Alice", "Bob" } } } },
@@ -1115,8 +1164,8 @@ do
     _G.GetItemInfo = function(id) if id == 1001 then return "Helm of Testing", nil, 4 end return nil end
 
     -- empty first: the window says what to do instead of showing blank tables
-    local rec = _G.BiSGuildDB.record
-    _G.BiSGuildDB.record = { nights = {}, gear = {} }
+    local rec = NS.Books().record
+    NS.Books().record = { nights = {}, gear = {} }
     K.page = nil
     local f = K.Show()
     H.ok(f and f:IsShown(), "the terminal opens")
@@ -1128,7 +1177,7 @@ do
     H.eq(K.page, "bosses", "the BOSSES tab opens the bosses, even empty")
     H.ok(f.pages.bosses:IsShown() and not f.pages.raiders:IsShown(), "and the page changes")
     H.ok(f.pages.bosses.panel.hint:IsShown(), "with its own why")
-    _G.BiSGuildDB.record = rec
+    NS.Books().record = rec
 
     f.keys.raiders:Click()
     H.eq(K.page, "raiders", "the RAIDERS tab")
@@ -1211,7 +1260,7 @@ do
     H.ok(f.status:GetText():find("did you mean", 1, true), "a near miss offers names", f.status:GetText())
 
     -- THE LISTS SCROLL (Arn's first real report: 34 raiders, 27 rows, everyone after Rollsy gone)
-    local keep = _G.BiSGuildDB.record.nights["2026-10-09"].raiders
+    local keep = NS.Books().record.nights["2026-10-09"].raiders
     for i = 1, 40 do keep[("Zed%02d"):format(i)] = raider(1, 1) end
     f.keys.raiders:Click()
     local grid, panel = f.pages.raiders.grid, f.pages.raiders.panel
@@ -1230,7 +1279,7 @@ do
     -- STILL IN THE GUILD? (Arn: "the sheet had a check ... group the people that are pugs all the
     -- way in the bottom ... by class, all shaman alphabetical")
     do
-        local nights = _G.BiSGuildDB.record.nights["2026-10-09"].raiders
+        local nights = NS.Books().record.nights["2026-10-09"].raiders
         nights.Cara, nights.Dax, nights.Eve = raider(2, 3), raider(2, 3), raider(2, 3)
         local ROSTER = {
             { "Eve Surname", "Raider", "MAGE" }, { "Bob-Dreamscythe", "Officer", "WARRIOR" },
@@ -1337,7 +1386,7 @@ do
         H.ok(said[before + 1] and said[before + 1]:find("12 base tile", 1, true), "/bisg mapwhy", said[before + 1])
         _G.C_MapExplorationInfo = nil
         K.Paint()
-        H.eq(wp.map.right:GetText(), "2 on this map", "Bob's dot and mine")
+        H.eq(wp.map.right:GetText(), "2 dots", "Bob's dot and mine")
         local labels = {}
         for i, l in ipairs(wp.labels) do if wp.dots[i]:IsShown() then labels[#labels + 1] = l:GetText() end end
         table.sort(labels)
@@ -1366,7 +1415,7 @@ do
         local want = ((box[3] - box[1]) * 1002) / ((box[4] - box[2]) * 668)
         H.ok(math.abs(wp.land:GetWidth() / wp.land:GetHeight() - want) < 0.01,
              "Orgrimmar's land is its crop box, not the parchment", wp.land:GetWidth() / wp.land:GetHeight())
-        H.eq(wp.map.right:GetText(), "1 on this map", "with her dot on it")
+        H.eq(wp.map.right:GetText(), "1 dot", "with her dot on it")
 
         -- THE WORLD VIEW (Arn, 16 Oct: "world view"): when the client can place zones on Azeroth's
         -- map, WHERE opens on the whole world - dots where people are, a marker per zone for the rest
@@ -1401,7 +1450,7 @@ do
         local markText
         for _, m in ipairs(wp.marks) do if m:IsShown() then markText = m.label:GetText() end end
         H.eq(markText, "Orgrimmar 1", "Cara without a dot: a marker in Orgrimmar, counted - never an invented dot")
-        H.ok(wp.map.right:GetText():find("zone(s) without a dot", 1, true), "and the corner says so")
+        H.ok(wp.map.right:GetText():find("+1 zone", 1, true), "and the corner says so")
         H.ok(not wp.world:IsShown(), "on the world: no WORLD button")
         rows[2]:Click()                                       -- Bob, who has a dot
         H.eq(Wh.shown, 1411, "clicking somebody zooms to their zone")
@@ -1467,6 +1516,26 @@ do
         H.ok(not Wh.OpenBig() and opened == nil, "never in combat - OpenMap's own notes: the map in a fight is blocked")
         H.ok(f.status:GetText():find("not in combat", 1, true), "and it says so")
         _G.InCombatLockdown, _G.OpenMapAPI, _G.OpenWorldMap, _G.WorldMapFrame = nil, nil, nil, nil
+
+        -- THE ROSTER KEPT FRESH (Arn: "3 guildmates online and it only shows 2")
+        local asks = 0
+        local keepGI = _G.C_GuildInfo
+        _G.C_GuildInfo = { GuildRoster = function() asks = asks + 1 end }
+        K.Go("where")
+        for _ = 1, 16 do f._scripts.OnUpdate(f, 1) end
+        H.ok(asks >= 1, "WHERE open: the roster is asked for again every 15 s", asks)
+        asks = 0
+        fire("CHAT_MSG_SYSTEM", "|Hplayer:Nebeon|h[Nebeon]|h has come online.")
+        H.eq(asks, 1, "a guildmate's 'has come online': asked at once")
+        ROSTER[#ROSTER + 1] = { "Nebeon Nohealzforu", "Raider", "PRIEST", "Thunder Bluff", true }
+        fire("GUILD_ROSTER_UPDATE")
+        H.RunTimers()
+        local seen = false
+        for _, r in ipairs(wp.grid.rows) do if r.key == "nebeon" and r:IsShown() then seen = true end end
+        H.ok(seen, "and the answer redraws WHERE: Nebeon is listed")
+        ROSTER[#ROSTER] = nil
+        K._guildDirty = true
+        _G.C_GuildInfo = keepGI
 
         -- it redraws itself while showing: a spot that moves, moves on the page
         lib.spots.Cara = { map = 1454, x = 0.6, y = 0.6, at = H.clock }
@@ -1561,7 +1630,7 @@ do
     K.Hide()
 
     _G.GetItemInfo = nil
-    _G.BiSGuildDB.record = saved
+    NS.Books().record = saved
 end
 
 H.section("ESC in combat (Arn, 16 Oct: ADDON_ACTION_BLOCKED opening the terminal mid-fight)")
@@ -1655,11 +1724,11 @@ do
     rp.box._text = pasted
     rp.box:Fire("OnTextChanged", true)
     H.RunTimers()
-    H.eq(_G.BiSGuildDB.roster, pasted, "a paste reads itself - no READ IT needed")
+    H.eq(NS.Books().roster, pasted, "a paste reads itself - no READ IT needed")
     rp.box:ClearFocus()
     rp.box:SetText(pasted)
     rp.read:Click()
-    H.eq(_G.BiSGuildDB.roster, pasted, "READ IT keeps the paste across a reload")
+    H.eq(NS.Books().roster, pasted, "READ IT keeps the paste across a reload")
     H.eq(rp.send.fs:GetText(), "INVITE 2 ONLINE", "two of them online and not you")
 
     -- WITHOUT BiS Tools: the second click sends, one invite at a time, whole names
@@ -1699,7 +1768,7 @@ do
     -- a raider's card: INVITE, at once, by the whole name
     _G.BiSToolsAPI = nil
     invited = {}
-    _G.BiSGuildDB.record.nights["2026-10-09"].raiders.Kio = raider(2, 3)
+    NS.Books().record.nights["2026-10-09"].raiders.Kio = raider(2, 3)
     K.Go("kio <raider>")
     f.pages.raider.invite:Click()
     H.ok(deq(invited, { "Kio Alpha" }), "INVITE on Kio's card invites 'Kio Alpha' - the name an invite needs",
@@ -1711,14 +1780,14 @@ do
     H.ok(deq(online, { "Bob", "Kio Alpha" }), "raiders on the record and online: Bob, Kio", table.concat(online, ","))
 
     -- INVITE ONLINE SAYS WHO IT LEFT OUT (Arn: "it only invited Shwed, it ignored Ari and Mare")
-    _G.BiSGuildDB.record.nights["2026-10-09"].raiders.Cara = raider(2, 3)
+    NS.Books().record.nights["2026-10-09"].raiders.Cara = raider(2, 3)
     invited = {}
     I.InviteOnline()
     I.InviteOnline()
     for _ = 1, 5 do H.RunTimers() end
     H.ok(f.status:GetText():find("offline, not invited: Cara", 1, true), "Cara, offline, is named - not silently skipped",
          f.status:GetText())
-    _G.BiSGuildDB.record.nights["2026-10-09"].raiders.Cara = nil
+    NS.Books().record.nights["2026-10-09"].raiders.Cara = nil
     H.clock = H.clock + 60
     I.armed = nil
 
@@ -1751,18 +1820,18 @@ do
     for i = 1, 4 do order[i] = rp2.grid.rows[i].cells[4]:GetText() end
     H.ok(deq(order, { "online", "online", "absent", "not in guild" }),
          "who can be invited first, the absent next, strangers last", table.concat(order, ","))
-    _G.BiSGuildDB.roster = nil
+    NS.Books().roster = nil
 
     -- the same JSON pasted into the BiS> line (where the cursor sits when the terminal opens)
     f.cmd:SetText(json)
     f.cmd:Fire("OnEnterPressed")
-    H.ok(K.page == "roster" and _G.BiSGuildDB.roster == json, "a roster in the BiS> line goes to ROSTER, not 'no raider called {'")
-    _G.BiSGuildDB.roster = nil
+    H.ok(K.page == "roster" and NS.Books().roster == json, "a roster in the BiS> line goes to ROSTER, not 'no raider called {'")
+    NS.Books().roster = nil
 
     -- RIGHT-CLICK A RAIDER: the game's player menu (Arn: "can we right click and pull up the blizz menu?")
     local menu
     _G.UnitPopup_OpenMenu = function(which, ctx) menu = { which = which, name = ctx.name, chat = ctx.chatTarget } end
-    _G.BiSGuildDB.record.nights["2026-10-09"].raiders.Kio = raider(2, 3)
+    NS.Books().record.nights["2026-10-09"].raiders.Kio = raider(2, 3)
     K.Go("raiders")
     local kioRow
     for _, row in ipairs(f.pages.raiders.grid.rows) do if row.key == "Kio" then kioRow = row end end
@@ -1773,7 +1842,7 @@ do
     kioRow:Click("LeftButton")
     H.eq(K.key, "Kio", "a left-click still does")
     _G.UnitPopup_OpenMenu = nil
-    _G.BiSGuildDB.record.nights["2026-10-09"].raiders.Kio = nil
+    NS.Books().record.nights["2026-10-09"].raiders.Kio = nil
 
     -- not the leader: nothing goes, and it says why
     H.inRaid, H.raid = true, { { name = "Kumlust" }, { name = "Zed" } }
@@ -1784,8 +1853,8 @@ do
     H.ok(#invited == 0 and f.status:GetText():find("only the leader", 1, true), "only the leader invites", f.status:GetText())
     H.inRaid, H.raid, _G.UnitIsGroupLeader = false, { { name = "Kumlust" } }, nil
 
-    _G.BiSGuildDB.record.nights["2026-10-09"].raiders.Kio = nil
-    _G.BiSGuildDB.roster = nil
+    NS.Books().record.nights["2026-10-09"].raiders.Kio = nil
+    NS.Books().roster = nil
     _G.C_PartyInfo = keepPI
     _G.GetNumGuildMembers, _G.GetGuildRosterInfo = realNum, realInfo
     K._guildDirty = true
@@ -1815,7 +1884,7 @@ do
     K._guildDirty = true
     L.waiting, L.told, L.lastOnline = {}, {}, nil
     local start = clock + 3600                                   -- raid in an hour
-    _G.BiSGuildDB.roster = '{"date":"16-10-2026","signUps":['
+    NS.Books().roster = '{"date":"16-10-2026","signUps":['
         .. '{"className":"Mage","specName":"Arcane","name":"Bloodbow/Kio","position":1},'
         .. '{"className":"Warrior","specName":"Fury","name":"bob09","position":2},'
         .. '{"className":"Absence","name":"Cara","position":3}'
@@ -1888,11 +1957,11 @@ do
     _G.SlashCmdList.BISGUILD("logins on")
 
     -- the countdown over the paste
-    H.eq(I.When(I.Event(_G.BiSGuildDB.roster)), "starts in 1 h 0 min", "the ROSTER header counts down to the start")
+    H.eq(I.When(I.Event(NS.Books().roster)), "starts in 1 h 0 min", "the ROSTER header counts down to the start")
 
     -- PUNCTUALITY (Arn: "how close they were ... if the invite went out after, meaning they were late
     -- ... server time, real time, their time zone ... habitually late, or perfect attendance")
-    _G.BiSGuildDB.punctual = nil
+    NS.Books().punctual = nil
     L.told, L.done, L.loggedAt, L.waiting = {}, {}, {}, {}
     for _, r in ipairs(ROSTER) do r[3] = false end
     K._guildDirty = true
@@ -1903,7 +1972,7 @@ do
     H.ok(L.frame.rows[1].note:GetText():find("10 min early", 1, true), "the pop-up says so", L.frame.rows[1].note:GetText())
     clock = start + 60                                        -- the start passes
     L.Tick()
-    local book = _G.BiSGuildDB.punctual
+    local book = NS.Books().punctual
     H.ok(book.kio and book.kio[start] and book.kio[start].late == false and book.kio[start].d == -600,
          "at the start, online: on time - 10 min early on record")
     H.eq(book.bob, nil, "Bob is not online at the start: nothing yet")
@@ -1932,14 +2001,14 @@ do
     for _ in pairs(book.kio) do kept = kept + 1 end
     H.eq(kept, L.KEEP, "only the last " .. L.KEEP .. " raids are kept")
     -- the window closes: whoever signed and never came is a no-show (Cara signed Absence - she is not)
-    _G.BiSGuildDB.roster = _G.BiSGuildDB.roster:gsub('"name":"Cara"', '"name":"Zed","specName":"Combat"'):gsub("Absence", "Rogue")
+    NS.Books().roster = NS.Books().roster:gsub('"name":"Cara"', '"name":"Zed","specName":"Combat"'):gsub("Absence", "Rogue")
     clock = start + L.AFTER + 60
     L.Tick()
     H.ok(book.zed and book.zed[start] and book.zed[start].noshow, "Zed signed, never came: a no-show")
     H.ok(book.bob[start].late, "and the late stay late, not turned into no-shows")
     -- the raider card says it
     clock = start - 600
-    _G.BiSGuildDB.record.nights["2026-10-09"].raiders.Bob = _G.BiSGuildDB.record.nights["2026-10-09"].raiders.Bob or raider(1, 2)
+    NS.Books().record.nights["2026-10-09"].raiders.Bob = NS.Books().record.nights["2026-10-09"].raiders.Bob or raider(1, 2)
     K.Show("bob <raider>")
     H.ok(K.frame.pages.raider.punct:GetText():find("late 3 of last", 1, true), "Bob's card: punctual - late 3 of last ...",
          K.frame.pages.raider.punct:GetText())
@@ -1949,7 +2018,7 @@ do
     K.Hide()
     if L.frame then L.frame:Hide() end
     L.waiting = {}
-    _G.BiSGuildDB.punctual = nil
+    NS.Books().punctual = nil
     clock = start - 3600
 
     -- RAID NIGHT AT A GLANCE (Arn: "raid night > raiding <xxx> start time 00:00, any info at a glance")
@@ -1967,7 +2036,7 @@ do
     clock = keepClock2
     K.Hide()
 
-    _G.BiSGuildDB.roster = nil
+    NS.Books().roster = nil
     _G.ERR_FRIEND_ONLINE_SS = nil
     _G.GetNumGuildMembers, _G.GetGuildRosterInfo, _G.C_PartyInfo = realNum, realInfo, realPI
     K._guildDirty = true
@@ -2094,21 +2163,21 @@ do
             .. '"roleName":"Dps","roleEmoteId":"592440132129521664","id":%d,"position":%d,"status":"primary"}'):format(i, i, i, i)
     end
     local big = '{"date":"04-11-2026","signUps":[' .. table.concat(parts, ",") .. '],"displayTitle":"Forever Class"}'
-    _G.BiSGuildDB.roster = big
+    NS.Books().roster = big
     K.Show("roster")
     K.Paint()                                      -- the first draw reads the export once
     local nr, byr = Cost.Count(function() for _ = 1, 10 do K.Paint() end end)
     H.say(("   cost: ROSTER with a %d-character export, 10 redraws = %d calls (%s)"):format(#big, nr, Cost.Top(byr, 3)))
     H.ok(nr <= 10 * 20, "a kept 70-person export costs a redraw almost nothing: " .. nr, Cost.Top(byr, 4))
-    _G.BiSGuildDB.roster = nil
+    NS.Books().roster = nil
     K.Hide()
 
     -- hearing a whole 25-raider night from an officer: the roster is read once, not once a part
     local text = NS.X.EncodeNight(bigNight())
     local parts, N = {}, math.ceil(#text / NS.X.CHUNK)
     for i = 1, N do parts[i] = text:sub((i - 1) * NS.X.CHUNK + 1, i * NS.X.CHUNK) end
-    local saved = _G.BiSGuildDB.record
-    _G.BiSGuildDB.record = { nights = {}, gear = {} }
+    local saved = NS.Books().record
+    NS.Books().record = { nights = {}, gear = {} }
     local realNum, realInfo = _G.GetNumGuildMembers, _G.GetGuildRosterInfo
     _G.GetNumGuildMembers = function() return 1 end
     _G.GetGuildRosterInfo = function() return "Bigboss", "rank", 0 end
@@ -2119,7 +2188,7 @@ do
     H.say(("   cost: hearing a %d-part night = %d calls (%s)"):format(N, n2, Cost.Top(by2, 3)))
     H.ok(NS.S.Record().nights["2026-10-23"] ~= nil, "the night arrived")
     H.ok(n2 <= 4 * N, "hearing a night costs a few client calls a part: " .. n2, Cost.Top(by2, 4))
-    _G.BiSGuildDB.record = saved
+    NS.Books().record = saved
     _G.GetNumGuildMembers, _G.GetGuildRosterInfo = realNum, realInfo
     NS.X._ranksDirty = true
 end

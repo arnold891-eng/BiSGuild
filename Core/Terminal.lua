@@ -37,6 +37,16 @@ K.STRIP = 12                   -- nights in an attendance strip
 K.HOVER = 0.18
 K.WHERE_EVERY = 5              -- seconds between redraws of the WHERE page while it shows
 K.GLANCE_W = 470               -- the raid-night line on the right of the command bar
+-- THE ROSTER, KEPT FRESH (Arn, 16 Oct: "3 guildmates online and it only shows 2 - can the window update
+-- when someone comes online"). The client refreshes its copy only when an addon asks; the terminal asked
+-- once, on opening. Now: every K.ROSTER_EVERY s while a page that lists people shows, at once on a
+-- guildmate's online/offline line, and the page redraws on the answer.
+K.ROSTER_EVERY = 15
+K.LIVE = { raiders = true, where = true, roster = true }
+function K.AskRoster()
+    if C_GuildInfo and C_GuildInfo.GuildRoster then pcall(C_GuildInfo.GuildRoster)
+    elseif GuildRoster then pcall(GuildRoster) end
+end
 K.GLANCE_BEFORE, K.GLANCE_AFTER = 12 * 3600, 6 * 3600
 
 function K.PaintGlance()
@@ -50,7 +60,7 @@ end
 ---   RAID NIGHT  Illidan did nothing wrong  20:00  starts in 1 h 0 min  7 of 24 online
 function K.GlanceText()
     local I = ns.Inv
-    local text = ns.DB().roster
+    local text = ns.Books().roster
     if not (I and type(text) == "string" and text ~= "") then return nil end
     local e = I.Event(text)
     local now = GetServerTime and GetServerTime()
@@ -752,6 +762,11 @@ function K.Build()
             if self.whereT >= K.WHERE_EVERY then self.whereT = 0 K.Paint() end
         end
         -- the raid-night line counts down with the clock, every K.WHERE_EVERY seconds
+        -- the roster, asked for again every K.ROSTER_EVERY s while a page that lists people shows
+        if K.LIVE[K.page] then
+            self.rosterT = (self.rosterT or 0) + (elapsed or 0)
+            if self.rosterT >= K.ROSTER_EVERY then self.rosterT = 0 K.AskRoster() end
+        end
         self.glanceT = (self.glanceT or 0) + (elapsed or 0)
         if self.glanceT >= K.WHERE_EVERY then self.glanceT = 0 K.PaintGlance() end
         -- THE INVITE BUTTONS PULSE while somebody who just logged in waits (Core/Logins.lua)
@@ -774,11 +789,22 @@ function K.Build()
 
     f:RegisterEvent("GET_ITEM_INFO_RECEIVED")
     f:RegisterEvent("GUILD_ROSTER_UPDATE")
-    f:SetScript("OnEvent", function(_, event)
+    f:RegisterEvent("CHAT_MSG_SYSTEM")
+    f:SetScript("OnEvent", function(_, event, msg)
+        if event == "CHAT_MSG_SYSTEM" then
+            -- a guildmate came online or went off: ask for the roster now, not at the next 15 s look
+            -- (Arn, 16 Oct: "3 guildmates online and it only shows 2")
+            if f:IsShown() and K.LIVE[K.page] and type(msg) == "string"
+               and not (issecretvalue and issecretvalue(msg))
+               and (msg:find("online", 1, true) or msg:find("offline", 1, true)) then
+                K.AskRoster()
+            end
+            return
+        end
         if event == "GUILD_ROSTER_UPDATE" then
             -- only marked here; the roster is read again the next time the list is drawn
             K._guildDirty = true
-            if f:IsShown() and K.page == "raiders" and not K._rosterPaintArmed then
+            if f:IsShown() and K.LIVE[K.page] and not K._rosterPaintArmed then
                 K._rosterPaintArmed = true
                 if C_Timer and C_Timer.After then
                     C_Timer.After(1, function() K._rosterPaintArmed = false if f:IsShown() then K.Paint() end end)
@@ -1029,7 +1055,7 @@ function K.Go(line)
     -- It is not a name, so it goes where rosters go.
     local raw = tostring(line or "")
     if ns.Inv and (raw:find('"signUps"', 1, true) or (#raw > 60 and raw:find(",", 1, true))) then
-        ns.DB().roster = raw
+        ns.Books().roster = raw
         K.trail = {}
         K.Open("roster")
         Say("roster pasted - read from the BiS> line", "good")

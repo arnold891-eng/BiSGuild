@@ -44,7 +44,7 @@ function L.On() return ns.DB().logins ~= false end
 L.BEFORE, L.AFTER = 2 * 3600, 4 * 3600
 function L.Armed()
     if not L.On() or not ns.Inv then return false end
-    local text = ns.DB().roster
+    local text = ns.Books().roster
     if type(text) ~= "string" or text == "" then return false end
     local e = ns.Inv.Event(text)                    -- read once per paste, then only looked up
     local now = GetServerTime and GetServerTime()
@@ -55,7 +55,7 @@ end
 --- This person's roster row, if they are one we would invite (in the guild, not absent or bench).
 function L.OnRoster(name)
     local key = K.NameKey(name)
-    for _, r in ipairs(ns.Inv.Read(ns.DB().roster)) do
+    for _, r in ipairs(ns.Inv.Read(ns.Books().roster)) do
         if r.key == key and r.member and not (r.standing and ns.Inv.OUT[r.standing]) then return r end
     end
     return nil
@@ -103,7 +103,7 @@ L.KEEP = 8
 L.loggedAt = {}               -- key -> GetServerTime() we saw them come online this session
 
 function L.Book()
-    local d = ns.DB()
+    local d = ns.Books()                         -- this guild's books (Init.lua; alts in other guilds)
     if type(d.punctual) ~= "table" then d.punctual = {} end
     return d.punctual
 end
@@ -158,7 +158,7 @@ end
 function L.Logged(key)
     local now = ServerNow()
     if now then L.loggedAt[key] = now end
-    local e = ns.Inv and ns.Inv.Event(ns.DB().roster)
+    local e = ns.Inv and ns.Inv.Event(ns.Books().roster)
     if not (e and e.start and now) then return nil end
     local d = now - e.start
     if d > 0 then L.Mark(key, e.start, { d = d, late = true }) end
@@ -170,7 +170,7 @@ end
 function L.AtStart(e)
     local I = ns.Inv
     local here = I.Here()
-    for _, r in ipairs(I.Read(ns.DB().roster)) do
+    for _, r in ipairs(I.Read(ns.Books().roster)) do
         if r.member and not (r.standing and I.OUT[r.standing]) then
             local s = I.Status(r, here)
             if s == "online" or s == "with you" then
@@ -184,7 +184,7 @@ end
 --- The window has closed: whoever signed and never came is a no-show. Once per raid.
 function L.AtEnd(e)
     local I = ns.Inv
-    for _, r in ipairs(I.Read(ns.DB().roster)) do
+    for _, r in ipairs(I.Read(ns.Books().roster)) do
         if r.member and not (r.standing and I.OUT[r.standing]) then
             L.Mark(r.key, e.start, { noshow = true })
         end
@@ -196,7 +196,7 @@ end
 L.TICK = 30
 L.done = {}                   -- "start:<t>" / "end:<t>" already handled
 function L.Tick()
-    local e = ns.Inv and ns.DB().roster and ns.Inv.Event(ns.DB().roster)
+    local e = ns.Inv and ns.Books().roster and ns.Inv.Event(ns.Books().roster)
     local now = ServerNow()
     if not (e and e.start and now) or not L.On() then return end
     if now >= e.start and now < e.start + L.AFTER and not L.done["start:" .. e.start] then

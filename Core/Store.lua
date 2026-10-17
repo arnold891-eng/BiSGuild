@@ -37,7 +37,7 @@ S.WANT = { "back", "chest", "wrist", "hands", "legs", "feet", "mainhand" }
 S.FIELDS = { "present", "ready", "pulls", "flask", "elixir", "food", "weapon", "weaponSeen", "pots", "deaths" }
 
 function S.Record()
-    local d = ns.DB()
+    local d = ns.Books()                         -- this guild's books (Init.lua; alts in other guilds)
     local r = d.record
     if type(r) ~= "table" then r = {} d.record = r end
     if type(r.nights) ~= "table" then r.nights = {} end
@@ -109,6 +109,42 @@ function S.Import(report)
         if type(c) == "table" and c.gear and S.PutGear(name, c.gearDate, c.gear) then g = g + 1 end
     end
     return n, g
+end
+
+--- THE REPORT GOES TO ITS OWN GUILD (16 Oct 2026, Arn: "some people have alts in other guilds"). The
+--- report file sits in the client folder, the same for every character; the books are per guild. So
+--- a report is filed into this character's guild only when its raiders are that guild's - at least
+--- S.MATCH of them on its roster - and only once the client has named the guild and sent its roster.
+--- Once per guild per session.
+S.MATCH = 0.2
+S.imported = {}
+
+function S.ReportFits(report)
+    local K = ns.K
+    if not (K and K.Guild) then return false end
+    K._guildDirty = true
+    local members = K.Guild().members
+    local names, n, hit = {}, 0, 0
+    for _, night in pairs(type(report.nightly) == "table" and report.nightly or {}) do
+        for name in pairs(type(night.raiders) == "table" and night.raiders or {}) do names[name] = true end
+    end
+    for name in pairs(names) do
+        n = n + 1
+        if members[K.NameKey(name)] then hit = hit + 1 end
+    end
+    return n > 0 and hit >= math.max(1, math.ceil(n * S.MATCH))
+end
+
+function S.ImportWhenReady()
+    local key = ns.GuildKey()
+    local report = _G.BiSGuildReport
+    if not key or type(report) ~= "table" or S.imported[key] then return false end
+    local guilded = IsInGuild and IsInGuild()
+    if guilded and ((GetNumGuildMembers and GetNumGuildMembers()) or 0) == 0 then return false end  -- not yet
+    S.imported[key] = true
+    if guilded and not S.ReportFits(report) then return false end
+    S.Import(report)
+    return true
 end
 
 --- Every date on record, oldest first.
