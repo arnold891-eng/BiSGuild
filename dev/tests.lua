@@ -2406,6 +2406,34 @@ do
     NS.Books().loot = nil
 end
 
+H.section("the terminal's edge is the family's, never the borrowed accent")
+do
+    -- Arn, 16 Oct: "there is a white line on top of the window". A 2 px "accent" bar - and the accent
+    -- is EllesmereUI's when it is installed (his is white). Now a hairline all round in BiSTheme
+    -- Options' fixed edge colour, the one BiS Tools' windows wear - whatever the accent is.
+    local realTheme = _G.BiSTheme
+    _G.BiSTheme = { hex = { accent = "ffffff" }, rgb = function() return 1, 1, 1 end, text = function(_, s) return s end }
+    local f = NS.K.frame or NS.K.Build()
+    local want = { 0x3a / 255, 0x32 / 255, 0x60 / 255 }
+    for _, side in ipairs({ "TOP", "BOTTOM", "LEFT", "RIGHT" }) do
+        local e = f.edges and f.edges[side]
+        H.ok(e ~= nil, side .. " edge drawn")
+        if e then
+            local c = e._color or {}
+            H.ok(math.abs((c[1] or -1) - want[1]) < 0.01 and math.abs((c[2] or -1) - want[2]) < 0.01
+                 and math.abs((c[3] or -1) - want[3]) < 0.01, side .. " edge is 3a3260",
+                 table.concat({ tostring(c[1]), tostring(c[2]), tostring(c[3]) }, ","))
+        end
+    end
+    -- a fresh paint under a white accent keeps it purple
+    NS.K.frame = nil
+    local g = NS.K.Build()
+    local c = g.edges.TOP._color
+    H.ok(c and c[1] < 0.3, "built under a white EllesmereUI accent, the edge is still dark purple")
+    NS.K.frame = f
+    _G.BiSTheme = realTheme
+end
+
 H.section("a copy that is not whole switches itself off (Core/Copies.lua)")
 do
     local C, K, X = NS.Copy, NS.K, NS.X

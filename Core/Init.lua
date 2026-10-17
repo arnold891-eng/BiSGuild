@@ -16,6 +16,7 @@ ns.parts = {}
 
 local HEX = {
   ink = "ece8f6", muted = "968ead", accent = "b980ff", good = "4fd0cf", warn = "f08cb0", gold = "e5c04a",
+  edge = "3a3260",   -- BiSTheme/Options.lua's window edge: fixed, never the borrowed accent
 }
 local T = {}
 ns.T = T
