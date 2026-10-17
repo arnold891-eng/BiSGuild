@@ -268,8 +268,8 @@ function U.Build()
         .. T().text("accent", "Only run it if you got BiSGuild from CurseForge or from your own officers.")
         .. "\nIf somebody sent you a copy, do not run it - not even if they seem helpful. Where you\n"
         .. "got it is the check that actually matters.\n\n"
-        .. "You can also compare this copy against the hash on our CurseForge page. A faked addon\n"
-        .. "would show you a faked hash here too, so that check only means something against the\n"
+        .. "You can also compare this copy against the fingerprint on our CurseForge page. A faked\n"
+        .. "addon would show you a faked one here too, so that check only means something against the\n"
         .. "page - never against the number this window shows you.")
 
     local okb = CreateFrame("Button", nil, warn, "UIPanelButtonTemplate")
