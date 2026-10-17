@@ -149,7 +149,11 @@ function W.OnMap(from, x, y, to)
     local r = W.rects[k]
     if r == nil then
         local ok, a, b, c, d = pcall(C_Map.GetMapRectOnMap, from, to)
-        a, b, c, d = ok and num(a), ok and num(b), ok and num(c), ok and num(d)
+        if ok then
+            a, b, c, d = num(a), num(b), num(c), num(d)
+        else
+            a = nil
+        end
         r = (a and b and c and d and b > a and d > c) and { a, b, c, d } or false
         W.rects[k] = r
     end
