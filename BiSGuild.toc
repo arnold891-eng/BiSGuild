@@ -33,4 +33,5 @@ Core\Where.lua
 Core\Pins.lua
 Core\Invite.lua
 Core\Logins.lua
+API.lua
 Core\Say.lua

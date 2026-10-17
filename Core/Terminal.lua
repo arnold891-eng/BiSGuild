@@ -158,6 +158,18 @@ end
 --- run on this client, and says nothing at all when it has not.
 K.LEDGER = { author = 2, t = 5, kind = 6, raid = 7, boss = 8, item = 9, who = 10 }
 function K.Loot(name)
+    -- BiS LOOT'S API FIRST (16 Oct 2026: "going forward our stuff will have open api to call") - it
+    -- owns the ledger and verifies it; reading its saved lines below is only for a BiS Loot from
+    -- before it had an API
+    local A = _G.BiSLootAPI
+    if type(A) == "table" and A.major == 1 and A.AwardsTo then
+        local ok, got = pcall(A.AwardsTo, name)
+        if ok and type(got) == "table" then
+            local out = {}
+            for _, a in ipairs(got) do out[#out + 1] = { item = a.itemId or a.item, boss = a.boss, t = a.t or 0 } end
+            return out, true
+        end
+    end
     local db = _G.BiSLootDB
     local out = {}
     if type(db) ~= "table" or type(db.lines) ~= "table" then return out, false end

@@ -12,6 +12,7 @@ local ALLOWED = {
     -- the third-party map libs (Libs/THIRD-PARTY.txt): LibStub's one global, the pins' show flags
     LibStub = true, HBD_PINS_WORLDMAP_SHOW_PARENT = true, HBD_PINS_WORLDMAP_SHOW_CONTINENT = true,
     HBD_PINS_WORLDMAP_SHOW_WORLD = true,
+    BiSGuildAPI = true,    -- API.lua, for other addons (16 Oct; _bisdev playbook 5a)
 }
 -- HEREBEDRAGONS DRIVES THE CLIENT'S OWN MAP ENGINE (the world map's data providers, the minimap's
 -- zoom tables), which a headless mock cannot stand in for honestly - BiS Tools' suite found the same.
@@ -2137,6 +2138,69 @@ do
     M.Update()
     _G.GetNumGuildMembers, _G.GetGuildRosterInfo, _G.RAID_CLASS_COLORS = realNum, realInfo, realColours
     NS.K._guildDirty = true
+end
+
+--=============================================================================
+-- BiSGuildAPI (16 Oct 2026, Arn: "lets do api calls for the other addons, and going forward our stuff
+-- will have open api to call") - read-only copies, safe at any time
+--=============================================================================
+H.section("BiSGuildAPI: the guild's record for other addons")
+do
+    local A = _G.BiSGuildAPI
+    H.ok(A and A.major == 1 and A.version >= 1, "BiSGuildAPI is there, major 1")
+    H.ok(A.Ready(), "ready")
+    local saved = NS.Books().record
+    NS.Books().record = {
+        nights = {
+            ["2026-10-09"] = { kills = 2, raiders = { Alice = raider(2, 3), Bob = raider(1, 3, 2) },
+                               bosses = { ["Boss One"] = { pulls = 3, kills = 1, best = 250000, killers = { "Alice" } } } },
+            ["2026-10-16"] = { kills = 1, raiders = { Alice = raider(1, 2) }, bosses = {} },
+        },
+        gear = {},
+    }
+    local heard = {}
+    A.RegisterCallback("test", "BiSGuild_Night", function(d) heard[#heard + 1] = d end)
+    S.Put("2026-10-23", { kills = 1, raiders = { Alice = raider(1, 1) }, bosses = {} }, "Kumlust")
+    H.ok(heard[1] == "2026-10-23", "BiSGuild_Night: a night entered the record")
+    S.Put("2026-10-23", { kills = 1, raiders = { Alice = raider(1, 1) }, bosses = {} }, "Kumlust")
+    H.eq(#heard, 1, "an equal copy is not news")
+    A.UnregisterCallback("test", "BiSGuild_Night")
+
+    H.ok(deq(A.Nights(), { "2026-10-09", "2026-10-16", "2026-10-23" }), "Nights, oldest first")
+    local n = A.Night("2026-10-09")
+    H.ok(n and n.raiders.Bob.deaths == 2 and n.bosses["Boss One"].best == 250000, "Night(date): the whole night")
+    H.eq(select(2, A.Night("1999-01-01")), "no such night", "an unknown night: nil and why")
+    local rs = A.Raiders()
+    H.ok(rs[1].name == "Alice" and rs[1].attend == 100 and rs[2].name == "Bob", "Raiders: everyone, attendance %")
+    local alice = A.Raider("alice")
+    H.ok(alice and alice.name == "Alice" and alice.nights == 3 and alice.last.date == "2026-10-23", "Raider(name), any case")
+    H.eq(select(2, A.Raider("Nobody")), "no such raider", "an unknown raider: nil and why")
+    local b = A.Boss("boss one")
+    H.ok(b and b.kills == 1 and b.wipes == 2 and b.killers.Alice == 1, "Boss(name), any case: kills, wipes, who")
+    H.ok(A.Bosses()["Boss One"].best == 250000, "Bosses: every page")
+    H.eq(select(2, A.RaidNight()), "no raid pasted", "RaidNight with nothing pasted: nil and why")
+    -- copies: nothing an answer is edited into reaches the record
+    alice.attended[1] = "hacked"
+    n.raiders.Bob.deaths = 99
+    H.eq(A.Raider("Alice").attended[1], "2026-10-09", "answers are copies - the record cannot be edited through them")
+    H.eq(S.Record().nights["2026-10-09"].raiders.Bob.deaths, 2, "not even a night's numbers")
+    -- Open: the terminal on a raider
+    H.ok(A.Open("alice <raider>") and NS.K.frame:IsShown() and NS.K.key == "Alice", "Open: the terminal, on her card")
+    NS.K.Hide()
+
+    -- BiS Guild's own loot panel asks BiSLootAPI first (it used to read BiSLootDB's lines)
+    _G.BiSLootAPI = { major = 1, version = 1, AwardsTo = function(who)
+        return who == "Alice" and { { itemId = 28830, item = "[Dragonspine Trophy]", boss = "Gruul", t = 5 } } or {} end }
+    local loot, have = NS.K.Loot("Alice")
+    H.ok(have and loot[1] and loot[1].item == 28830 and loot[1].boss == "Gruul", "the terminal's loot comes from BiSLootAPI")
+    _G.BiSLootAPI = nil
+
+    -- not ready: before the addon has its pieces
+    local keepS = NS.S
+    NS.S = nil
+    H.eq(select(2, A.Raiders()), "not ready", "before the record exists: nil, 'not ready' - never an error")
+    NS.S = keepS
+    NS.Books().record = saved
 end
 
 -- WHAT AN OPEN WINDOW COSTS, IN CLIENT CALLS (7 Oct 2026). BiSHealing asked the client ~630,000
