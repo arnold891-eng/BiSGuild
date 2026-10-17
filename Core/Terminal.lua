@@ -518,7 +518,7 @@ function K.Build()
     e:SetPoint("TOPLEFT", 52, -30)
     e:SetSize(K.W - 70, 22)
     e:SetAutoFocus(false)
-    e:SetMaxLetters(60)
+    e:SetMaxLetters(0)               -- no cap: a roster pasted here goes to the ROSTER tab (K.Go)
     e:SetFontObject("GameFontHighlight")
     if e.SetFont then pcall(e.SetFont, e, K.FONT, 13, "") end
     e:SetTextColor(rgb("ink"))
@@ -952,6 +952,17 @@ end
 
 --- Run a typed line (or a key). Returns what it did, for the suite.
 function K.Go(line)
+    -- A ROSTER PASTED INTO THE BiS> LINE (Arn, 16 Oct: Raid-Helper's JSON landed there - the line
+    -- has the cursor when the terminal opens - and came back "no raider or boss called {"date"...").
+    -- It is not a name, so it goes where rosters go.
+    local raw = tostring(line or "")
+    if ns.Inv and (raw:find('"signUps"', 1, true) or (#raw > 60 and raw:find(",", 1, true))) then
+        ns.DB().roster = raw
+        K.trail = {}
+        K.Open("roster")
+        Say("roster pasted - read from the BiS> line", "good")
+        return "roster"
+    end
     local kind, key = K.Parse(line, S().Cards(), S().Bosses())
     if kind == "log" then
         if ns.U and ns.U.Show then ns.U.Show() end

@@ -339,21 +339,45 @@ function K.BuildRoster(page, bodyH)
     local ui = K.ui
     local leftW = 330
     page.paste = ui.Panel(page, "PASTE A ROSTER", 8, 0, leftW, bodyH - 4)
-    local box = CreateFrame("EditBox", nil, page.paste)
-    box:SetPoint("TOPLEFT", 8, -26)
-    box:SetSize(leftW - 16, bodyH - 70)
-    box:SetMultiLine(true)
-    box:SetAutoFocus(false)
-    box:SetMaxLetters(0)                 -- no cap: a Raid-Helper export runs past 20,000 characters
-    box:SetFontObject("GameFontHighlightSmall")
-    if box.SetFont then pcall(box.SetFont, box, K.FONT, 12, "") end
-    box:SetTextColor(ui.rgb("ink"))
+    -- THE BOX LIVES IN A SCROLL FRAME, AND THE WHOLE DARK AREA FOCUSES IT (Arn, 16 Oct: "I can't
+    -- paste to the paste a roster box"). A bare multi-line EditBox is only as tall as its text - empty,
+    -- a line - so a click on the dark rectangle hit nothing and never gave it the cursor. The standard
+    -- shape: the box is a scroll frame's child (a 20,000-character export scrolls), and a click
+    -- anywhere in the frame hands the box the keyboard.
     local bbg = page.paste:CreateTexture(nil, "BORDER")
     bbg:SetPoint("TOPLEFT", 4, -22)
     bbg:SetSize(leftW - 8, bodyH - 62)
     ui.Fill(bbg, "sunken")
+    local scroll = CreateFrame("ScrollFrame", nil, page.paste)
+    scroll:SetPoint("TOPLEFT", 8, -26)
+    scroll:SetSize(leftW - 16, bodyH - 70)
+    scroll:EnableMouse(true)
+    scroll:EnableMouseWheel(true)
+    local box = CreateFrame("EditBox", nil, scroll)
+    box:SetSize(leftW - 16, bodyH - 70)
+    box:SetMultiLine(true)
+    box:SetAutoFocus(false)
+    box:EnableMouse(true)
+    box:SetMaxLetters(0)                 -- no cap: a Raid-Helper export runs past 20,000 characters
+    box:SetFontObject("GameFontHighlightSmall")
+    if box.SetFont then pcall(box.SetFont, box, K.FONT, 12, "") end
+    box:SetTextColor(ui.rgb("ink"))
+    scroll:SetScrollChild(box)
+    scroll:SetScript("OnMouseDown", function() box:SetFocus() end)
+    scroll:SetScript("OnMouseWheel", function(self, delta)
+        local now = self:GetVerticalScroll() or 0
+        local most = (self.GetVerticalScrollRange and self:GetVerticalScrollRange()) or 0
+        self:SetVerticalScroll(math.max(0, math.min(most, now - (delta or 0) * 30)))
+    end)
+    -- the cursor stays in view while typing or after a paste
+    box:SetScript("OnCursorChanged", function(_, _, y, _, h)
+        local top, height = scroll:GetVerticalScroll() or 0, scroll:GetHeight() or 0
+        y = -(y or 0)
+        if y < top then scroll:SetVerticalScroll(y)
+        elseif y + (h or 0) > top + height then scroll:SetVerticalScroll(y + (h or 0) - height) end
+    end)
     box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-    page.box = box
+    page.box, page.scroll = box, scroll
     page.paste.right:SetText("names, a list, a table - any shape")
 
     local function Button(parent, label, x, y, w, fn)
@@ -372,15 +396,33 @@ function K.BuildRoster(page, bodyH)
         b:SetScript("OnClick", fn)
         return b
     end
-    page.read = Button(page.paste, "READ IT", 8, 8, 100, function()
+    local function Read()
         ns.DB().roster = page.box:GetText()
         page.box:ClearFocus()
         K.Paint()
+    end
+    -- PASTE (Arn, 16 Oct: "a get-from-clipboard button that Ctrl+V's in the right place"). No addon
+    -- may read the clipboard - the game offers no call for it, on purpose - so the button does the
+    -- rest: empties the box, gives it the cursor, and says to press Ctrl+V. A paste then reads itself.
+    page.pasteBtn = Button(page.paste, "PASTE", 8, 8, 86, function()
+        page.box:SetText("")
+        page.box:SetFocus()
+        K.Say("now press Ctrl+V - the roster reads itself", "gold")
     end)
-    page.clear = Button(page.paste, "CLEAR", 116, 8, 80, function()
+    page.read = Button(page.paste, "READ IT", 100, 8, 86, Read)
+    page.clear = Button(page.paste, "CLEAR", 192, 8, 70, function()
         ns.DB().roster = nil
         page.box:SetText("")
         K.Paint()
+    end)
+    -- a paste (many characters arriving at once, typed by the player) reads itself a moment later
+    page.box:SetScript("OnTextChanged", function(self, userInput)
+        local n = #(self:GetText() or "")
+        local jump = n - (page.lastLen or 0)
+        page.lastLen = n
+        if userInput and jump > 20 and C_Timer and C_Timer.After then
+            C_Timer.After(0.1, function() if page.box:GetText() ~= ns.DB().roster then Read() end end)
+        end
     end)
 
     local rx = leftW + 16

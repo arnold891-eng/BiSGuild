@@ -1547,6 +1547,22 @@ do
     local f = K.Show("roster")
     local rp = f.pages.roster
     H.eq(K.page, "roster", "the ROSTER tab")
+    -- a click anywhere in the dark paste area gives the box the keyboard (Arn: "I can't paste")
+    rp.box:ClearFocus()
+    rp.scroll:Fire("OnMouseDown", "LeftButton")
+    H.ok(rp.box:HasFocus(), "clicking the paste area puts the cursor in the box")
+    H.eq(rp.scroll._child, rp.box, "and the box scrolls inside it")
+    -- PASTE: the cursor in an empty box, and a paste reads itself (Arn: "a get-from-clipboard button")
+    rp.box:SetText("old stuff")
+    rp.box:ClearFocus()
+    rp.pasteBtn:Click()
+    H.ok(rp.box:HasFocus() and rp.box:GetText() == "", "PASTE empties the box and gives it the cursor")
+    H.ok(f.status:GetText():find("Ctrl+V", 1, true), "and says to press Ctrl+V")
+    rp.box._text = pasted
+    rp.box:Fire("OnTextChanged", true)
+    H.RunTimers()
+    H.eq(_G.BiSGuildDB.roster, pasted, "a paste reads itself - no READ IT needed")
+    rp.box:ClearFocus()
     rp.box:SetText(pasted)
     rp.read:Click()
     H.eq(_G.BiSGuildDB.roster, pasted, "READ IT keeps the paste across a reload")
@@ -1637,6 +1653,12 @@ do
     rp2.read:Click()
     H.ok(rp2.paste.right:GetText():find("Illidan did nothing wrong", 1, true), "shown over the paste")
     H.eq(rp2.send.fs:GetText(), "INVITE 2 ONLINE", "Kio and Bob online; Cara absent; Figs a stranger")
+    _G.BiSGuildDB.roster = nil
+
+    -- the same JSON pasted into the BiS> line (where the cursor sits when the terminal opens)
+    f.cmd:SetText(json)
+    f.cmd:Fire("OnEnterPressed")
+    H.ok(K.page == "roster" and _G.BiSGuildDB.roster == json, "a roster in the BiS> line goes to ROSTER, not 'no raider called {'")
     _G.BiSGuildDB.roster = nil
 
     -- RIGHT-CLICK A RAIDER: the game's player menu (Arn: "can we right click and pull up the blizz menu?")
