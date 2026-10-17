@@ -1653,6 +1653,10 @@ do
     rp2.read:Click()
     H.ok(rp2.paste.right:GetText():find("Illidan did nothing wrong", 1, true), "shown over the paste")
     H.eq(rp2.send.fs:GetText(), "INVITE 2 ONLINE", "Kio and Bob online; Cara absent; Figs a stranger")
+    local order = {}
+    for i = 1, 4 do order[i] = rp2.grid.rows[i].cells[4]:GetText() end
+    H.ok(deq(order, { "online", "online", "absent", "not in guild" }),
+         "who can be invited first, the absent next, strangers last", table.concat(order, ","))
     _G.BiSGuildDB.roster = nil
 
     -- the same JSON pasted into the BiS> line (where the cursor sits when the terminal opens)

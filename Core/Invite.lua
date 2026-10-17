@@ -456,6 +456,16 @@ function K.PaintRoster(p)
     if type(text) == "string" and p.box:GetText() ~= text and not p.box:HasFocus() then p.box:SetText(text) end
     local rows = I.Read(text)
     local here = I.Here()
+    -- WHO CAN BE INVITED FIRST, STRANGERS LAST (Arn's "Forever Class" paste, 16 Oct: 7 guild members
+    -- scattered among 26 people not in the guild) - the pugs-at-the-bottom rule of RAIDERS. Sign-up
+    -- order is kept inside each group.
+    local ORDER = { ["online"] = 1, ["with you"] = 2, ["offline"] = 3, ["tentative"] = 3, ["late"] = 3,
+                    ["absent"] = 4, ["bench"] = 4, ["not in guild"] = 5 }
+    for i, r in ipairs(rows) do r.order, r.rank_ = i, ORDER[I.Status(r, here)] or 5 end
+    table.sort(rows, function(a, b)
+        if a.rank_ ~= b.rank_ then return a.rank_ < b.rank_ end
+        return a.order < b.order
+    end)
     local counts = { online = 0 }
     I.byKey = {}
     for _, r in ipairs(rows) do
