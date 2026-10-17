@@ -79,3 +79,13 @@ food    Well Fed
 #
 #   Nightmare Seed         (1 raider) - a consumable, but not flask, elixir or food
 #   id 43722               (1)        - never named anywhere in that log, so it cannot be judged
+
+# ---- potions: CAST inside a boss pull (Arn, 16 Oct: the raider card's potions, as the old raid-prep
+# sheet counted them - anything drunk between pulls does not count). These are the SPELL names the
+# log writes for the cast, not the item names: every mana potion casts "Restore Mana", every healing
+# potion "Healing Potion". UNVERIFIED on Forever until a raid log shows them - add what it shows.
+potion  Healing Potion
+potion  Restore Mana
+potion  Healthstone
+potion  Demonic Rune
+potion  Dark Rune

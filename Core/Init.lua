@@ -11,6 +11,9 @@
 ]]
 local ADDON, ns = ...
 
+-- every file of ours ends by writing its version in here; Core/Copies.lua checks the list at login
+ns.parts = {}
+
 local HEX = {
   ink = "ece8f6", muted = "968ead", accent = "b980ff", good = "4fd0cf", warn = "f08cb0", gold = "e5c04a",
 }
@@ -47,6 +50,81 @@ local function db()
 end
 ns.DB = db
 
+--- EACH GUILD ITS OWN BOOKS (Arn, 16 Oct: "some people have alts in other guilds - when I opened it on
+--- my hunter it still had the pasted JSON"). BiSGuildDB is the account's, every character shares it,
+--- so the pasted roster, the raid record and the punctuality are filed per guild - realm and guild
+--- name - and a character sees and SHARES only its own guild's. (A hunter that is an officer in
+--- another guild would otherwise have announced the main's raid nights to that guild.) Settings -
+--- logins, map dots, the logs folder - stay the account's.
+---
+--- The client names your guild a moment after login. Until it has, ns.Books() is an unsaved, empty
+--- stand-in: an empty terminal for a second, never another guild's books.
+function ns.GuildKey()
+    if not (IsInGuild and IsInGuild()) then
+        local me = UnitName and UnitName("player")
+        return me and ("-|" .. tostring(GetRealmName and GetRealmName() or "") .. "|" .. me) or nil
+    end
+    local ok, name = pcall(GetGuildInfo, "player")
+    if not ok or type(name) ~= "string" or name == "" then return nil end
+    return tostring(GetRealmName and GetRealmName() or "") .. "|" .. name
+end
+
+ns.unfiled = {}
+function ns.Books()
+    local key = ns.GuildKey()
+    if not key then return ns.unfiled end
+    local d = db()
+    if type(d.guilds) ~= "table" then d.guilds = {} end
+    local g = d.guilds[key]
+    if not g then
+        g = {}
+        d.guilds[key] = g
+        -- the books kept account-wide before 16 Oct go to the first guild seen after the change
+        -- (Arn's main, logged first) - once, and never again
+        if not d.filedTo and (d.record or d.roster or d.punctual) then
+            g.record, g.roster, g.punctual = d.record, d.roster, d.punctual
+            d.record, d.roster, d.punctual = nil, nil, nil
+            d.filedTo = key
+        end
+    end
+    return g
+end
+
+--- ESC FOR A WINDOW, SAFE IN COMBAT (16 Oct 2026). Arn opened the terminal mid-fight and got
+--- ADDON_ACTION_BLOCKED: SetPropagateKeyboardInput is protected in combat. So:
+---   * in combat it is never called - the keyboard is switched on when combat ends instead;
+---   * ESC still runs `onEscape` in combat; the game may open its menu too (a key cannot be held back
+---     in combat), which is harmless;
+---   * the "swallow this ESC" is undone a moment later, so the NEXT key never vanishes and a fight
+---     starting right after can never leave every key swallowed.
+local function locked() return InCombatLockdown and InCombatLockdown() end
+function ns.EscKeys(f, onEscape)
+    local function arm()
+        if locked() then return false end
+        f:EnableKeyboard(true)
+        f:SetPropagateKeyboardInput(true)
+        return true
+    end
+    f:SetScript("OnKeyDown", function(self, key)
+        if key ~= "ESCAPE" then
+            if not locked() then self:SetPropagateKeyboardInput(true) end
+            return
+        end
+        if not locked() then
+            self:SetPropagateKeyboardInput(false)
+            if C_Timer and C_Timer.After then
+                C_Timer.After(0, function() if not locked() then self:SetPropagateKeyboardInput(true) end end)
+            end
+        end
+        onEscape()
+    end)
+    if not arm() then
+        local w = CreateFrame("Frame")
+        w:RegisterEvent("PLAYER_REGEN_ENABLED")
+        w:SetScript("OnEvent", function(self) if arm() then self:UnregisterAllEvents() end end)
+    end
+end
+
 -- the shared BiS channel: no setting of this addon may gate it; only /biscomm off does,
 -- and that choice survives a logout here
 ns.Comm = {}
@@ -67,9 +145,12 @@ end
 local f = CreateFrame("Frame")
 f:RegisterEvent("ADDON_LOADED")
 f:RegisterEvent("PLAYER_LOGOUT")
+f:RegisterEvent("PLAYER_GUILD_UPDATE")
+f:RegisterEvent("GUILD_ROSTER_UPDATE")
 f:SetScript("OnEvent", function(_, event, name)
   if event == "ADDON_LOADED" and name == ADDON then
     db()
+    ns.loaded = true                 -- the saved variables are in: the APIs may answer (API.lua, Loot.lua)
     ns.Comm.Boot()
     -- THE ADDON WATCHES NOTHING NOW (5 Oct 2026). Arn: "we can get rid of the attendence and
     -- consume check lets do logs for that". It used to count boss kills and who was standing
@@ -81,10 +162,32 @@ f:SetScript("OnEvent", function(_, event, name)
     local d = db()
     if d.nights ~= nil then d.nights = nil end
     if d.taught ~= nil then d.taught = nil end       -- and the consumables list, gone the same way
+    -- THE RECORD (16 Oct): the report file is folded into the guild's record, which every member
+    -- keeps and Core/Share.lua shares - so the numbers survive a deploy and a missed night
+    -- ...into THIS character's guild's books, once the client has named the guild and its raiders
+    -- are in it (16 Oct: an alt in another guild must not take in the main's raids) - Store.lua
+    if ns.S then ns.S.ImportWhenReady() end
+    if ns.X then ns.X.Boot() end
+    if not ns.Copy then ns.broken = { "Core/Copies.lua did not load" } end
+  elseif event == "PLAYER_GUILD_UPDATE" or event == "GUILD_ROSTER_UPDATE" then
+    if ns.S then ns.S.ImportWhenReady() end
   elseif event == "PLAYER_LOGOUT" then
     ns.Comm.Save()
   end
 end)
+
+--- A COPY THAT IS NOT WHOLE SAYS SO, AND DOES NOTHING ELSE (16 Oct 2026, Core/Copies.lua). Here and not
+--- there, so it still works when Copies.lua is the file that failed to load.
+function ns.TellBroken()
+  if not ns.broken then return false end
+  ns.Print("%s", T.text("warn", "this copy is not whole, so its windows and sharing are switched off:"))
+  for i, p in ipairs(ns.broken) do
+    if i <= 4 then ns.Print("  %s", T.text("warn", p)) end
+  end
+  if #ns.broken > 4 then ns.Print("  %s", T.text("muted", ("and %d more"):format(#ns.broken - 4))) end
+  ns.Print("  %s", T.text("muted", "Delete the BiSGuild folder, install it again from CurseForge, and restart the game."))
+  return true
+end
 
 SLASH_BISGUILD1 = "/bisg"
 SlashCmdList.BISGUILD = function(input)
@@ -92,8 +195,13 @@ SlashCmdList.BISGUILD = function(input)
   -- that stored "/memories now Killed Baron Silverlaine" as lower case in BiSMemories (0.5.3)
   local raw = tostring(input or "")
   local cmd, rest = raw:match("^%s*(%S*)%s*(.-)%s*$")
-  if ns.Say then return ns.Say(cmd:lower(), rest) end
+  cmd = cmd:lower()
+  if cmd == "copy" and ns.Copy then ns.Copy.Report() return end
+  if ns.TellBroken() then return end
+  if ns.Say then return ns.Say(cmd, rest) end
   local lib = _G.LibBiSComm
   ns.Print("hello - version %s, BiS comm %s, %d peer(s)", ns.VERSION,
     (lib and lib:Enabled()) and T.text("good", "on") or T.text("warn", "off"), lib and lib:Count() or 0)
 end
+
+ns.parts["Core/Init.lua"] = "0.1.0"

@@ -16,8 +16,41 @@ function ns.Say(cmd, rest)
     -- THE WINDOW IS THE FRONT DOOR (5 Oct 2026). Arn: "give me a bis themed window for bis guild so
     -- i can copy and paste and not have to write out commands". A bare `/bisg` opens it; everything
     -- that was a command still is one, for anybody who prefers them.
-    if cmd == "" and ns.U and ns.U.Toggle then
-        ns.U.Toggle()
+    --
+    -- THE TERMINAL IS THE FRONT DOOR NOW (16 Oct 2026, the raider terminal). The script window is
+    -- still one key away (F3 LOG) and still `/bisg window`.
+    if cmd == "" and ns.K and ns.K.Toggle then
+        ns.K.Toggle()
+        return
+    end
+    -- `/bisg dots on|off`: guildmates on the world map (Core/Pins.lua)
+    -- `/bisg logins on|off`: "X just logged in - invite?" (Core/Logins.lua)
+    if cmd == "logins" and ns.Login then
+        local r = rest:lower()
+        if r == "on" or r == "off" then ns.DB().logins = (r == "on") end
+        ns.Print("login pop-up for the pasted roster: %s%s. %s", ns.Login.On() and ns.T.text("good", "on")
+            or ns.T.text("warn", "off"), ns.Login.Armed() and " (armed now)" or "",
+            ns.T.text("muted", "/bisg logins on | off"))
+        return
+    end
+    if cmd == "dots" and ns.Pins then
+        local r = rest:lower()
+        if r == "on" or r == "off" then ns.DB().mapDots = (r == "on") end
+        local n = ns.Pins.Update()
+        ns.Print("guildmates on the world map: %s - %d dot(s) now. %s", ns.Pins.On() and ns.T.text("good", "on")
+            or ns.T.text("warn", "off"), n, ns.T.text("muted", "/bisg dots on | off"))
+        return
+    end
+    -- `/bisg mapwhy`: what the WHERE map's last drawing got from the game (16 Oct: Zephras Isle fog)
+    if cmd == "mapwhy" and ns.Where then
+        local w = ns.Where.why
+        if not w then ns.Print("the WHERE map has not drawn yet - open it first") return end
+        ns.Print("map %s: %d base tile(s); explored pieces: call %s, %d record(s), %d piece(s)%s", tostring(w.map),
+            w.base, tostring(w.call), w.records, w.explored, w.hidden and ", HIDDEN by the client" or "")
+        return
+    end
+    if cmd == "terminal" or cmd == "t" then
+        if ns.K then ns.K.Show(rest ~= "" and rest or nil) end
         return
     end
     if cmd == "window" or cmd == "show" then
@@ -80,12 +113,18 @@ function ns.Say(cmd, rest)
         -- A check an attacker controls both ends of is WORSE than no check, because it manufactures
         -- confidence. So the number below is not presented as proof of anything: the comparison
         -- that counts is against the CurseForge page, which is the one thing they cannot edit.
-        ns.Print("  %s", T.text("muted", "To check this copy, run this and compare the answer with"
-            .. " the hash on our CurseForge page - NOT with the number below:"))
-        ns.Print("Get-FileHash -Algorithm SHA256 \"%s\"", P.ScriptPath() or "...")
-        ns.Print("  %s %s", T.text("muted", "this copy says"), T.text("accent", P.SCRIPT_SHA))
+        -- THE WHOLE ADDON, CHECKED BY A LINE THAT IS NOT OURS (16 Oct 2026, Core/Copies.lua): the
+        -- check is plain PowerShell hashing the folder itself, and the CurseForge page carries the
+        -- same line - which is the copy to take it from.
+        ns.Print("  %s", T.text("muted", "To check this copy, take the check line from our CurseForge page"
+            .. " (this is the same line), run it, and compare the answer with the number on that page -"
+            .. " NOT with the number below:"))
+        ns.Print("%s", P.CheckCommand() or "...")
+        ns.Print("  %s %s", T.text("muted", "this copy says"), T.text("accent", P.Fingerprint() or "no fingerprint"))
         ns.Print("  %s", T.text("warn", "A faked addon would show you a faked number here too, so"
             .. " these two agreeing proves nothing on its own. Only the CurseForge page does."))
+        ns.Print("  %s", T.text("muted", "The script also checks every file itself and will not run on a"
+            .. " copy that does not match. /bisg copy: how your copy compares with your guild's."))
         ns.Print(" ")
         ns.Print("then, after a raid, this - and /reload:")
         ns.Print("%s", line)
@@ -119,8 +158,11 @@ function ns.Say(cmd, rest)
     end
     if cmd == "help" then
         ns.Print("version %s", ns.VERSION)
-        ns.Print("  %s  the window: paste a path, copy a command, read the numbers",
-            ns.T.text("accent", "/bisg"))
+        ns.Print("  %s  the raider terminal: type a raider or a boss", ns.T.text("accent", "/bisg"))
+        ns.Print("  %s  straight to one raider or boss", ns.T.text("accent", "/bisg <name>"))
+        ns.Print("  %s  the log window: paste a path, copy a command", ns.T.text("accent", "/bisg window"))
+        ns.Print("  %s  guildmates' dots on the world map", ns.T.text("accent", "/bisg dots on | off"))
+        ns.Print("  %s  'X just logged in - invite?' for the pasted roster", ns.T.text("accent", "/bisg logins on | off"))
         ns.Print("  %s  attendance and consumes from the combat log", ns.T.text("accent", "/bisg report"))
         ns.Print("  %s  where your logs are (once)", ns.T.text("accent", "/bisg logs <path>"))
         ns.Print("  %s  the line to run after a raid", ns.T.text("accent", "/bisg script"))
@@ -129,5 +171,17 @@ function ns.Say(cmd, rest)
     -- ANYTHING ELSE IS THE REPORT. There used to be an `all()` here reading the addon's own
     -- attendance; the addon does not keep any now, so the report IS the answer to "how is everyone
     -- doing" and there is nothing else it could have meant.
+    --
+    -- Unless it is a name on the record (16 Oct): `/bisg kumlust` opens his card in the terminal.
+    if ns.K and ns.S then
+        local name = (rest ~= "" and (cmd .. " " .. rest)) or cmd
+        local kind = ns.K.Parse(name, ns.S.Cards(), ns.S.Bosses())
+        if kind == "raider" or kind == "boss" then
+            ns.K.Show(name)
+            return
+        end
+    end
     return ns.Say("report")
 end
+
+ns.parts["Core/Say.lua"] = "0.1.0"

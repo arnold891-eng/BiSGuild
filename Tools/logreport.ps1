@@ -28,19 +28,80 @@ param(
     [switch] $Review,
     # Count five-man bosses too. Useful for proving the whole chain works on a client that has no
     # raids yet; wrong for a record, because a Tuesday heroic is not a raid night.
-    [switch] $Dungeons
+    [switch] $Dungeons,
+    # Set only when this script reads one of several logs for itself. The copy is still checked -
+    # it only stops saying so a second time (16 Oct: Arn saw the line four times for four logs).
+    [switch] $Nested
 )
 
 $ErrorActionPreference = "Stop"
 
+# ------------------------------------------------------------ the copy first --
+# NOTHING RUNS ON A COPY THAT IS NOT WHOLE (Arn, 16 Oct 2026: "we can do it like face fusion ... really
+# lock it down since its a powershell its running"). Every file of the addon is checked against
+# Tools\manifest.txt before a single log line is read: one changed, added or missing file and the
+# script stops and says which. Tools\fingerprint.ps1 says what is counted and why.
+#
+# THIS CANNOT PROVE THE SCRIPT ITSELF IS GENUINE. A doctored script could simply skip these lines. That
+# is what the CurseForge page's own one-line check is for - it is typed from the page, not from here.
+$here = Split-Path $PSScriptRoot -Parent
+. (Join-Path $PSScriptRoot "fingerprint.ps1")
+$copy = Test-BiSGuildCopy -Root $here
+if (-not $copy.ok) {
+    Write-Host "STOPPED - this copy of BiS Guild is not the one that was released:" -ForegroundColor Red
+    $copy.problems | ForEach-Object { Write-Host "   $_" -ForegroundColor Red }
+    Write-Host ""
+    Write-Host "Nothing was read and nothing was written. Get a fresh copy from CurseForge (delete the"
+    Write-Host "BiSGuild folder first, then install it again), or ask an officer."
+    exit 1
+}
+if (-not $Nested) {
+    Write-Host ("copy checked: every file matches - fingerprint {0}" -f $copy.fingerprint)
+    Write-Host "  (compare it with the CurseForge page, not with anything the addon shows you)"
+}
+
 # ---------------------------------------------------------------- the log ----
 if (-not (Test-Path -LiteralPath $Logs)) { throw "no such folder: $Logs" }
+
+# EVERY LOG NOT READ YET, OLDEST FIRST (16 Oct 2026). Arn put four logs in the folder and the script
+# read one: "there are 4 logs tho". It took only the newest, which is right for "run it after every
+# raid" and wrong for the worry the whole record exists for - "if I miss one raid night". Miss one
+# run and that night was never read. So the folder is the to-do list: a log is remembered in
+# WTF\BiSGuild\seen.txt by name, size and whether -Dungeons was on, and every log not on that list
+# is read, oldest first, each by this same script with -Log. A log still being written has grown
+# since, so it is read again; a log with no kills is remembered too, so it is not re-read forever.
+$seenPath = Join-Path (Join-Path (Join-Path (Split-Path $Logs -Parent) "WTF") "BiSGuild") "seen.txt"
+function Get-SeenKey($f) { "{0}|{1}|{2}" -f $f.Name, $f.Length, $(if ($Dungeons) { "d" } else { "r" }) }
+function Set-Seen($f) {
+    $dir = Split-Path $seenPath -Parent
+    if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
+    [System.IO.File]::AppendAllText($seenPath, (Get-SeenKey $f) + "`n", (New-Object System.Text.UTF8Encoding $false))
+}
 
 if ($Log) {
     $file = Get-Item -LiteralPath $Log
 } else {
-    $file = Get-ChildItem -LiteralPath $Logs -Filter "WoWCombatLog*.txt" |
-            Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    $all = @(Get-ChildItem -LiteralPath $Logs -Filter "WoWCombatLog*.txt" | Sort-Object LastWriteTime)
+    if ($all.Count -eq 0) { throw "no WoWCombatLog*.txt in $Logs" }
+    $seen = @{}
+    if (Test-Path -LiteralPath $seenPath) {
+        foreach ($l in [System.IO.File]::ReadAllLines($seenPath)) { if ($l) { $seen[$l] = $true } }
+    }
+    $todo = @($all | Where-Object { -not $seen.ContainsKey((Get-SeenKey $_)) })
+    if ($todo.Count -eq 0) {
+        Write-Host "every log in the folder has been read already - writing the report again from the record"
+        $file = $all[$all.Count - 1]
+    } else {
+        if ($todo.Count -gt 1) { Write-Host ("{0} logs not read yet - reading them oldest first" -f $todo.Count) }
+        for ($i = 0; $i -lt $todo.Count - 1; $i++) {
+            $one = @{ Logs = $Logs; Log = $todo[$i].FullName; Nested = $true }
+            if ($Dungeons) { $one.Dungeons = $true }
+            if ($AllPulls) { $one.AllPulls = $true }
+            try { & $PSCommandPath @one } catch { Write-Host ("  {0} could not be read: {1}" -f $todo[$i].Name, $_) }
+            Write-Host ""
+        }
+        $file = $todo[$todo.Count - 1]
+    }
 }
 if (-not $file) { throw "no WoWCombatLog*.txt in $Logs" }
 
@@ -60,12 +121,69 @@ if (Test-Path -LiteralPath $listPath) {
         $line = ($raw -split "#", 2)[0].Trim()
         if (-not $line) { continue }
         $bits = $line -split "\s+", 2
-        if ($bits.Count -eq 2 -and @("flask", "elixir", "scroll", "food") -contains $bits[0]) {
+        # potion: a CAST inside a boss pull (the raider card's potions, as the old raid-prep sheet
+        # counted them)
+        if ($bits.Count -eq 2 -and @("flask", "elixir", "scroll", "food", "potion") -contains $bits[0]) {
             $kinds[$bits[1].Trim().ToLower()] = $bits[0]
         }
     }
 }
 if ($kinds.Count -eq 0) { throw "consumables.txt is empty or missing ($listPath) - nothing can be judged" }
+
+# ------------------------------------------------------- the raider card ------
+# Arn, 16 Oct 2026: "type a raider name, show the gear they have ... their attendance ... how much
+# they consume - what we used to put into the raider sheet and lc sheet". Kept in step with
+# dev/logreport.py: same slots, same gearcheck.txt, same numbers (dev/test_logreport.py runs both
+# on one log and compares every field).
+$Slots = @("head", "neck", "shoulder", "shirt", "chest", "waist", "legs", "feet", "wrist", "hands",
+           "finger1", "finger2", "trinket1", "trinket2", "back", "mainhand", "offhand", "ranged", "tabard")
+
+# the top-level [...] groups of a COMBATANT_INFO line: talents, gear, auras
+function Get-Brackets([string]$s) {
+    $out = New-Object System.Collections.ArrayList
+    $depth = 0; $start = -1
+    for ($i = 0; $i -lt $s.Length; $i++) {
+        $c = $s[$i]
+        if ($c -eq '[') { if ($depth -eq 0) { $start = $i }; $depth++ }
+        elseif ($c -eq ']') {
+            $depth--
+            if ($depth -eq 0 -and $start -ge 0) { [void]$out.Add($s.Substring($start, $i - $start + 1)); $start = -1 }
+        }
+    }
+    return ,$out
+}
+
+# the gear bracket: 19 of (itemId, itemLevel, (permanent, temporary, onUse), (bonus), (gems)) ->
+# @(id, ilvl, enchant, temp, @(gems)); the temporary enchant is the weapon's oil or stone
+function Get-Gear([string]$body) {
+    $b = Get-Brackets $body
+    if ($b.Count -lt 3) { return $null }
+    try { $raw = ($b[$b.Count - 2] -replace '\(', '[' -replace '\)', ']') | ConvertFrom-Json } catch { return $null }
+    $out = New-Object System.Collections.ArrayList
+    foreach ($t in @($raw)) {
+        $t = @($t)
+        if ($t.Count -lt 2) { [void]$out.Add(@(0, 0, 0, 0, @())); continue }
+        $ench = if ($t.Count -gt 2) { @($t[2]) } else { @() }
+        $gems = New-Object System.Collections.ArrayList
+        if ($t.Count -gt 4) { foreach ($g in @($t[4])) { if ($g) { [void]$gems.Add([int]$g) } } }
+        $e0 = if ($ench.Count -gt 0) { [int]$ench[0] } else { 0 }
+        $e1 = if ($ench.Count -gt 1) { [int]$ench[1] } else { 0 }
+        [void]$out.Add(@([int]$t[0], [int]$t[1], $e0, $e1, $gems))
+    }
+    if ($out.Count -lt 16) { return $null }
+    return ,$out
+}
+
+# which slots should carry an enchant: DATA (gearcheck.txt), the guild's call
+$checkPath = Join-Path $PSScriptRoot "gearcheck.txt"
+if (-not (Test-Path -LiteralPath $checkPath)) { $checkPath = Join-Path (Split-Path $PSScriptRoot -Parent) "dev\gearcheck.txt" }
+$wantEnchant = New-Object System.Collections.ArrayList
+if (Test-Path -LiteralPath $checkPath) {
+    foreach ($raw in [System.IO.File]::ReadLines($checkPath)) {
+        $bits = (($raw -split "#", 2)[0].Trim()) -split "\s+"
+        if ($bits.Count -eq 2 -and $bits[0] -eq "enchant" -and $Slots -contains $bits[1]) { [void]$wantEnchant.Add($bits[1]) }
+    }
+}
 
 # ------------------------------------------------------------- one pass -------
 $names = @{}          # spell id -> spell name, learned from the log itself
@@ -112,12 +230,40 @@ while ($null -ne ($line = $reader.ReadLine())) {
             $f = $body -split ","
             $cur = @{ boss = $f[2].Trim('"'); size = 0; kill = $false; who = @{} }
         }
+        $cur.gear = @{}; $cur.deaths = @{}; $cur.pots = @{}; $cur.ms = 0
         [void]$pulls.Add($cur)
     }
     elseif ($event -eq "ENCOUNTER_END") {
         $f = $body -split ","
-        if ($cur) { $cur.kill = ($f.Count -gt 5 -and $f[5].Trim() -eq "1") }
+        if ($cur) {
+            $cur.kill = ($f.Count -gt 5 -and $f[5].Trim() -eq "1")
+            # ENCOUNTER_END,id,"name",difficulty,size,success,fightTime(ms) - the boss page's best time
+            $ms = 0
+            if ($f.Count -gt 6 -and [int]::TryParse($f[6].Trim(), [ref]$ms)) { $cur.ms = $ms }
+        }
         $cur = $null
+    }
+    elseif ($event -eq "UNIT_DIED") {
+        # a raider dying INSIDE a pull
+        $f = $body -split ","
+        if ($cur -and $f.Count -gt 6 -and $f[5].StartsWith("Player-")) {
+            if (-not $cur.deaths.ContainsKey($f[5])) { $cur.deaths[$f[5]] = 0 }
+            $cur.deaths[$f[5]]++
+            $guidName[$f[5]] = ($f[6].Trim('"') -split "-")[0]
+        }
+    }
+    elseif ($event -eq "SPELL_CAST_SUCCESS") {
+        # a potion or healthstone used inside a pull
+        $f = $body -split ","
+        if ($f.Count -gt 10) {
+            $sid = 0
+            if ([int]::TryParse($f[9], [ref]$sid)) { $names[$sid] = $f[10].Trim('"') }
+            if ($cur -and $f[1].StartsWith("Player-") -and $kinds[$f[10].Trim('"').ToLower()] -eq "potion") {
+                if (-not $cur.pots.ContainsKey($f[1])) { $cur.pots[$f[1]] = 0 }
+                $cur.pots[$f[1]]++
+                $guidName[$f[1]] = ($f[2].Trim('"') -split "-")[0]
+            }
+        }
     }
     elseif ($event -eq "COMBATANT_INFO") {
         if ($cur) {
@@ -133,6 +279,8 @@ while ($null -ne ($line = $reader.ReadLine())) {
                 }
             }
             $cur.who[$guid] = $ids
+            $g = Get-Gear $body
+            if ($g) { $cur.gear[$guid] = $g }
         }
     }
     elseif ($event.StartsWith("SPELL_") -and $event.Contains("_AURA_")) {
@@ -163,16 +311,58 @@ if ($counted.Count -eq 0) {
         Write-Host ("  {0} five-man boss kill(s) were left out - a dungeon boss is not a raid night." -f $fiveMans.Count)
         Write-Host "  -Dungeons counts them, which is useful for testing and wrong for a record."
     }
+    Set-Seen $file          # read, and nothing in it: not worth reading again
     exit 1
 }
 
 # ------------------------------------------------------------- the sums -------
+function NameOf($guid) { if ($guidName.ContainsKey($guid)) { $guidName[$guid] } else { $guid } }
+
+# THE RAIDER CARD'S NUMBERS: per raider this night. Gear, deaths and potions read EVERY pull of the
+# night (a wipe is still a death); the consumables stay on the kills, as before.
+$detail = @{}
+function Get-Detail($who) {
+    if (-not $detail.ContainsKey($who)) {
+        $detail[$who] = @{ pulls = 0; flask = 0; elixir = 0; food = 0; weapon = 0; weaponSeen = 0
+                           pots = 0; deaths = 0; gear = $null }
+    }
+    return $detail[$who]
+}
+$nightPulls = @($pulls | Where-Object { $Dungeons -or -not ($_.size -gt 0 -and $_.size -le 5) })
+foreach ($p in $nightPulls) {
+    foreach ($g in @($p.deaths.Keys)) { $d = Get-Detail (NameOf $g); $d['deaths'] += $p.deaths[$g] }
+    foreach ($g in @($p.pots.Keys))   { $d = Get-Detail (NameOf $g); $d['pots'] += $p.pots[$g] }
+    foreach ($g in @($p.gear.Keys))   { $d = Get-Detail (NameOf $g); $d['gear'] = $p.gear[$g] }
+}
+
+# A BOSS IS A TICKER (Arn, 16 Oct): this night's pulls, kills, fastest kill, who stood in each kill
+$bossNight = @{}
+foreach ($p in $nightPulls) {
+    if (-not $bossNight.ContainsKey($p.boss)) {
+        $bossNight[$p.boss] = @{ pulls = 0; kills = 0; best = 0; killers = (New-Object System.Collections.ArrayList) }
+    }
+    $b = $bossNight[$p.boss]
+    $b['pulls'] += 1
+    if ($p.kill) {
+        $b['kills'] += 1
+        if ($p.ms -and (-not $b['best'] -or $p.ms -lt $b['best'])) { $b['best'] = $p.ms }
+        foreach ($g in @($p.who.Keys)) { [void]$b['killers'].Add((NameOf $g)) }
+    }
+}
+
 $present = @{}; $prepared = @{}; $unknown = @{}
 foreach ($p in $counted) {
     foreach ($guid in $p.who.Keys) {
         $who = if ($guidName.ContainsKey($guid)) { $guidName[$guid] } else { $guid }
         if (-not $present.ContainsKey($who)) { $present[$who] = 0; $prepared[$who] = 0 }
         $present[$who]++
+        $dt = Get-Detail $who
+        $dt['pulls'] += 1
+        $g = $p.gear[$guid]
+        if ($g -and $g.Count -gt 15 -and $g[15][0]) {
+            $dt['weaponSeen'] += 1
+            if ($g[15][3]) { $dt['weapon'] += 1 }
+        }
         $flask = 0; $elixirs = 0; $food = 0
         foreach ($sid in $p.who[$guid]) {
             $nm = if ($names.ContainsKey($sid)) { $names[$sid] } else { "id $sid" }
@@ -183,6 +373,9 @@ foreach ($p in $counted) {
             else { $unknown[$nm] = $true }
         }
         if (($flask -gt 0 -or $elixirs -ge 2) -and $food -gt 0) { $prepared[$who]++ }
+        if ($flask -gt 0) { $dt['flask'] += 1 }
+        if ($flask -eq 0 -and $elixirs -ge 2) { $dt['elixir'] += 1 }
+        if ($food -gt 0) { $dt['food'] += 1 }
     }
 }
 
@@ -230,16 +423,33 @@ $wtf = Join-Path $client "WTF"
 $histDir = Join-Path $wtf "BiSGuild"
 $histPath = Join-Path $histDir "history.json"
 
+# EVERY FIELD COMES BACK (16 Oct 2026): this used to rebuild a night from present/ready alone, which
+# would quietly drop the raider card's detail and the boss pages the Python reader writes into the
+# same file. JSON objects become hashtables, arrays stay arrays, all the way down.
+function ConvertTo-Plain($o) {
+    if ($null -eq $o) { return $null }
+    if ($o -is [System.Management.Automation.PSCustomObject]) {
+        $h = @{}
+        foreach ($p in $o.PSObject.Properties) { $h[$p.Name] = ConvertTo-Plain $p.Value }
+        return $h
+    }
+    if ($o -is [System.Array]) {
+        $a = New-Object System.Collections.ArrayList
+        foreach ($x in $o) { [void]$a.Add((ConvertTo-Plain $x)) }
+        return ,$a
+    }
+    return $o
+}
+
 $nights = @{}
 if (Test-Path -LiteralPath $histPath) {
     try {
         $raw = Get-Content -LiteralPath $histPath -Raw -Encoding UTF8 | ConvertFrom-Json
         foreach ($n in @($raw.nights)) {
-            $p = @{}; $r = @{}
-            foreach ($kv in $n.present.PSObject.Properties) { $p[$kv.Name] = [int]$kv.Value }
-            foreach ($kv in $n.ready.PSObject.Properties)   { $r[$kv.Name] = [int]$kv.Value }
-            $nights[$n.log] = @{ log = $n.log; date = $n.date; zones = $n.zones
-                                 kills = [int]$n.kills; present = $p; ready = $r }
+            $h = ConvertTo-Plain $n
+            if (-not $h.present) { $h.present = @{} }
+            if (-not $h.ready) { $h.ready = @{} }
+            $nights[$h.log] = $h
         }
     } catch {
         # a half-written or hand-edited history is started over rather than crashing the run: the
@@ -255,7 +465,7 @@ if ($file.Name -match 'WoWCombatLog-(\d{2})(\d{2})(\d{2})_') {
     $stamp = "20{0}-{1}-{2}" -f $Matches[3], $Matches[1], $Matches[2]
 }
 $thisNight = @{ log = $file.Name; date = $stamp; zones = $zones; kills = $total
-                present = @{}; ready = @{} }
+                present = @{}; ready = @{}; detail = $detail; bosses = $bossNight }
 foreach ($who in $present.Keys) {
     $thisNight.present[$who] = $present[$who]
     $thisNight.ready[$who]   = $prepared[$who]
@@ -264,8 +474,9 @@ $nights[$file.Name] = $thisNight
 
 if (-not (Test-Path -LiteralPath $histDir)) { New-Item -ItemType Directory -Force -Path $histDir | Out-Null }
 $out = [ordered]@{ version = 1; nights = @($nights.Values | Sort-Object { $_.log }) }
-[System.IO.File]::WriteAllText($histPath, ($out | ConvertTo-Json -Depth 6),
+[System.IO.File]::WriteAllText($histPath, ($out | ConvertTo-Json -Depth 12),
                                (New-Object System.Text.UTF8Encoding $false))
+Set-Seen $file              # its night is in the history now
 
 # ------------------------------------------------- the numbers, over all of it
 # A RAID DAY IS THE WHOLE DAY (Arn, 5 Oct: "i guess we can count a raid day as the whole day not
@@ -293,15 +504,154 @@ foreach ($n in @($nights.Values)) {
 }
 
 $earned = @{}; $seenPulls = @{}; $readyPulls = @{}
-foreach ($d in $days.Values) {
+$attended = @{}       # who -> the days they earned, for the raider card
+foreach ($key in @($days.Keys | Sort-Object)) {
+    $d = $days[$key]
     foreach ($who in $d.present.Keys) {
         if (-not $earned.ContainsKey($who)) { $earned[$who] = 0; $seenPulls[$who] = 0; $readyPulls[$who] = 0 }
-        if ($d.present[$who] * 2 -ge $d.kills) { $earned[$who]++ }
+        if ($d.present[$who] * 2 -ge $d.kills) {
+            $earned[$who]++
+            if (-not $attended.ContainsKey($who)) { $attended[$who] = New-Object System.Collections.ArrayList }
+            [void]$attended[$who].Add($key)
+        }
         $seenPulls[$who] += $d.present[$who]
         $readyPulls[$who] += $d.ready[$who]
     }
 }
 $raided = $days.Count
+
+# ONE CARD PER RAIDER from every night on record (same rules as dev/logreport.py build_cards)
+function Get-NightKey($n) { if ($n.date) { $n.date } else { $n.log } }
+$byDate = @($nights.Values | Sort-Object { Get-NightKey $_ })
+$cards = @{}
+foreach ($n in $byDate) {
+    $date = Get-NightKey $n
+    if (-not $n.detail) { continue }
+    foreach ($who in @($n.detail.Keys)) {
+        $dd = $n.detail[$who]
+        if (-not $cards.ContainsKey($who)) { $cards[$who] = @{ deaths = 0; pots = 0; last = $null; gear = $null; gearDate = $null } }
+        $c = $cards[$who]
+        $c['deaths'] += [int]$dd.deaths
+        $c['pots'] += [int]$dd.pots
+        if ([int]$dd.pulls -gt 0) {
+            $c['last'] = @{ date = $date }
+            foreach ($k in @("pulls", "flask", "elixir", "food", "weapon", "weaponSeen", "pots", "deaths")) { $c['last'][$k] = [int]$dd[$k] }
+        }
+        if ($dd.gear) { $c['gear'] = $dd.gear; $c['gearDate'] = $date }
+    }
+}
+foreach ($who in @($cards.Keys)) {
+    $c = $cards[$who]
+    # an assignment, not `= if ... { $list }`: PowerShell unrolls a one-item list that comes out of an
+    # if-expression into the item itself, and a raider with one night became the string "2026-10-16"
+    # (dev/test_logreport.py caught it against the Python reader)
+    if ($attended.ContainsKey($who)) { $c['attended'] = $attended[$who] }
+    else { $c['attended'] = New-Object System.Collections.ArrayList }
+    $iss = New-Object System.Collections.ArrayList
+    if ($c.gear) {
+        foreach ($slot in $wantEnchant) {
+            $i = [array]::IndexOf($Slots, $slot)
+            if ($i -lt $c.gear.Count -and $c.gear[$i][0] -and -not $c.gear[$i][2]) {
+                [void]$iss.Add(@{ slot = $slot; item = [int]$c.gear[$i][0]; what = "no enchant" })
+            }
+        }
+    }
+    $c['issues'] = $iss
+}
+
+# ONE PAGE PER BOSS (same rules as dev/logreport.py build_bosses)
+$bossPages = @{}
+foreach ($n in $byDate) {
+    $date = Get-NightKey $n
+    if (-not $n.bosses) { continue }
+    foreach ($boss in @($n.bosses.Keys)) {
+        $b = $n.bosses[$boss]
+        if (-not $bossPages.ContainsKey($boss)) {
+            $bossPages[$boss] = @{ kills = 0; wipes = 0; best = 0; first = $null
+                                   nights = (New-Object System.Collections.ArrayList); killers = @{} }
+        }
+        $pg = $bossPages[$boss]
+        $pg['kills'] += [int]$b.kills
+        $pg['wipes'] += [int]$b.pulls - [int]$b.kills
+        if ([int]$b.kills -gt 0) {
+            if (-not $pg['first']) { $pg['first'] = $date }
+            if (-not $pg['nights'].Contains($date)) { [void]$pg['nights'].Add($date) }
+        }
+        if ([int]$b.best -and (-not $pg['best'] -or [int]$b.best -lt $pg['best'])) { $pg['best'] = [int]$b.best }
+        foreach ($who in @($b.killers)) {
+            if (-not $pg['killers'].ContainsKey($who)) { $pg['killers'][$who] = 0 }
+            $pg['killers'][$who] += 1
+        }
+    }
+}
+
+# EVERY RAID DAY AS ONE RECORD (same rules as dev/logreport.py build_nightly): what BiS Guild keeps
+# in its saved variables and shares with the guild. Logs from one date are added together.
+$nightFields = @("present", "ready", "pulls", "flask", "elixir", "food", "weapon", "weaponSeen", "pots", "deaths")
+$nightly = @{}
+foreach ($n in $byDate) {
+    $date = Get-NightKey $n
+    if (-not $nightly.ContainsKey($date)) { $nightly[$date] = @{ kills = 0; raiders = @{}; bosses = @{} } }
+    $nd = $nightly[$date]
+    $nd['kills'] += [int]$n.kills
+    $whoAll = @{}
+    foreach ($who in @($n.present.Keys)) { $whoAll[$who] = $true }
+    if ($n.detail) { foreach ($who in @($n.detail.Keys)) { $whoAll[$who] = $true } }
+    foreach ($who in @($whoAll.Keys)) {
+        if (-not $nd.raiders.ContainsKey($who)) {
+            $r = @{}
+            foreach ($k in $nightFields) { $r[$k] = 0 }
+            $nd.raiders[$who] = $r
+        }
+        $r = $nd.raiders[$who]
+        if ($n.present.ContainsKey($who)) { $r['present'] += [int]$n.present[$who] }
+        if ($n.ready.ContainsKey($who)) { $r['ready'] += [int]$n.ready[$who] }
+        if ($n.detail -and $n.detail.ContainsKey($who)) {
+            $dd = $n.detail[$who]
+            foreach ($k in $nightFields[2..($nightFields.Count - 1)]) { $r[$k] += [int]$dd[$k] }
+        }
+    }
+    if ($n.bosses) {
+        foreach ($boss in @($n.bosses.Keys)) {
+            $b = $n.bosses[$boss]
+            if (-not $nd.bosses.ContainsKey($boss)) {
+                $nd.bosses[$boss] = @{ pulls = 0; kills = 0; best = 0; killers = (New-Object System.Collections.ArrayList) }
+            }
+            $pb = $nd.bosses[$boss]
+            $pb['pulls'] += [int]$b.pulls
+            $pb['kills'] += [int]$b.kills
+            if ([int]$b.best -and (-not $pb['best'] -or [int]$b.best -lt $pb['best'])) { $pb['best'] = [int]$b.best }
+            foreach ($who in @($b.killers)) { if ($null -ne $who) { [void]$pb['killers'].Add([string]$who) } }
+        }
+    }
+}
+# one order, so both readers and every copy say the same - ORDINAL, as Python sorts, not the culture's
+foreach ($nd in @($nightly.Values)) {
+    foreach ($pb in @($nd.bosses.Values)) { $pb['killers'].Sort([System.StringComparer]::Ordinal) }
+}
+
+# any value as Lua: numbers, strings, lists, string-keyed tables (a $null is left out)
+function ConvertTo-Lua($v, [string]$ind) {
+    if ($null -eq $v) { return "nil" }
+    if ($v -is [bool]) { if ($v) { return "true" } else { return "false" } }
+    if ($v -is [string]) { return '"' + ($v -replace '\\', '\\' -replace '"', '\"') + '"' }
+    if ($v -is [System.Collections.IDictionary]) {
+        $inner = $ind + "    "
+        $parts = New-Object System.Collections.ArrayList
+        foreach ($k in @($v.Keys | Sort-Object { [string]$_ })) {
+            if ($null -eq $v[$k]) { continue }
+            $key = if ([string]$k -match '^[A-Za-z_][A-Za-z0-9_]*$') { [string]$k } else { '[' + (ConvertTo-Lua ([string]$k) "") + ']' }
+            [void]$parts.Add(("{0}{1} = {2}," -f $inner, $key, (ConvertTo-Lua $v[$k] $inner)))
+        }
+        return "{`n" + ($parts -join "`n") + "`n" + $ind + "}"
+    }
+    if ($v -is [System.Collections.IEnumerable]) {
+        $items = New-Object System.Collections.ArrayList
+        foreach ($x in $v) { [void]$items.Add((ConvertTo-Lua $x $ind)) }
+        return "{ " + ($items -join ", ") + " }"
+    }
+    return [string]$v
+}
 $rows = foreach ($who in $earned.Keys) {
     [pscustomobject]@{
         name     = $who
@@ -351,6 +701,12 @@ foreach ($root in $roots) {
         [void]$sb.AppendLine(("        {{ name = `"{0}`", attend = {1}, consumes = {2} }}," -f ($r.name -replace '"', '\"'), $r.attend, $r.consumes))
     }
     [void]$sb.AppendLine("    },")
+    # the raid days on record, one card per raider, one page per boss (the raider terminal reads these)
+    [void]$sb.AppendLine(("    days = {0}," -f (ConvertTo-Lua (@($days.Keys | Sort-Object)) "    ")))
+    [void]$sb.AppendLine(("    cards = {0}," -f (ConvertTo-Lua $cards "    ")))
+    [void]$sb.AppendLine(("    bosses = {0}," -f (ConvertTo-Lua $bossPages "    ")))
+    # every raid day as one record: what the addon keeps and shares with the guild
+    [void]$sb.AppendLine(("    nightly = {0}," -f (ConvertTo-Lua $nightly "    ")))
     [void]$sb.AppendLine("}")
 
     $out = Join-Path $data "Report.lua"

@@ -1,59 +1,112 @@
 <#
-  BiSGuild :: Tools\stamp.ps1 - the fingerprint of logreport.ps1, into the places that publish it.
+  BiSGuild :: Tools\stamp.ps1 - the addon's fingerprint, into every place that must agree on it.
 
-      .\Tools\stamp.ps1           recompute and write it
-      .\Tools\stamp.ps1 -Check    say whether they still agree; exit 1 if not
+      .\Tools\stamp.ps1           work it out and write it everywhere
+      .\Tools\stamp.ps1 -Check    say whether every place still agrees; exit 1 if not
 
-  THE HASH IS ONLY WORTH SOMETHING WHERE IT IS PUBLISHED. Arn, 4 Oct 2026: "every time we update the
-  addon right at top we put the hash... people can check that way that they are getting the right
-  version", and "we put it in the curseforge description like this is the most up to date hash".
+  RUN IT AFTER ANY CHANGE TO A SHIPPED FILE, and after bumping ## Version. The suite goes red until
+  you do - and a red suite stops the release - so a stale number cannot reach CurseForge again
+  (5 Oct 2026: it did, a day stale, and a mismatch reads as "you were given a doctored addon").
 
-  That is the whole idea. A number inside the download proves nothing - whoever changed the script
-  changes the number too. A number on the CurseForge page is one the person handing you a doctored
-  copy does not control, so comparing the two is a real check.
+  WHAT "THE ADDON" IS: what git ships (tracked, or new and not ignored), minus the dev side - the
+  same rule as _bisdev\release\stage.ps1 - minus what Tools\fingerprint.ps1 leaves out and says why.
 
-  So this writes the hash in three places and they must agree:
-    Core\Report.lua        P.SCRIPT_SHA - what the addon shows the player in game
-    dev\cf-desc.md         the CurseForge page text, which is the published authority
-    CHANGELOG.md           at the top of the release, so old versions can be checked too
+  WHERE THE NUMBER GOES, and all of them must agree (Arn, 16 Oct: "multiple places that need to
+  match up for the hash to work"):
+    Tools\manifest.txt      every file and its hash; the fingerprint is this file's own hash
+    Core\Build.lua          what the copy says it is, in game and to guildmates
+    dev\cf-desc.md          the CurseForge page - the one place a faker cannot reach
+    CHANGELOG.md            the top entry, which is also the release notes CurseForge shows
+  and every one of our Lua files ends with its version (ns.parts), which this rewrites from the TOC.
 
-  RUN IT WHENEVER logreport.ps1 CHANGES. The Lua suite can only check the shape of the constant -
-  Lua 5.1 cannot compute SHA-256 - so nothing catches a forgotten restamp automatically yet.
+  THE NUMBER IN THE DOWNLOAD PROVES NOTHING BY ITSELF. Whoever doctors a copy restamps it too. The
+  check that counts is the CurseForge page's own command and number against the copy on your disk.
 #>
 param([switch] $Check)
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path $PSScriptRoot -Parent
-$script = Join-Path $PSScriptRoot "logreport.ps1"
-if (-not (Test-Path -LiteralPath $script)) { throw "no logreport.ps1 beside this" }
+. (Join-Path $PSScriptRoot "fingerprint.ps1")
+$utf8 = New-Object System.Text.UTF8Encoding $false
+$bad = @()
 
-$hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $script).Hash
-Write-Host "logreport.ps1 : $hash"
+function Read-Text($p) { return [System.IO.File]::ReadAllText($p) }
+function Save-Text($p, $t) { [System.IO.File]::WriteAllText($p, $t, $utf8) }
 
-$lua = Join-Path $root "Core\Report.lua"
-$text = [System.IO.File]::ReadAllText($lua)
-$current = ([regex]'P\.SCRIPT_SHA = "([0-9A-Fa-f]{64})"').Match($text).Groups[1].Value
+$version = Get-BiSGuildVersion $root
+$parts = Get-BiSGuildParts $root
 
-if ($Check) {
-    if ($current -eq $hash) { Write-Host "Core\Report.lua : agrees"; exit 0 }
-    Write-Host "Core\Report.lua : $current"
+# 1. every Lua file of ours ends with its version - first, because those files are in the hash
+foreach ($p in $parts) {
+    $path = Join-Path $root $p
+    $text = Read-Text $path
+    $line = "ns.parts[`"$p`"] = `"$version`""
+    $re = 'ns\.parts\["' + [regex]::Escape($p) + '"\] = "[^"]*"'
+    if ($text -notmatch $re) {
+        $bad += "$p does not end with its ns.parts line"
+        continue
+    }
+    $new = [regex]::Replace($text, $re, $line.Replace('$', '$$'))
+    if ($new -ne $text) {
+        if ($Check) { $bad += "$p says another version than $version" } else { Save-Text $path $new; Write-Host "$p : $version" }
+    }
+}
+
+# 2. what ships, as git sees it
+$NEVER = @("dev", "test", "CLAUDE.md", ".pkgmeta")
+$raw = @(& git -C $root -c core.quotepath=off ls-files --cached --others --exclude-standard)
+if ($LASTEXITCODE -ne 0 -or $raw.Count -eq 0) { throw "git could not list the addon's files" }
+$files = @($raw | Where-Object {
+    $top = ($_ -split "/")[0]
+    -not ($NEVER -contains $top) -and -not $top.StartsWith(".") -and (Test-Path -LiteralPath (Join-Path $root $_) -PathType Leaf)
+} | Sort-Object -Unique)
+
+$lines = Get-BiSGuildLines -Root $root -Files $files
+$manifest = Get-BiSGuildText $lines
+$fp = Get-BiSGuildHash $manifest
+Write-Host "fingerprint : $fp  ($($lines.Count) files, BiSGuild $version)"
+
+function Put($rel, $want, $label) {
+    $path = Join-Path $root $rel
+    $have = if (Test-Path -LiteralPath $path) { Read-Text $path } else { $null }
+    if ($have -eq $want) { Write-Host "$rel : agrees"; return }
+    if ($Check) { $script:bad += "$rel ($label) is out of date" } else { Save-Text $path $want; Write-Host "$rel : written" }
+}
+
+# 3. the manifest and the build file
+Put "Tools\manifest.txt" $manifest "the list of files"
+Put "Core\Build.lua" (Get-BiSGuildBuildLua $version $fp $parts) "what the copy says it is"
+
+# 4. the CurseForge page: the number line in its check block
+$cf = Join-Path $root "dev\cf-desc.md"
+$text = Read-Text $cf
+$re = '(?m)^(    Fingerprint   )[0-9A-F]{64}[ \t]*$'      # not \s*: that eats the blank line after it
+if ($text -notmatch $re) { $bad += "dev\cf-desc.md has no '    Fingerprint   <64 hex>' line" }
+else { Put "dev\cf-desc.md" ([regex]::Replace($text, $re, ('${1}' + $fp))) "the CurseForge page" }
+
+# 5. the changelog's top entry: one line straight under its heading - ONLY IF IT ALREADY HAS ONE.
+#    Arn, 16 Oct, before the first release: "dont put the fingerprint lets get approved first". The
+#    line is opt-in per release: put "Fingerprint (SHA-256" under the heading and this keeps it right.
+$cl = Join-Path $root "CHANGELOG.md"
+$text = Read-Text $cl
+$fline = "Fingerprint (SHA-256 of the whole addon, check it with the command on the CurseForge page): ``$fp``"
+$m = [regex]::Match($text, '(?m)^## [^\n]*\n')
+if (-not $m.Success) { $bad += "CHANGELOG.md has no ## entry" }
+elseif ($text.Substring($m.Index + $m.Length) -notmatch '^\nFingerprint \(SHA-256') { Write-Host "CHANGELOG.md : no fingerprint line in the top entry - left alone" }
+else {
+    $at = $m.Index + $m.Length
+    $rest = $text.Substring($at)
+    $rest = [regex]::Replace($rest, '^\nFingerprint \(SHA-256[^\n]*\n', '')
+    Put "CHANGELOG.md" ($text.Substring(0, $at) + "`n" + $fline + "`n" + $rest) "the release notes"
+}
+
+if ($bad.Count -gt 0) {
     Write-Host ""
-    Write-Host "MISMATCH - logreport.ps1 changed and was not restamped. Run .\Tools\stamp.ps1"
+    $bad | ForEach-Object { Write-Host "MISMATCH - $_" }
+    Write-Host "Run .\Tools\stamp.ps1 (without -Check) and commit what it writes."
     exit 1
 }
-
-if ($current -eq $hash) {
-    Write-Host "Core\Report.lua : already correct"
-} else {
-    $text = $text -replace 'P\.SCRIPT_SHA = "[0-9A-Fa-f]{64}"', ('P.SCRIPT_SHA = "{0}"' -f $hash)
-    [System.IO.File]::WriteAllText($lua, $text, (New-Object System.Text.UTF8Encoding $false))
-    Write-Host "Core\Report.lua : updated"
+if (-not $Check) {
+    Write-Host ""
+    Write-Host "Paste dev\cf-desc.md's check block onto the CurseForge page when this version goes up."
 }
-
-Write-Host ""
-Write-Host "Now put this on the CurseForge page and at the top of the release notes:"
-Write-Host ""
-Write-Host "  SHA-256 of Tools\logreport.ps1"
-Write-Host "  $hash"
-Write-Host ""
-Write-Host "  Check yours with:  Get-FileHash -Algorithm SHA256 `"<addon>\Tools\logreport.ps1`""

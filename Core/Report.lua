@@ -49,10 +49,38 @@ ns.P = P
 --- the CurseForge page, so the number to compare against lives somewhere the person handing you a
 --- copy does not control. That is the half that makes the hash worth anything.
 ---
---- REGENERATE with Tools\stamp.ps1 whenever logreport.ps1 changes; `-Check` says whether they still
---- agree. The suite asserts the SHAPE of this constant only - it cannot compute SHA-256 in Lua, so
---- a script edited without restamping is NOT caught automatically yet. That gap is on the desk.
-P.SCRIPT_SHA = "BBFE79CFAD1180A03054E72B4BFFFFA54742C28196BC1981F268EA0D91B4C827"
+--- THE WHOLE ADDON NOW, NOT ONE SCRIPT (16 Oct 2026). Arn: "we can do it like face fusion and there
+--- are multiple places that need to match up". One fingerprint covers every file - Tools\fingerprint.ps1
+--- says which and why - and lives in Core/Build.lua, the manifest, the changelog and the CurseForge
+--- page; Tools\stamp.ps1 writes them all and the suite goes red when any disagree. The script refuses
+--- to run on a copy whose files do not match.
+---
+--- THE CHECK A PLAYER RUNS DOES NOT USE OUR SCRIPT. It is one line of plain PowerShell that hashes the
+--- folder itself - the same line is on the CurseForge page, and THAT is the copy to take it from: a
+--- faked addon could print a faked line here. P.SKIP is the rule for which files count; the same
+--- text is in Tools\fingerprint.ps1 and the suite holds them together.
+P.SKIP = [[(^|/)\.|\.md$|^(Data/Report\.lua|Core/Build\.lua|Tools/manifest\.txt)$]]
+
+--- What this copy says its fingerprint is (Core/Build.lua), or nil.
+function P.Fingerprint() return ns.Copy and ns.Copy.Fingerprint() or nil end
+
+--- The installed addon folder, worked out from the Logs folder (see P.ScriptPath). Nil until known.
+function P.AddonPath()
+    local script = P.ScriptPath()
+    return script and script:match("^(.*)\\Tools\\logreport%.ps1$") or nil
+end
+
+--- The one-line check, for a folder. Pure PowerShell: list, hash each file, sort, hash the list.
+function P.CheckCommand(folder)
+    folder = folder or P.AddonPath()
+    if not folder then return nil end
+    return "$a='" .. (folder:gsub("'", "''")) .. "';$l=[string[]](ls -LiteralPath $a -Recurse -File|%{"
+        .. "$r=$_.FullName.Substring($a.Length+1).Replace('\\','/');if($r -notmatch '" .. P.SKIP .. "'){"
+        .. "(Get-FileHash -A SHA256 -LiteralPath $_.FullName).Hash+' '+$r}});"
+        .. "[Array]::Sort($l,[StringComparer]::Ordinal);"
+        .. "[BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash("
+        .. "[Text.Encoding]::UTF8.GetBytes(($l -join \"`n\")+\"`n\"))).Replace('-','')"
+end
 
 --- WHERE THE LOGS LIVE, asked once and remembered (4 Oct 2026).
 ---
@@ -138,3 +166,5 @@ function P.Rows()
     end)
     return out
 end
+
+ns.parts["Core/Report.lua"] = "0.1.0"

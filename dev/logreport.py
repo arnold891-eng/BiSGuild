@@ -51,7 +51,9 @@ def load_kinds(path=LIST):
                 if not line:
                     continue
                 parts = line.split(None, 1)
-                if len(parts) == 2 and parts[0] in ("flask", "elixir", "scroll", "food"):
+                # potion: a CAST inside a boss pull (health/mana potions, healthstones, runes) -
+                # the old raid-prep sheet's rule; drunk between pulls does not count
+                if len(parts) == 2 and parts[0] in ("flask", "elixir", "scroll", "food", "potion"):
                     kinds[parts[1].strip().lower()] = parts[0]
     except OSError:
         pass
@@ -61,6 +63,85 @@ def load_kinds(path=LIST):
 def short(name):
     """Kumlust-Dreamscythe-US -> Kumlust."""
     return name.split("-", 1)[0].strip('"')
+
+
+def brackets(body):
+    """The top-level [...] groups of a COMBATANT_INFO line, in order: talents, gear, auras (Forever,
+    measured 16 Oct 2026 on Arn's 5 Oct log). Nested (...) tuples stay inside their bracket."""
+    out, depth, start = [], 0, None
+    for i, ch in enumerate(body):
+        if ch == "[":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "]":
+            depth -= 1
+            if depth == 0 and start is not None:
+                out.append(body[start:i + 1])
+                start = None
+    return out
+
+
+# THE SLOTS, in the order COMBATANT_INFO writes them (WoW's inventory order, 1-19)
+SLOTS = ["head", "neck", "shoulder", "shirt", "chest", "waist", "legs", "feet", "wrist", "hands",
+         "finger1", "finger2", "trinket1", "trinket2", "back", "mainhand", "offhand", "ranged", "tabard"]
+
+
+def gear_of(body):
+    """What a raider wore at the pull (Arn, 16 Oct: "type a raider name, show the gear they have").
+    COMBATANT_INFO's gear bracket: 19 of (itemId, itemLevel, (permanent, temporary, onUse), (bonus
+    ids), (gem ids)). The TEMPORARY enchant is the weapon's oil or stone - the old raid-prep sheet's
+    weapon check, read from the same line. Returns [[id, ilvl, enchant, temp, gems], ...] or None."""
+    import json
+    b = brackets(body)
+    if len(b) < 3:
+        return None
+    try:
+        raw = json.loads(b[-2].replace("(", "[").replace(")", "]"))
+    except ValueError:
+        return None
+    out = []
+    for t in raw:
+        if not isinstance(t, list) or len(t) < 2:
+            out.append([0, 0, 0, 0, []])
+            continue
+        ench = t[2] if len(t) > 2 and isinstance(t[2], list) else []
+        gems = t[4] if len(t) > 4 and isinstance(t[4], list) else []
+        out.append([int(t[0] or 0), int(t[1] or 0), int(ench[0]) if len(ench) > 0 else 0,
+                    int(ench[1]) if len(ench) > 1 else 0, [int(g) for g in gems if g]])
+    return out if len(out) >= 16 else None
+
+
+GEARCHECK = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gearcheck.txt")
+
+
+def load_gearcheck(path=GEARCHECK):
+    """Which slots should carry an enchant - DATA, like the consumables (gearcheck.txt): what Forever
+    lets you enchant is the guild's call, not a rule in the code."""
+    want = []
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            for raw in fh:
+                line = raw.split("#", 1)[0].strip()
+                parts = line.split()
+                if len(parts) == 2 and parts[0] == "enchant" and parts[1] in SLOTS:
+                    want.append(parts[1])
+    except OSError:
+        pass
+    return want
+
+
+def issues_of(gear, want):
+    """The old sheet's red flags that a log can prove: an enchantable slot with an item and no
+    enchant. (Cheap enchants and wrong gems need a Forever enchant/gem list nobody has written.)"""
+    out = []
+    if not gear:
+        return out
+    for slot in want:
+        i = SLOTS.index(slot)
+        if i < len(gear) and gear[i][0] and not gear[i][2]:
+            out.append({"slot": slot, "item": gear[i][0], "what": "no enchant"})
+    return out
 
 
 def auras_of(line):
@@ -117,19 +198,47 @@ def main(path, kills_only=True, paste=False, review=False, write=False, include_
                 else:
                     f = body.split(",")
                     boss, size = (f[2].strip('"') if len(f) > 2 else "?"), 0
-                cur = {"boss": boss, "size": size, "kill": False, "who": {}}
+                cur = {"boss": boss, "size": size, "kill": False, "who": {}, "gear": {},
+                       "deaths": defaultdict(int), "pots": defaultdict(int)}
                 pulls.append(cur)
 
             elif event == "ENCOUNTER_END":
                 f = body.split(",")
                 if cur is not None:
                     cur["kill"] = len(f) > 5 and f[5].strip() == "1"
+                    # ENCOUNTER_END,id,"name",difficulty,size,success,fightTime(ms)
+                    try:
+                        cur["ms"] = int(f[6]) if len(f) > 6 else 0
+                    except ValueError:
+                        cur["ms"] = 0
                 cur = None
 
             elif event == "COMBATANT_INFO":
                 if cur is not None:
                     guid = body.split(",")[1]
                     cur["who"][guid] = auras_of(body)
+                    g = gear_of(body)
+                    if g:
+                        cur["gear"][guid] = g
+
+            elif event == "UNIT_DIED":
+                # UNIT_DIED,src..(4),destGUID,"destName",... - a raider dying INSIDE a pull
+                f = body.split(",")
+                if cur is not None and len(f) > 6 and f[5].startswith("Player-"):
+                    cur["deaths"][f[5]] += 1
+                    guid_name[f[5]] = short(f[6].strip('"'))
+
+            elif event == "SPELL_CAST_SUCCESS":
+                # ...,srcGUID,"srcName",..,spellId,"Spell Name" - a potion or healthstone used in a pull
+                f = body.split(",")
+                if len(f) > 10:
+                    try:
+                        names[int(f[9])] = f[10].strip('"')
+                    except ValueError:
+                        pass
+                    if cur is not None and f[1].startswith("Player-")                             and kinds.get(f[10].strip('"').lower()) == "potion":
+                        cur["pots"][f[1]] += 1
+                        guid_name[f[1]] = short(f[2].strip('"'))
 
             elif event.startswith("SPELL_") and "_AURA_" in event:
                 # ...,spellId,"Spell Name",school,TYPE - learn the name for the id
@@ -159,10 +268,31 @@ def main(path, kills_only=True, paste=False, review=False, write=False, include_
     present = defaultdict(int)
     prepared = defaultdict(int)
     unknown = defaultdict(set)
+    # THE RAIDER CARD'S NUMBERS (Arn, 16 Oct: "what we used to put into the raider sheet and lc
+    # sheet"): per raider this night - each consumable on its own, the weapon's oil or stone, the
+    # gear they wore, deaths and potions. Gear, deaths and potions read EVERY pull of the night (a
+    # wipe is still a death and still a potion); the consumables stay on the kills, as before.
+    detail = defaultdict(lambda: {"pulls": 0, "flask": 0, "elixir": 0, "food": 0, "weapon": 0,
+                                  "weaponSeen": 0, "pots": 0, "deaths": 0, "gear": None})
+    nightpulls = [p for p in pulls if include_dungeons or not (0 < p.get("size", 0) <= 5)]
+    for p in nightpulls:
+        for guid, n in p["deaths"].items():
+            detail[guid_name.get(guid, guid)]["deaths"] += n
+        for guid, n in p["pots"].items():
+            detail[guid_name.get(guid, guid)]["pots"] += n
+        for guid, g in p["gear"].items():
+            detail[guid_name.get(guid, guid)]["gear"] = g        # the last pull's gear wins
     for p in counted:
         for guid, auras in p["who"].items():
             who = guid_name.get(guid, guid)
             present[who] += 1
+            dt = detail[who]
+            dt["pulls"] += 1
+            g = p["gear"].get(guid)
+            if g and len(g) > 15 and g[15][0]:
+                dt["weaponSeen"] += 1
+                if g[15][3]:
+                    dt["weapon"] += 1
             flask = elixirs = food = 0
             for sid in auras:
                 nm = names.get(sid, "id %d" % sid)
@@ -180,6 +310,9 @@ def main(path, kills_only=True, paste=False, review=False, write=False, include_
                     unknown[nm].add(guid)
             if (flask or elixirs >= 2) and food:
                 prepared[who] += 1
+            dt["flask"] += 1 if flask else 0
+            dt["elixir"] += 1 if (not flask and elixirs >= 2) else 0
+            dt["food"] += 1 if food else 0
 
     if review:
         # EVERYTHING IT HAS NEVER BEEN TOLD ABOUT. A raid buff and an unlisted flask look the same
@@ -212,6 +345,8 @@ def main(path, kills_only=True, paste=False, review=False, write=False, include_
         "log": os.path.basename(path), "date": stamp,
         "zones": ", ".join(zones), "kills": total,
         "present": dict(present), "ready": dict(prepared),
+        "detail": {who: dict(d) for who, d in detail.items()},
+        "bosses": boss_night(nightpulls, guid_name),
     }
     write_history(path, nights)
 
@@ -234,10 +369,12 @@ def main(path, kills_only=True, paste=False, review=False, write=False, include_
     # A NIGHT IS EARNED BY HALF ITS KILLS. present*2 >= kills, never present >= kills/2: three kills
     # and one attendance is 1 against 1.5, and a raid record does not go near floating point.
     earned, seen_pulls, ready_pulls = defaultdict(int), defaultdict(int), defaultdict(int)
-    for d in days.values():
+    attended = defaultdict(list)                 # who -> the days they earned, for the raider card
+    for key, d in sorted(days.items()):
         for who, saw in d["present"].items():
             if saw * 2 >= d["kills"]:
                 earned[who] += 1
+                attended[who].append(key)
             seen_pulls[who] += saw
             ready_pulls[who] += d["ready"][who]
     raided = max(1, len(days))
@@ -247,6 +384,8 @@ def main(path, kills_only=True, paste=False, review=False, write=False, include_
         rows.append((who, round(100 * earned[who] / raided),
                      round(100 * ready_pulls[who] / seen_pulls[who]) if seen_pulls[who] else 0))
     rows.sort(key=lambda r: (-r[1], -r[2], r[0]))
+    cards = build_cards(nights, attended, load_gearcheck())
+    bosscards = build_bosses(nights)
 
     label = "boss kill" if kills_only else "pull"
     print("this log: %d %s(s): %s" % (total, label, ", ".join(zones)))
@@ -260,7 +399,8 @@ def main(path, kills_only=True, paste=False, review=False, write=False, include_
         print("BISGUILD1|" + "|".join("%s,%d,%d" % r for r in rows))
 
     if write:
-        wrote = write_data(rows, total, zones, path, raided)
+        wrote = write_data(rows, total, zones, path, raided, cards, sorted(days), bosscards,
+                           build_nightly(nights))
         print()
         if wrote:
             for w in wrote:
@@ -269,6 +409,102 @@ def main(path, kills_only=True, paste=False, review=False, write=False, include_
         else:
             print("no BiSGuild addon folder found to write into - is it deployed?")
     return 0
+
+
+def boss_night(nightpulls, guid_name):
+    """A BOSS IS A TICKER (Arn, 16 Oct: "we type in a boss name, it's like its own company ticker -
+    who and how many times they have downed the boss"). This night's pulls, kills, fastest kill, and
+    who stood in each kill."""
+    out = {}
+    for p in nightpulls:
+        b = out.setdefault(p["boss"], {"pulls": 0, "kills": 0, "best": 0, "killers": []})
+        b["pulls"] += 1
+        if p["kill"]:
+            b["kills"] += 1
+            ms = p.get("ms", 0)
+            if ms and (not b["best"] or ms < b["best"]):
+                b["best"] = ms
+            for guid in p["who"]:
+                b["killers"].append(guid_name.get(guid, guid))
+    return out
+
+
+def build_bosses(nights):
+    """ONE PAGE PER BOSS from every night on record: kills, wipes, the nights it died, the first
+    kill, the fastest, and how many times each raider was there for the kill."""
+    pages = {}
+    for n in sorted(nights.values(), key=lambda n: (n.get("date") or n["log"])):
+        date = n.get("date") or n["log"]
+        for boss, b in (n.get("bosses") or {}).items():
+            pg = pages.setdefault(boss, {"kills": 0, "wipes": 0, "best": 0, "first": None,
+                                         "nights": [], "killers": {}})
+            pg["kills"] += b["kills"]
+            pg["wipes"] += b["pulls"] - b["kills"]
+            if b["kills"]:
+                pg["first"] = pg["first"] or date
+                if date not in pg["nights"]:
+                    pg["nights"].append(date)
+            if b.get("best") and (not pg["best"] or b["best"] < pg["best"]):
+                pg["best"] = b["best"]
+            for who in b.get("killers", []):
+                pg["killers"][who] = pg["killers"].get(who, 0) + 1
+    return pages
+
+
+NIGHT_FIELDS = ("present", "ready", "pulls", "flask", "elixir", "food", "weapon", "weaponSeen", "pots", "deaths")
+
+
+def build_nightly(nights):
+    """EVERY RAID DAY AS ONE RECORD - what BiS Guild keeps in its saved variables and shares with the
+    guild (Arn, 16 Oct: "if I miss one raid night what stops the addon from updating"). Logs from one
+    date are added together, the same rule the attendance count uses. Gear is not in here: only the
+    latest matters, and the cards carry it."""
+    out = {}
+    for n in sorted(nights.values(), key=lambda n: (n.get("date") or n["log"])):
+        date = n.get("date") or n["log"]
+        d = out.setdefault(date, {"kills": 0, "raiders": {}, "bosses": {}})
+        d["kills"] += n["kills"]
+        detail = n.get("detail") or {}
+        for who in set(n["present"]) | set(detail):
+            r = d["raiders"].setdefault(who, {k: 0 for k in NIGHT_FIELDS})
+            r["present"] += n["present"].get(who, 0)
+            r["ready"] += n["ready"].get(who, 0)
+            for k in NIGHT_FIELDS[2:]:
+                r[k] += (detail.get(who) or {}).get(k, 0)
+        for boss, b in (n.get("bosses") or {}).items():
+            pb = d["bosses"].setdefault(boss, {"pulls": 0, "kills": 0, "best": 0, "killers": []})
+            pb["pulls"] += b["pulls"]
+            pb["kills"] += b["kills"]
+            if b.get("best") and (not pb["best"] or b["best"] < pb["best"]):
+                pb["best"] = b["best"]
+            pb["killers"].extend(b.get("killers", []))
+    for d in out.values():
+        for pb in d["bosses"].values():
+            pb["killers"].sort()          # one order, so both readers and every copy say the same
+    return out
+
+
+def build_cards(nights, attended, want):
+    """ONE CARD PER RAIDER, from every night on record: the gear from the latest night they were
+    seen in, its red flags, the nights they attended, their latest night's consumables, and deaths
+    and potions over the whole record."""
+    cards = {}
+    for n in sorted(nights.values(), key=lambda n: (n.get("date") or n["log"])):
+        date = n.get("date") or n["log"]
+        for who, d in (n.get("detail") or {}).items():
+            c = cards.setdefault(who, {"deaths": 0, "pots": 0, "last": None, "gear": None, "gearDate": None})
+            c["deaths"] += d.get("deaths", 0)
+            c["pots"] += d.get("pots", 0)
+            if d.get("pulls"):
+                c["last"] = {k: d.get(k, 0) for k in
+                             ("pulls", "flask", "elixir", "food", "weapon", "weaponSeen", "pots", "deaths")}
+                c["last"]["date"] = date
+            if d.get("gear"):
+                c["gear"], c["gearDate"] = d["gear"], date
+    for who, c in cards.items():
+        c["attended"] = list(attended.get(who, []))
+        c["issues"] = issues_of(c["gear"], want)
+    return cards
 
 
 def history_path(log_path):
@@ -347,7 +583,31 @@ def game_roots(log_path=None):
     return out
 
 
-def write_data(rows, kills, zones, log_path=None, nights=1):
+def lua_val(v, ind=""):
+    """Any of the card's values as Lua: numbers, strings, lists, string-keyed tables."""
+    if v is None:
+        return "nil"
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, (int, float)):
+        return str(v)
+    if isinstance(v, str):
+        return lua_str(v)
+    if isinstance(v, (list, tuple)):
+        return "{ " + ", ".join(lua_val(x, ind) for x in v) + " }"
+    if isinstance(v, dict):
+        inner = ind + "    "
+        parts = []
+        for k in sorted(v, key=str):
+            if v[k] is None:
+                continue
+            key = k if re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", str(k)) else "[%s]" % lua_str(k)
+            parts.append("%s%s = %s," % (inner, key, lua_val(v[k], inner)))
+        return "{\n" + "\n".join(parts) + "\n" + ind + "}"
+    return lua_str(v)
+
+
+def write_data(rows, kills, zones, log_path=None, nights=1, cards=None, days=None, bosses=None, nightly=None):
     """Write Data/Report.lua into each installed copy.
 
     Arn: "am I expected to copy and paste a whole 108mb of text into a text box in wow?" No - and
@@ -371,6 +631,12 @@ def write_data(rows, kills, zones, log_path=None, nights=1):
     for name, att, con in rows:
         body.append("        { name = %s, attend = %d, consumes = %d }," % (lua_str(name), att, con))
     body.append("    },")
+    # the raid days on record, and one card per raider (BiSGuild's raider terminal reads these)
+    body.append("    days = %s," % lua_val(list(days or [])))
+    body.append("    cards = %s," % lua_val(cards or {}, "    "))
+    body.append("    bosses = %s," % lua_val(bosses or {}, "    "))
+    # every raid day as one record: what the addon keeps and shares with the guild
+    body.append("    nightly = %s," % lua_val(nightly or {}, "    "))
     body.append("}")
     text = "\n".join(body) + "\n"
 

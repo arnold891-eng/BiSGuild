@@ -117,7 +117,8 @@ function U.Build()
 
     local bg = f:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
-    bg:SetColorTexture(0, 0, 0, 0.82)
+    -- nearly solid (16 Oct): at 0.82 the terminal behind it read through its lower half
+    bg:SetColorTexture(0, 0, 0, 0.96)
 
     local head = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     head:SetPoint("TOPLEFT", 12, -10)
@@ -143,17 +144,9 @@ function U.Build()
     -- ESCAPE CLOSES IT, the house way (Arn: "esc does not close this window"). NOT via
     -- UISpecialFrames: that list is also what CloseAllWindows() empties, so a window added to it to
     -- get one keybind is SHUT every time the player opens their spellbook. Handle the key here and
-    -- swallow only ESCAPE - propagate everything else, or typing stops reaching chat.
-    f:EnableKeyboard(true)
-    f:SetPropagateKeyboardInput(true)
-    f:SetScript("OnKeyDown", function(self, key)
-        if key == "ESCAPE" then
-            self:SetPropagateKeyboardInput(false)
-            U.Hide()
-        else
-            self:SetPropagateKeyboardInput(true)
-        end
-    end)
+    -- swallow only ESCAPE - propagate everything else, or typing stops reaching chat. Combat-safe
+    -- (16 Oct, ADDON_ACTION_BLOCKED in a fight): Init.lua's ns.EscKeys.
+    ns.EscKeys(f, function() U.Hide() end)
 
     -- A WAY BACK. Arn: "no way to go back from this screen". Pressing "I understand" was one-way,
     -- so the warning and the hash check - the only safety on the page - could be read exactly once
@@ -275,8 +268,8 @@ function U.Build()
         .. T().text("accent", "Only run it if you got BiSGuild from CurseForge or from your own officers.")
         .. "\nIf somebody sent you a copy, do not run it - not even if they seem helpful. Where you\n"
         .. "got it is the check that actually matters.\n\n"
-        .. "You can also compare this copy against the hash on our CurseForge page. A faked addon\n"
-        .. "would show you a faked hash here too, so that check only means something against the\n"
+        .. "You can also compare this copy against the fingerprint on our CurseForge page. A faked\n"
+        .. "addon would show you a faked one here too, so that check only means something against the\n"
         .. "page - never against the number this window shows you.")
 
     local okb = CreateFrame("Button", nil, warn, "UIPanelButtonTemplate")
@@ -306,7 +299,7 @@ function U.Build()
     -- about itself and - worse - it was a FontString, which cannot be selected. A line of shell you
     -- can read and cannot copy is a dead end dressed as an instruction.
     f.hashWhat = warn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    f.hashWhat:SetPoint("BOTTOMLEFT", 14, 86)
+    f.hashWhat:SetPoint("BOTTOMLEFT", 14, 122)   -- over the check line, which is five lines of shell now (16 Oct)
     f.hashWhat:SetPoint("RIGHT", warn, "RIGHT", -14, 0)
     f.hashWhat:SetJustifyH("LEFT")
     f.hashWhat:SetText("")
@@ -328,7 +321,7 @@ function U.Build()
     f.hashLine = CreateFrame("EditBox", nil, warn)
     f.hashLine:SetPoint("BOTTOMLEFT", 14, 44)
     f.hashLine:SetPoint("RIGHT", warn, "RIGHT", -14, 0)
-    f.hashLine:SetHeight(38)
+    f.hashLine:SetHeight(74)
     f.hashLine:SetMultiLine(true)
     f.hashLine:SetAutoFocus(false)
     f.hashLine:SetTextInsets(34, 6, 2, 2)   -- room for the PS> label beside it
@@ -514,17 +507,18 @@ function U.Refresh()
     if U.hash then
         -- NOTHING BUT THE COMMAND goes in the box: whatever is in there is what gets pasted into a
         -- shell, and a prompt pasted with it is an error message.
-        local want = ('Get-FileHash -Algorithm SHA256 "%s"'):format(P.ScriptPath() or "...")
+        -- the whole addon, by a line of plain PowerShell (Core/Report.lua P.CheckCommand, 16 Oct)
+        local want = P.CheckCommand() or "..."
         if U.typeTarget ~= want then U.TypeOut(want) end
         f.hashLine:Show()
         f.hashPrompt:SetText("PS>")
         -- THREE SENTENCES, because a command with no instruction is a thing people stare at. Arn,
         -- at exactly this line: "what do i do with this".
         f.hashWhat:SetText(
-            T().text("accent", "Click the line below to copy it,") .. " paste it into PowerShell,\n"
-            .. "and compare the answer with the hash on our CurseForge page. "
+            T().text("accent", "Click the line below to copy it,") .. " paste it into PowerShell, and compare\n"
+            .. "the answer with the number on our CurseForge page (it has this same line). "
             .. T().text("warn", "Not with this addon") .. " -\n"
-            .. "a faked copy would show you a faked hash here too.")
+            .. "a faked copy would show you a faked number here too.")
     else
         U.TypeOut(nil)
         f.hashLine:Hide()
@@ -564,10 +558,17 @@ function U.Refresh()
 end
 
 function U.Show()
+    if ns.TellBroken() then return false end    -- not a whole copy: Core/Copies.lua
     local f = U.Build()
     if not f then return false end
     U.Refresh()
     f:Show()
+    -- IN FRONT, WHOLE (Arn, 16 Oct: "this windows kinda get overlapping"). The terminal opens this
+    -- from its LOG tab, and two windows on the same strata interleave their pieces - the terminal's
+    -- ticker bar drew across this one. Toplevel + Raise is the client's own answer: the window you
+    -- opened or clicked last is on top, all of it.
+    if f.SetToplevel then f:SetToplevel(true) end
+    if f.Raise then f:Raise() end
     return true
 end
 
@@ -580,3 +581,5 @@ function U.Toggle()
     U.Show()
     return true
 end
+
+ns.parts["Core/Window.lua"] = "0.1.0"

@@ -1,66 +1,100 @@
-# BiSGuild — the CurseForge page
+# BiS Guild — CurseForge page text
 
-Paste this into the project description when the version changes. **The hash block must be updated
-every release** — that is the whole point of it: the number on this page is one that whoever hands
-you a doctored copy of the addon does not control.
+Paste everything below the line into the project description, in the Markdown editor. **The check
+block's number changes every release** — `.\Tools\stamp.ps1` rewrites it here; paste the page again
+when the version goes up. The number on the live page is the one a faker cannot reach, so a stale
+one there is worse than none.
 
-Regenerate with `.\Tools\stamp.ps1`.
+In the house voice (`_bisdev/docs/voice.md`): the opener and the script section talk; lists stay flat.
+
+**Name:** BiS Guild
+**Summary (the one-liner):** Your guild's raid record, read from the combat log: who showed, who came prepared, who's late, who's geared. For WoW Forever.
 
 ---
 
-## ⚠️ This addon comes with a PowerShell script. Read this.
+# BiS Guild
 
-BiSGuild works out raid attendance and consumables from **your own combat log**. A World of Warcraft
-addon is not allowed to read files off your disk — that rule is what stops addons rifling through
-your documents, and it is a good rule. So the reading is done by a small PowerShell script that
-ships inside the addon, and the addon just tells you the command to run it.
+**Your guild's raid record, read from the combat log. For WoW Forever.**
 
-**A PowerShell script can do anything you can do on your computer.** Only run this one if you got
-BiSGuild from this CurseForge page or from your own guild officers. **If somebody sent you a copy,
-do not run it** — however helpful they seem. That is the check that actually matters; everything
-below is a second line of defence.
+Loot night. Two raiders want the same trinket. One has been to every raid this month, flasked, on time. The other hasn't. Everyone in the room thinks they remember which is which. BiS Guild doesn't remember. It read the log.
 
-### Checking your copy has not been tampered with
+## What you get
 
-In PowerShell:
+`/bisg` opens the raider terminal. Five tabs.
 
-    Get-FileHash -Algorithm SHA256 "<your WoW folder>\Interface\AddOns\BiSGuild\Tools\logreport.ps1"
+- **RAIDERS** — everyone who has raided with you: attendance, last raid, flask or elixirs, deaths, and gear issues in red, like a slot that should be enchanted and isn't. Sorted by class the way a raid sheet reads, pugs at the bottom. Click a name for their whole card.
+- **BOSSES** — every boss you've killed: kills, wipes, your best time, the night it first died, and who was there.
+- **WHERE** — your guildmates on a map, right now. Click one and the map opens on their zone. With OpenMap installed, one button opens it there.
+- **ROSTER** — paste the Raid-Helper sign-up and see who's online, who's absent, who isn't in the guild. One button invites everyone online.
+- **LOG** — where the numbers come from (below).
+
+Hover any item for its tooltip, enchant included. Right-click any name for the game's own player menu. Esc steps back a page; keep pressing and it closes.
+
+## Raid night, handled
+
+- **The raid at a glance.** Title, start time, a countdown, and how many sign-ups are online.
+- **A pop-up when a sign-up logs in**, with an invite button on it. From two hours before the raid until four hours after.
+- **Punctuality.** On time, late and by how long, or a no-show, kept raid after raid. "Late twice in eight" says more than one bad night. An invite that went out late is never held against the raider.
+- **Loot.** Every award goes into a tamper-evident ledger, kept per guild. `/bisl` shows it.
+
+## Shared with your officers
+
+Any officer who reads a log hands the night to everyone else in the guild. Miss a raid and your copy still fills in. Nights, gear and punctuality are only taken from officers, so nobody can write themselves into the record. The guild master sets who counts as an officer once, with one line in the Guild Information text.
+
+Your alts keep their own books. A character in another guild sees that guild's record, never your main's.
+
+## The numbers come from your combat log
+
+An addon isn't allowed to read files off your disk, and that's a good rule. So BiS Guild ships a small PowerShell script that reads the log for you. `/bisg logs <your Logs folder>` once. After a raid, `/bisg script` gives you the line to run. `/reload` and the night is in. Nothing to paste, nothing uploaded anywhere.
+
+- **Attendance**: a raid night counts if you were there for at least half its boss kills. Leaving at nine for a sick kid doesn't cost you the night.
+- **Consumables**: at each pull, a flask (or a battle and a guardian elixir) and food.
+- **Gear**: what each raider wore at the pull, straight from the log. No inspecting.
+
+A 110 MB log takes seconds. It reads one line at a time, and only the logs it hasn't read yet.
+
+## ⚠️ Before you run the script
+
+**A PowerShell script can do anything you can do on your computer.** Only run this one if you got BiS Guild from this page or from your own officers. **If somebody sent you a copy, don't run it**, however helpful they seem. Where you got it is the check that matters. Everything below is the second line.
+
+### Check your copy
+
+One number covers every file of the addon. Change one letter anywhere, add a file or take one away, and it changes. Copy this line, put your WoW folder where it says, and paste it into PowerShell. It only reads; it changes nothing.
+
+    $a='<your WoW folder>\Interface\AddOns\BiSGuild';$l=[string[]](ls -LiteralPath $a -Recurse -File|%{$r=$_.FullName.Substring($a.Length+1).Replace('\','/');if($r -notmatch '(^|/)\.|\.md$|^(Data/Report\.lua|Core/Build\.lua|Tools/manifest\.txt)$'){(Get-FileHash -A SHA256 -LiteralPath $_.FullName).Hash+' '+$r}});[Array]::Sort($l,[StringComparer]::Ordinal);[BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes(($l -join "`n")+"`n"))).Replace('-','')
 
 The answer must be exactly this, for **the current version**:
 
-    SHA-256   BBFE79CFAD1180A03054E72B4BFFFFA54742C28196BC1981F268EA0D91B4C827
+    Fingerprint   D0375501644F887783CC69320842BDA7696F962DE882782BFE520070D68B3F33
 
-`/bisg script` in game also shows a number — but **compare against this page, not against that**.
-Whoever tampers with the script can change the number the addon shows you just as easily, and then
-both of them agree and you feel like you checked something. **The only number that helps is this
-one, because it is the one they cannot edit.** If what `Get-FileHash` tells you differs from the
-line above, **stop** and ask an officer.
+The addon shows you a number too. **Compare with this page, not with that.** Whoever doctors a copy can change what the addon shows just as easily. If your answer differs, stop and ask an officer.
 
-What this does and does not prove, plainly:
+The addon checks itself as well:
 
-- It catches somebody swapping **only the script** inside an otherwise real addon.
-- It catches a half-finished or corrupted download.
-- It does **not** catch somebody giving you a completely fake BiSGuild, because they would change
-  the number in it too. Nothing inside a file can prove the file is genuine. Where you got it is the
-  only real answer — which is why that is the first thing this page says.
+- **The script won't run** on a copy whose files don't match the list it shipped with. It names the file that's wrong.
+- **In game**, a file that's missing, broke while loading, or is left over from an older version switches BiS Guild off and says which.
+- **Your guild checks too.** Each copy tells your guildmates its version and fingerprint at login. Yours tells you if it differs from everyone else's or is out of date. `/bisg copy` shows how yours compares; officers see who runs what.
 
----
+What none of this can catch is a completely fake BiS Guild. A fake controls everything it shows you, its checks included. Nothing inside a file can prove the file is genuine. That's why this section starts with where you got it.
 
-## What it does
+## Works with
 
-- **Attendance** — a raid night is earned by being there for at least half its boss kills. Life
-  happens; leaving at nine for a sick child does not cost you the night.
-- **Consumables** — at each pull, did you have a flask (or a battle and a guardian elixir) and food.
-- **Tonight is never in the numbers.** Whoever is rolling on loot is standing in the raid by
-  definition, so the record is what they did *before* tonight. The night joins once it ends.
+- **BiS Tools** — when it's installed, invites go through its party list. Without it, BiS Guild invites on its own.
+- **OpenMap** — when it's installed, the WHERE tab can open a guildmate's spot in it.
+- **Other addons** can read the record through `BiSGuildAPI`.
 
-Both come from the combat log, so they say what happened, not what anyone remembers.
+Neither is needed. BiS Guild works alone.
 
-## Setting it up
+## Commands
 
-1. `/bisg logs <paste the path to your WoW Logs folder>` — once, ever.
-2. After a raid, `/bisg script` and run the line it gives you.
-3. `/reload`, then `/bisg report`.
+| | |
+|---|---|
+| `/bisg` | open the terminal |
+| `/bisg logs <path>` | tell it where your Logs folder is, once |
+| `/bisg script` | the line to run after a raid |
+| `/bisg copy` | is this copy whole, and does it match your guild's |
+| `/bisg logins on` / `off` | the pop-up when a sign-up logs in |
+| `/bisg dots on` / `off` | guildmates on the world map |
+| `/bisl` | the loot ledger |
 
-Nothing is typed into a box in game and nothing is uploaded anywhere. The script reads the newest
-log on your own disk and writes the two percentages into the addon.
+Part of the BiS family. Talks to the other BiS addons over one shared channel; `/biscomm off` silences it.

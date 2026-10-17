@@ -1,18 +1,26 @@
 ## Interface: 20506, 16001
-## Title: |cffb980ffBiS|r Guild
+## Title: |cffb980ffBiS>|rGuild
 ## Category: |cffb980ffBiS>|rAddons
 ## IconTexture: Interface\Icons\INV_Shirt_GuildTabard_01
 ## Notes: Raid attendance and consumables, measured instead of remembered.
 ## Author: Arn
-## Version: 0.0.1
+## Version: 0.1.0
 ## SavedVariables: BiSGuildDB
 ## OptionalDeps: BiSTheme
 ## DefaultState: enabled
-## X-Curse-Project-ID: 0
+## X-Curse-Project-ID: 1749365
 ## X-CurseForge-GameVersionType: Burning Crusade
 
 Libs\BiSTheme\Console.lua
 Libs\LibBiSComm-1.0\LibBiSComm-1.0.lua
+Libs\LibBiSLedger-1.0\LibBiSLedger-1.0.lua
+Libs\LibStub\LibStub.lua
+Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
+Libs\HereBeDragons\HereBeDragons-2.0.lua
+Libs\HereBeDragons\HereBeDragons-Pins-2.0.lua
+
+# What this copy says it is - written by Tools\stamp.ps1, checked by Core\Copies.lua
+Core\Build.lua
 
 # Written by dev/logreport.py --write, never by hand and never committed: it is raid data, not
 # source. A file named here that does not exist is skipped by the client, so a fresh install and a
@@ -21,5 +29,15 @@ Data\Report.lua
 
 Core\Init.lua
 Core\Report.lua
+Core\Store.lua
+Core\Share.lua
+Core\Copies.lua
 Core\Window.lua
+Core\Terminal.lua
+Core\Where.lua
+Core\Pins.lua
+Core\Invite.lua
+Core\Logins.lua
+Core\Loot.lua
+API.lua
 Core\Say.lua
