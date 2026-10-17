@@ -1,2 +1,7 @@
 * text=auto eol=lf
 *.ps1 text eol=crlf
+# BiSGuild's fingerprint (Tools\fingerprint.ps1) hashes every file's exact bytes, so git must never
+# rewrite a line ending here. It was: logreport.ps1 was LF on Arn's disk and CRLF in every checkout on
+# GitHub - the same script, two hashes. Now every copy (Arn's, CI's, the CurseForge zip) is the
+# repository's bytes exactly. This line wins over the two above.
+* -text

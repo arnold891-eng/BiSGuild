@@ -12,8 +12,17 @@ Read ../_bisdev/CLAUDE.md first.
   the script and loaded like any other file, so `/reload` IS the import - nothing is typed or pasted.
   Also remembers where the player's Logs folder is (asked once) and builds the PowerShell line from
   it: `Logs` and `Interface` are SIBLINGS inside the client folder, so dropping `\Logs` is the whole
-  derivation and it works at any depth. Carries `P.SCRIPT_SHA`, which is **not** proof of anything on
-  its own - a faked addon fakes it too; the CurseForge page is the only number worth comparing.
+  derivation and it works at any depth. Builds the one-line check (`P.CheckCommand`, rule `P.SKIP`).
+- **The fingerprint (16 Oct 2026).** One SHA-256 for every shipped file: `Tools/fingerprint.ps1` says
+  which files and why, `Tools/stamp.ps1` writes it into `Tools/manifest.txt`, `Core/Build.lua`,
+  `dev/cf-desc.md` and the CHANGELOG's top entry. **Run `Tools\stamp.ps1` after ANY change to a
+  shipped file or the version** - the suite works the number out again on its own and goes red
+  until you do. `logreport.ps1` refuses to run on a copy whose files do not match. Every Lua file of
+  ours ENDS with `ns.parts["<path>"] = "<version>"` (stamp rewrites it); `Core/Copies.lua` checks
+  them at login and switches a copy that is not whole off, and swaps version + fingerprint with
+  guildmates (GLOG `BUILD`, `/bisg copy`). `.gitattributes` says `* -text`: the hash is of exact
+  bytes, so git must never touch line endings. None of it proves a wholly fake addon is fake - only
+  the CurseForge page's own line and number can, and the addon says so.
 - `Core/Window.lua`: the window. A terminal, on purpose (Arn: "the more we make it look like a
   powershell window the better"): PowerShell's own `#012456`, Arial Narrow, a `PS>` prompt, a cursor
   blinking at 2 Hz. **The command does not exist until the warning is answered** - the box is empty

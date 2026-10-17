@@ -113,12 +113,18 @@ function ns.Say(cmd, rest)
         -- A check an attacker controls both ends of is WORSE than no check, because it manufactures
         -- confidence. So the number below is not presented as proof of anything: the comparison
         -- that counts is against the CurseForge page, which is the one thing they cannot edit.
-        ns.Print("  %s", T.text("muted", "To check this copy, run this and compare the answer with"
-            .. " the hash on our CurseForge page - NOT with the number below:"))
-        ns.Print("Get-FileHash -Algorithm SHA256 \"%s\"", P.ScriptPath() or "...")
-        ns.Print("  %s %s", T.text("muted", "this copy says"), T.text("accent", P.SCRIPT_SHA))
+        -- THE WHOLE ADDON, CHECKED BY A LINE THAT IS NOT OURS (16 Oct 2026, Core/Copies.lua): the
+        -- check is plain PowerShell hashing the folder itself, and the CurseForge page carries the
+        -- same line - which is the copy to take it from.
+        ns.Print("  %s", T.text("muted", "To check this copy, take the check line from our CurseForge page"
+            .. " (this is the same line), run it, and compare the answer with the number on that page -"
+            .. " NOT with the number below:"))
+        ns.Print("%s", P.CheckCommand() or "...")
+        ns.Print("  %s %s", T.text("muted", "this copy says"), T.text("accent", P.Fingerprint() or "no fingerprint"))
         ns.Print("  %s", T.text("warn", "A faked addon would show you a faked number here too, so"
             .. " these two agreeing proves nothing on its own. Only the CurseForge page does."))
+        ns.Print("  %s", T.text("muted", "The script also checks every file itself and will not run on a"
+            .. " copy that does not match. /bisg copy: how your copy compares with your guild's."))
         ns.Print(" ")
         ns.Print("then, after a raid, this - and /reload:")
         ns.Print("%s", line)
@@ -177,3 +183,5 @@ function ns.Say(cmd, rest)
     end
     return ns.Say("report")
 end
+
+ns.parts["Core/Say.lua"] = "0.0.1"

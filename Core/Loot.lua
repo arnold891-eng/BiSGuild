@@ -271,3 +271,5 @@ f:SetScript("OnEvent", function(_, event)
         LT.ImportBiSLoot()
     end
 end)
+
+ns.parts["Core/Loot.lua"] = "0.0.1"

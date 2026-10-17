@@ -1134,6 +1134,7 @@ function K.Go(line)
 end
 
 function K.Show(page, key)
+    if ns.TellBroken() then return end           -- not a whole copy: Core/Copies.lua
     local f = K.Build()
     if not f then return end
     -- a window opened fresh has nothing behind it: ESC from `/bisg alice` goes to the raiders list,
@@ -1166,3 +1167,5 @@ end
 function K.Toggle()
     if K.frame and K.frame:IsShown() then K.Hide() else K.Show() end
 end
+
+ns.parts["Core/Terminal.lua"] = "0.0.1"

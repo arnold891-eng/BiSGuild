@@ -213,6 +213,8 @@ end
 --------------------------------------------------------------------
 
 function X.Send(cmd, ...)
+    -- a copy that is not whole shares nothing but the fact (Core/Copies.lua)
+    if ns.broken and cmd ~= "BUILD" then return end
     X.out[#X.out + 1] = { cmd, ... }
     X.Pump()
 end
@@ -521,3 +523,5 @@ f:SetScript("OnEvent", function(_, event, isLogin, isReload)
         After(30 + math.random() * 30, X.Announce)
     end
 end)
+
+ns.parts["Core/Share.lua"] = "0.0.1"

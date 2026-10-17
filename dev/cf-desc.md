@@ -22,27 +22,38 @@ below is a second line of defence.
 
 ### Checking your copy has not been tampered with
 
-In PowerShell:
+One number covers **every file** of the addon. Change one letter anywhere, add a file or take one
+away, and it changes. Copy this line, put your WoW folder where it says, and paste it into
+PowerShell (it only reads; it changes nothing):
 
-    Get-FileHash -Algorithm SHA256 "<your WoW folder>\Interface\AddOns\BiSGuild\Tools\logreport.ps1"
+    $a='<your WoW folder>\Interface\AddOns\BiSGuild';$l=[string[]](ls -LiteralPath $a -Recurse -File|%{$r=$_.FullName.Substring($a.Length+1).Replace('\','/');if($r -notmatch '(^|/)\.|\.md$|^(Data/Report\.lua|Core/Build\.lua|Tools/manifest\.txt)$'){(Get-FileHash -A SHA256 -LiteralPath $_.FullName).Hash+' '+$r}});[Array]::Sort($l,[StringComparer]::Ordinal);[BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes(($l -join "`n")+"`n"))).Replace('-','')
 
 The answer must be exactly this, for **the current version**:
 
-    SHA-256   BBFE79CFAD1180A03054E72B4BFFFFA54742C28196BC1981F268EA0D91B4C827
+    Fingerprint   E22C6B157846971787956C3B647D7A6F9522BA658D7102423CF5FF3B81E72C7C
+`/bisg script` in game shows the same line and a number too — but **take the line from this page and
+compare against this page**. Whoever doctors a copy can change what the addon shows you just as
+easily, and then both agree and you feel like you checked something. **The only number that helps is
+this one, because it is the one they cannot edit.** If your answer differs, **stop** and ask an
+officer.
 
-`/bisg script` in game also shows a number — but **compare against this page, not against that**.
-Whoever tampers with the script can change the number the addon shows you just as easily, and then
-both of them agree and you feel like you checked something. **The only number that helps is this
-one, because it is the one they cannot edit.** If what `Get-FileHash` tells you differs from the
-line above, **stop** and ask an officer.
+The addon checks itself as well, three ways:
+
+- **The script refuses to run** on a copy whose files do not match the list it shipped with, and
+  says which file is wrong.
+- **In game**, a file that is missing, broke while loading, or is left over from an older version
+  switches BiS Guild off and says which.
+- **Your guild**: every copy tells your guildmates its version and fingerprint at login. Yours tells
+  you if it is different from everyone else's, or older; officers can see who runs what (`/bisg copy`).
 
 What this does and does not prove, plainly:
 
-- It catches somebody swapping **only the script** inside an otherwise real addon.
-- It catches a half-finished or corrupted download.
-- It does **not** catch somebody giving you a completely fake BiSGuild, because they would change
-  the number in it too. Nothing inside a file can prove the file is genuine. Where you got it is the
-  only real answer — which is why that is the first thing this page says.
+- It catches a swapped, added or missing file, and a half-finished, half-updated or corrupted
+  download.
+- It does **not** catch somebody giving you a completely fake BiSGuild: they would change every
+  number in it, and its checks would tell you everything is fine. Nothing inside a file can prove
+  the file is genuine. Where you got it is the only real answer — which is why that is the first
+  thing this page says.
 
 ---
 
@@ -59,8 +70,4 @@ Both come from the combat log, so they say what happened, not what anyone rememb
 ## Setting it up
 
 1. `/bisg logs <paste the path to your WoW Logs folder>` — once, ever.
-2. After a raid, `/bisg script` and run the line it gives you.
-3. `/reload`, then `/bisg report`.
-
-Nothing is typed into a box in game and nothing is uploaded anywhere. The script reads the newest
-log on your own disk and writes the two percentages into the addon.
+2

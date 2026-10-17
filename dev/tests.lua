@@ -247,8 +247,9 @@ do
     U.Refresh()
     H.ok(U.typeTarget and U.typeTarget:find("Get-FileHash", 1, true) ~= nil,
          "asked for, it is there", tostring(U.typeTarget))
-    H.ok(U.typeTarget:find(P.ScriptPath(), 1, true) ~= nil,
-         "and checks the same file the command runs")
+    H.ok(U.typeTarget:find("$a='" .. P.AddonPath() .. "'", 1, true) ~= nil,
+         "and checks the folder the command runs from - the whole addon, not one file (16 Oct)")
+    H.eq(U.typeTarget, P.CheckCommand(), "it is the one-line check, exactly")
     -- THE PROMPT IS A LABEL, NOT PART OF THE TEXT (5 Oct 2026). It used to be inside the copied
     -- string, so pasting into PowerShell gave:
     --
@@ -258,7 +259,7 @@ do
     -- copied is not a decoration, it is a bug with a font.
     H.ok(U.typeTarget:find("PS>", 1, true) == nil,
          "the prompt is NOT in the copyable text", U.typeTarget)
-    H.ok(U.typeTarget:match("^Get%-FileHash") ~= nil,
+    H.ok(U.typeTarget:match("^%$a='") ~= nil,
          "the line starts with the command itself", U.typeTarget)
     H.eq(f.hashPrompt:GetText(), "PS>", "the prompt is a label beside it, so it still reads as a shell")
 
@@ -429,9 +430,12 @@ do
     -- sent you this copy". "Paste this into PowerShell" is how people get robbed, and nothing in
     -- this addon can tell a good script from a bad one - so the warning is not optional decoration,
     -- it is the feature.
-    H.ok(type(P.SCRIPT_SHA) == "string", "the shipped script's hash is carried in the addon")
-    H.eq(#P.SCRIPT_SHA, 64, "a SHA-256 is 64 characters", tostring(#P.SCRIPT_SHA))
-    H.ok(P.SCRIPT_SHA:match("^%x+$") ~= nil, "and nothing but hex")
+    -- ONE NUMBER FOR THE WHOLE ADDON (16 Oct 2026). Arn: "we can do it like face fusion and there are
+    -- multiple places that need to match up for the hash to work". It was the script's hash alone.
+    local FP = NS.BUILD and NS.BUILD.fingerprint
+    H.ok(type(FP) == "string" and #FP == 64 and FP:match("^%x+$") ~= nil,
+         "the addon carries one fingerprint (Core/Build.lua): 64 hex", tostring(FP))
+    H.eq(P.Fingerprint(), FP and FP:upper(), "and shows it as it is")
 
     -- AND IT IS THE HASH OF THE SCRIPT WE ACTUALLY SHIP (5 Oct 2026). It was not: Arn ran the check,
     -- got BBFE79CF..., and the window said 64E58A59.... The one number on that page whose entire job
@@ -450,13 +454,111 @@ do
         H.eq(sha("abc"):lower(), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
              "and for \"abc\"")
 
-        local fh = io.open(HERE .. "/../Tools/logreport.ps1", "rb")
-        H.ok(fh ~= nil, "the shipped script is where the addon says it is")
-        if fh then
-            local body = fh:read("*a")
-            fh:close()
-            H.eq(sha(body):upper(), P.SCRIPT_SHA:upper(),
-                 "and P.SCRIPT_SHA is the hash of it - run Tools\\stamp.ps1 if this is red")
+        -- THE FINGERPRINT, WORKED OUT AGAIN HERE, ON ITS OWN. Tools\fingerprint.ps1 writes it and the
+        -- CurseForge page's line checks it; this is the third hand, so a mistake in one of them cannot
+        -- hide behind the others. Every place it is written must agree, or this is red - and a red
+        -- suite stops the release, so a stale number cannot reach CurseForge (it did, 5 Oct).
+        --
+        -- Pure-Lua SHA-256 over every file is ~15 s, so `sha256sum` does the files when it is there
+        -- (Git Bash, every Linux) - and only after it agrees with dev/sha256.lua on a real file.
+        local WIN = package.config:sub(1, 1) == "\\"
+        local NULL = WIN and "nul" or "/dev/null"
+        local function run(cmd)
+            local p = io.popen and io.popen(cmd .. " 2>" .. NULL)
+            if not p then return nil end
+            local s = p:read("*a")
+            p:close()
+            return s
+        end
+        local function q(path) return '"' .. path .. '"' end
+        local function slow(rel) return sha(bytes(ROOT .. "/" .. rel)):upper() end
+        local function quick(rel)
+            local out = run("sha256sum " .. q(ROOT .. "/" .. rel))
+            local h = out and out:match("^\\?(%x+)")
+            return h and #h == 64 and h:upper() or nil
+        end
+        local fast = quick("Libs/LibStub/LibStub.lua") == slow("Libs/LibStub/LibStub.lua")
+        if not fast then H.say("  (note) no sha256sum that agrees with dev/sha256.lua - hashing in Lua, slowly") end
+        local function hash(rel) return fast and quick(rel) or slow(rel) end
+
+        local listed = run("git -C " .. q(ROOT) .. " -c core.quotepath=off ls-files --cached --others --exclude-standard")
+        if not (listed and listed:find("BiSGuild.toc", 1, true)) then
+            H.say("  (note) git could not list the addon - the fingerprint is not worked out again here")
+        else
+            -- what ships: _bisdev/release/stage.ps1's rule; then what the fingerprint leaves out:
+            -- Tools/fingerprint.ps1's, written the Lua way (P.SKIP is the same rule as a pattern)
+            local NEVER = { dev = true, test = true, ["CLAUDE.md"] = true, [".pkgmeta"] = true }
+            local function out(rel)
+                local top = rel:match("^[^/]+")
+                if NEVER[top] or top:sub(1, 1) == "." then return true end
+                return rel:find("/%.") ~= nil or rel:lower():find("%.md$") ~= nil or rel == "Data/Report.lua"
+                    or rel == "Core/Build.lua" or rel == "Tools/manifest.txt"
+            end
+            local lines, seen = {}, {}
+            for rel in listed:gmatch("[^\r\n]+") do
+                if not seen[rel] and not out(rel) and bytes(ROOT .. "/" .. rel) then
+                    seen[rel] = true
+                    lines[#lines + 1] = hash(rel) .. " " .. rel
+                end
+            end
+            table.sort(lines)
+            local manifest = table.concat(lines, "\n") .. "\n"
+            H.ok(#lines >= 20, "the fingerprint covers every shipped file: " .. #lines)
+            H.ok(seen["Tools/logreport.ps1"] and seen["BiSGuild.toc"] and seen["Core/Copies.lua"],
+                 "the script, the TOC and the code among them")
+            H.eq(bytes(ROOT .. "/Tools/manifest.txt"), manifest,
+                 "Tools/manifest.txt lists exactly those files and their hashes - run Tools\\stamp.ps1 if this is red")
+            H.eq(sha(manifest):upper(), FP and FP:upper(),
+                 "and the fingerprint is the manifest's own hash - run Tools\\stamp.ps1 if this is red")
+        end
+    end
+
+    -- EVERY PLACE THE NUMBER IS WRITTEN SAYS THE SAME NUMBER
+    do
+        local cf = bytes(ROOT .. "/dev/cf-desc.md") or ""
+        H.ok(FP and cf:find("    Fingerprint   " .. FP, 1, true) ~= nil,
+             "the CurseForge page carries it - run Tools\\stamp.ps1 if this is red")
+        H.ok(cf:find("    " .. P.CheckCommand("<your WoW folder>\\Interface\\AddOns\\BiSGuild") .. "\n", 1, true) ~= nil,
+             "and the CurseForge page's check line is the addon's, letter for letter")
+        local cl = bytes(ROOT .. "/CHANGELOG.md") or ""
+        local top = cl:match("\n## [^\n]*\n(.-)\n## ") or cl:match("\n## [^\n]*\n(.*)$") or ""
+        H.ok(FP and top:find("`" .. FP .. "`", 1, true) ~= nil,
+             "the changelog's top entry (the release notes) carries it")
+        local ps = bytes(ROOT .. "/Tools/fingerprint.ps1") or ""
+        H.ok(ps:find("$script:BiSGuildSkip = '" .. P.SKIP .. "'", 1, true) ~= nil,
+             "the script's rule for which files count is the addon's, letter for letter")
+        H.ok(cf:find(P.SKIP, 1, true) ~= nil, "and the page's line uses it too")
+
+        -- Core/Build.lua is outside the fingerprint (it holds it), so it must be EXACTLY what
+        -- Tools/fingerprint.ps1 writes - the script refuses a copy where it is not, and this is the
+        -- same text built the other way
+        local parts = {}
+        for _, rel in ipairs(FILES) do
+            if not (rel:find("^Libs/") or rel == "Data/Report.lua" or rel == "Core/Build.lua") then parts[#parts + 1] = rel end
+        end
+        local want = [[
+-- BiSGuild :: Core/Build.lua - written by Tools\stamp.ps1. Never edit it by hand.
+--
+-- What this copy says it is. Every file of ours ends by writing its version into ns.parts, and
+-- Core/Copies.lua checks them against this list at login: a file missing, failing to load, or
+-- left over from another version, and BiS Guild says so and stops. The fingerprint is the
+-- SHA-256 of Tools/manifest.txt. This file is not inside it (it holds it); logreport.ps1 checks
+-- instead that it is exactly this text and nothing else.
+local _, ns = ...
+ns.BUILD = {
+    version = "]] .. TOC_VERSION .. [[",
+    fingerprint = "]] .. tostring(FP) .. [[",
+    parts = {
+]]
+        for _, p in ipairs(parts) do want = want .. '        "' .. p .. '",\n' end
+        want = want .. "    },\n}\n"
+        H.eq(bytes(ROOT .. "/Core/Build.lua"), want, "Core/Build.lua is exactly the stamped text")
+        H.eq(NS.BUILD.version, TOC_VERSION, "of this version")
+        H.eq(#NS.BUILD.parts, #parts, "and lists every file of ours the TOC loads: " .. #parts)
+        for _, p in ipairs(parts) do
+            local body = bytes(ROOT .. "/" .. p) or ""
+            H.ok(body:find('\nns%.parts%["' .. (p:gsub("%p", "%%%0")) .. '"%] = "' .. (TOC_VERSION:gsub("%p", "%%%0")) .. '"\n$') ~= nil,
+                 p .. " ends by saying it is " .. TOC_VERSION)
         end
     end
 
@@ -469,8 +571,9 @@ do
     H.ok(out:find("anything you can do", 1, true) ~= nil, "and what that means")
     H.ok(out:find("do not run", 1, true) ~= nil, "and says not to run a copy somebody sent you")
     H.ok(out:find("CurseForge", 1, true) ~= nil, "and where a trustworthy copy comes from")
-    H.ok(out:find("Get-FileHash", 1, true) ~= nil, "it gives the command to check the file")
-    H.ok(out:find(P.SCRIPT_SHA, 1, true) ~= nil, "and shows what this copy claims")
+    H.ok(out:find(P.CheckCommand(), 1, true) ~= nil, "it gives the one-line check for the whole addon")
+    H.ok(out:find(P.Fingerprint(), 1, true) ~= nil, "and shows what this copy claims")
+    H.ok(out:find("will not run", 1, true) ~= nil, "and says the script checks every file itself")
 
     -- ARN FOUND THE HOLE (4 Oct): "won't someone that steals the zip can just write code to put up
     -- whatever hash is the most correct tho?" Yes - whoever changes the script changes this
@@ -2295,6 +2398,170 @@ do
     _G.GetGuildInfo = realGI
     LT.ledgers = {}
     NS.Books().loot = nil
+end
+
+H.section("a copy that is not whole switches itself off (Core/Copies.lua)")
+do
+    local C, K, X = NS.Copy, NS.K, NS.X
+    H.ok(NS.broken == nil, "this copy is whole: every file loaded, all from " .. TOC_VERSION,
+         table.concat(NS.broken or {}, "; "))
+    H.eq(#C.Problems(), 0, "and has nothing to say about itself")
+
+    -- a file that never ran (the client skips a missing one without a word), and one left over
+    local keep = NS.parts["Core/Where.lua"]
+    NS.parts["Core/Where.lua"] = nil
+    NS.parts["Core/Pins.lua"] = "0.0.0"
+    local p = table.concat(C.Problems(), "; ")
+    H.ok(p:find("Core/Where.lua did not load", 1, true) ~= nil, "a missing file is named", p)
+    H.ok(p:find("Core/Pins.lua is from 0.0.0", 1, true) ~= nil, "and a file from another version", p)
+    local realBuild = NS.BUILD
+    NS.BUILD = nil
+    H.eq(C.Problems()[1], "Core/Build.lua did not load", "no build file: said so")
+    NS.BUILD = { version = "9.9.9", fingerprint = realBuild.fingerprint, parts = {} }
+    H.ok(C.Problems()[1]:find("from 9.9.9", 1, true) ~= nil, "a build file from another version: said so")
+    NS.BUILD = realBuild
+
+    -- and then it does nothing but say so
+    H.eq(C.Check(), false, "the check fails")
+    local before = #said
+    K.Show()
+    H.ok(not (K.frame and K.frame:IsShown()), "the terminal does not open")
+    H.ok(said[before + 1] and said[before + 1]:find("not whole", 1, true), "it says why instead", said[before + 1])
+    H.eq(NS.U.Show(), false, "nor the script window")
+    before = #said
+    _G.SlashCmdList.BISGUILD("report")
+    H.ok(said[before + 1] and said[before + 1]:find("not whole", 1, true), "every /bisg command says it", said[before + 1])
+    H.ok(table.concat(said, "\n", before + 1):find("CurseForge", 1, true), "and where a whole copy comes from")
+    local outBefore = #X.out
+    X.Send("HAVE", "261016.2.2")
+    H.eq(#X.out, outBefore, "and it shares nothing")
+    X.Send("BUILD", "0.0.1", "-", ".x")
+    H.eq(#X.out, outBefore + 1, "except that it is broken")
+    X.out[#X.out] = nil
+
+    NS.parts["Core/Where.lua"], NS.parts["Core/Pins.lua"] = keep, TOC_VERSION
+    NS.broken = nil
+    H.ok(C.Check(), "whole again")
+end
+
+H.section("the guild's copies: same as mine? (Core/Copies.lua)")
+do
+    local C, X = NS.Copy, NS.X
+    local ROSTER = { { "Kumlust", 1 }, { "Bigboss", 0 }, { "Anna", 4 }, { "Bea", 4 }, { "Cid", 4 },
+                     { "Dot", 4 }, { "Eve", 4 }, { "Fay", 4 } }
+    local realNum, realInfo = _G.GetNumGuildMembers, _G.GetGuildRosterInfo
+    _G.GetNumGuildMembers = function() return #ROSTER end
+    _G.GetGuildRosterInfo = function(i) local r = ROSTER[i] return r[1], "rank", r[2] end
+    X._ranksDirty = true
+    local function drain() for _ = 1, 20 do H.clock = H.clock + 2 H.RunTimers() end end
+    local function builds()
+        local out = {}
+        for _, w in ipairs(H.wire) do
+            if w.channel == "GUILD" and w.msg:find("|GLOG|BUILD|", 1, true) then out[#out + 1] = w.msg end
+        end
+        return out
+    end
+    drain()
+    NS.Books().copies = nil
+    local FP, V = C.Fingerprint(), TOC_VERSION
+    local OTHER = ("AB"):rep(32)
+
+    -- at login: one line, asking
+    H.wire = {}
+    C.lastSent = nil
+    H.ok(C.Say(true), "the copy tells the guild")
+    drain()
+    local b = builds()
+    H.eq(#b, 1, "in one line")
+    H.ok(b[1] and b[1]:find("|BUILD|" .. V .. "|" .. FP .. "|?", 1, true), "its version, fingerprint and a question", b[1])
+    H.ok(b[1] and #b[1] <= 250, "under the client's limit: " .. (b[1] and #b[1] or 0))
+
+    -- what is believed: guildmates only, never ourselves, nothing malformed
+    C.Hear("Stranger", V, FP, ".")
+    C.Hear("Kumlust", V, FP, ".")
+    C.Hear("Anna", V, "not hex", ".")
+    C.Hear("Anna", "0.1;drop", FP, ".")
+    H.eq(next(C.Book()), nil, "a stranger, ourselves and garbage are not written down")
+
+    C.Hear("Anna-Dreamscythe", V, FP, ".")
+    C.Hear("Bea", V, FP:lower(), ".")
+    C.Hear("Cid", V, OTHER, ".")
+    C.Hear("Dot", "0.0.0", OTHER, ".")
+    C.Hear("Eve", "9.0.0", OTHER, ".")
+    C.Hear("Fay", V, FP, ".x")
+    local s = C.Summary()
+    H.eq(s.match, 2, "two the same as mine (case does not matter)")
+    H.eq(s.differ, 1, "one the same version with other files")
+    H.eq(s.older, 1, "one older")
+    H.eq(s.newer, 1, "one newer")
+    H.eq(s.broken, 1, "one that failed its own check")
+    H.ok(C.Newer("0.10.0", "0.9.3") and not C.Newer("0.9.3", "0.10.0"), "0.10.0 is newer than 0.9.3")
+    H.ok(C.toldOld, "a newer copy about: said once")
+
+    -- an ask is answered - by a few, not by everyone
+    H.wire = {}
+    C.lastSent, C.waiting = nil, nil
+    C.Hear("Anna", V, FP, "?")
+    H.ok(C.waiting, "an ask: we wait our turn")
+    C.Hear("Bea", V, FP, ".")
+    drain()
+    H.eq(#builds(), 1, "and answer, when not enough copies like ours already have")
+    H.wire = {}
+    C.Hear("Cid", V, OTHER, "?")
+    drain()
+    H.eq(#builds(), 0, "a second ask right after: we spoke a moment ago, so we stay quiet")
+    C.lastSent, C.waiting = nil, nil
+    C.Hear("Dot", "0.0.0", OTHER, "?")
+    for _, n in ipairs({ "Anna", "Bea", "Fay" }) do C.Hear(n, V, FP, ".") end
+    drain()
+    H.eq(#builds(), 0, C.ENOUGH .. " copies like ours answered first: we stand down")
+
+    -- the odd one out hears it, once
+    NS.Books().copies = nil
+    C.toldOdd = nil
+    local before = #said
+    for _, n in ipairs({ "Anna", "Bea", "Cid" }) do C.Hear(n, V, OTHER, ".") end
+    local told = table.concat(said, "\n", before + 1)
+    H.ok(told:find("not the same as 3 guildmates", 1, true) ~= nil, "a copy unlike everyone's says so", told)
+    before = #said
+    C.Hear("Dot", V, OTHER, ".")
+    H.eq(#said, before, "once")
+
+    -- /bisg copy: this copy, the guild, and for an officer who runs what
+    before = #said
+    _G.SlashCmdList.BISGUILD("copy")
+    local out = table.concat(said, "\n", before + 1)
+    H.ok(out:find(FP, 1, true) and out:find("whole", 1, true), "/bisg copy: this copy, whole", out)
+    H.ok(out:find("proves", 1, true) or out:find("SAYS", 1, true), "and that its own number is only what it says")
+    H.ok(out:find("4 different", 1, true) ~= nil, "the guild's count", out)
+    H.ok(out:find("Anna " .. V, 1, true) ~= nil, "an officer sees who", out)
+    ROSTER[1][2] = 4
+    X._ranksDirty = true
+    before = #said
+    _G.SlashCmdList.BISGUILD("copy")
+    out = table.concat(said, "\n", before + 1)
+    H.ok(out:find("Anna", 1, true) == nil, "a member sees the count, not the names", out)
+    ROSTER[1][2] = 1
+
+    -- a guildmate's copy is forgotten after a month
+    C.Book().Anna.t = time() - C.KEEP - 1
+    C.Summary()
+    H.eq(C.Book().Anna, nil, "a month-old copy is dropped")
+
+    -- lean: hearing a whole guild log in
+    local Cost = dofile("../_bisdev/dev/cost.lua")
+    local n, by = Cost.Count(function()
+        for i = 1, 40 do C.Hear(ROSTER[(i % #ROSTER) + 1][1], V, FP, ".") end
+    end)
+    H.say(("   cost: hearing 40 copies = %d calls (%s)"):format(n, Cost.Top(by, 3)))
+    H.ok(n <= 3 * 40, "hearing a copy costs a few client calls: " .. n, Cost.Top(by, 4))
+
+    NS.Books().copies = nil
+    C.toldOdd, C.toldOld, C.waiting, C.lastSent = nil, nil, nil, nil
+    _G.GetNumGuildMembers, _G.GetGuildRosterInfo = realNum, realInfo
+    X._ranksDirty = true
+    drain()
+    H.wire = {}
 end
 
 -- WHAT AN OPEN WINDOW COSTS, IN CLIENT CALLS (7 Oct 2026). BiSHealing asked the client ~630,000

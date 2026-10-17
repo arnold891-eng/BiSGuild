@@ -562,3 +562,5 @@ function K.PaintRoster(p)
         end
     end
 end
+
+ns.parts["Core/Invite.lua"] = "0.0.1"

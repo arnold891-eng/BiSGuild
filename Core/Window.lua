@@ -299,7 +299,7 @@ function U.Build()
     -- about itself and - worse - it was a FontString, which cannot be selected. A line of shell you
     -- can read and cannot copy is a dead end dressed as an instruction.
     f.hashWhat = warn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    f.hashWhat:SetPoint("BOTTOMLEFT", 14, 86)
+    f.hashWhat:SetPoint("BOTTOMLEFT", 14, 122)   -- over the check line, which is five lines of shell now (16 Oct)
     f.hashWhat:SetPoint("RIGHT", warn, "RIGHT", -14, 0)
     f.hashWhat:SetJustifyH("LEFT")
     f.hashWhat:SetText("")
@@ -321,7 +321,7 @@ function U.Build()
     f.hashLine = CreateFrame("EditBox", nil, warn)
     f.hashLine:SetPoint("BOTTOMLEFT", 14, 44)
     f.hashLine:SetPoint("RIGHT", warn, "RIGHT", -14, 0)
-    f.hashLine:SetHeight(38)
+    f.hashLine:SetHeight(74)
     f.hashLine:SetMultiLine(true)
     f.hashLine:SetAutoFocus(false)
     f.hashLine:SetTextInsets(34, 6, 2, 2)   -- room for the PS> label beside it
@@ -507,17 +507,18 @@ function U.Refresh()
     if U.hash then
         -- NOTHING BUT THE COMMAND goes in the box: whatever is in there is what gets pasted into a
         -- shell, and a prompt pasted with it is an error message.
-        local want = ('Get-FileHash -Algorithm SHA256 "%s"'):format(P.ScriptPath() or "...")
+        -- the whole addon, by a line of plain PowerShell (Core/Report.lua P.CheckCommand, 16 Oct)
+        local want = P.CheckCommand() or "..."
         if U.typeTarget ~= want then U.TypeOut(want) end
         f.hashLine:Show()
         f.hashPrompt:SetText("PS>")
         -- THREE SENTENCES, because a command with no instruction is a thing people stare at. Arn,
         -- at exactly this line: "what do i do with this".
         f.hashWhat:SetText(
-            T().text("accent", "Click the line below to copy it,") .. " paste it into PowerShell,\n"
-            .. "and compare the answer with the hash on our CurseForge page. "
+            T().text("accent", "Click the line below to copy it,") .. " paste it into PowerShell, and compare\n"
+            .. "the answer with the number on our CurseForge page (it has this same line). "
             .. T().text("warn", "Not with this addon") .. " -\n"
-            .. "a faked copy would show you a faked hash here too.")
+            .. "a faked copy would show you a faked number here too.")
     else
         U.TypeOut(nil)
         f.hashLine:Hide()
@@ -557,6 +558,7 @@ function U.Refresh()
 end
 
 function U.Show()
+    if ns.TellBroken() then return false end    -- not a whole copy: Core/Copies.lua
     local f = U.Build()
     if not f then return false end
     U.Refresh()
@@ -579,3 +581,5 @@ function U.Toggle()
     U.Show()
     return true
 end
+
+ns.parts["Core/Window.lua"] = "0.0.1"

@@ -241,3 +241,5 @@ function S.Bosses()
     end
     return pages
 end
+
+ns.parts["Core/Store.lua"] = "0.0.1"
