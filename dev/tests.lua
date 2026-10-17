@@ -1809,6 +1809,24 @@ do
     H.ok(nk <= 120, "a second of the open terminal: at most two client calls a frame: " .. nk, Cost.Top(byk, 4))
     K.Hide()
 
+    -- A BIG ROSTER KEPT IS NOT A SLOW ONE (Arn, 16 Oct: "kept the old roster, not bad as long as it's
+    -- not making it lag because it's a lot of text"): a 70-sign-up Raid-Helper export, redrawn
+    local parts = {}
+    for i = 1, 70 do
+        parts[i] = ('{"cClassName":"Melee","className":"Melee","cSpecName":"Fury","specEmoteId":"637564445215948810",'
+            .. '"userId":"%d","cRoleName":"Dps","entryTime":1791494745,"specName":"Fury","name":"Raider%02d",'
+            .. '"roleName":"Dps","roleEmoteId":"592440132129521664","id":%d,"position":%d,"status":"primary"}'):format(i, i, i, i)
+    end
+    local big = '{"date":"04-11-2026","signUps":[' .. table.concat(parts, ",") .. '],"displayTitle":"Forever Class"}'
+    _G.BiSGuildDB.roster = big
+    K.Show("roster")
+    K.Paint()                                      -- the first draw reads the export once
+    local nr, byr = Cost.Count(function() for _ = 1, 10 do K.Paint() end end)
+    H.say(("   cost: ROSTER with a %d-character export, 10 redraws = %d calls (%s)"):format(#big, nr, Cost.Top(byr, 3)))
+    H.ok(nr <= 10 * 20, "a kept 70-person export costs a redraw almost nothing: " .. nr, Cost.Top(byr, 4))
+    _G.BiSGuildDB.roster = nil
+    K.Hide()
+
     -- hearing a whole 25-raider night from an officer: the roster is read once, not once a part
     local text = NS.X.EncodeNight(bigNight())
     local parts, N = {}, math.ceil(#text / NS.X.CHUNK)
