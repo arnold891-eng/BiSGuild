@@ -75,6 +75,7 @@ function K.Parse(line, cards, bosses)
     if l == "bosses" then return "bosses" end
     if l == "log" then return "log" end
     if l == "where" or l == "map" then return "where" end
+    if l == "roster" or l == "import" then return "roster" end
     if want == "raider" or want == "player" then bosses = {} end
     if want == "boss" then cards = {} end
 
@@ -382,6 +383,24 @@ local function Grid(parent, heads, cols, n, y0, onClick, onHead)
     return g
 end
 
+--- A small button in a panel's title bar (INVITE, INVITE ONLINE): gold words on the sunken colour.
+local function BarButton(parent, label, w, point, x, fn)
+    local b = CreateFrame("Button", nil, parent)
+    b:SetPoint(point, x, -1)
+    b:SetSize(w, 16)
+    local bg = b:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    Fill(bg, "sunken")
+    local hi = b:CreateTexture(nil, "HIGHLIGHT")
+    hi:SetAllPoints()
+    Fill(hi, "accent", K.HOVER)
+    b.fs = Text(b, 11, "gold", "CENTER")
+    b.fs:SetPoint("CENTER", 0, 0)
+    b.fs:SetText(label)
+    b:SetScript("OnClick", fn)
+    return b
+end
+
 local function SetRow(row, key, values, colours)
     row.key = key
     for i, fs in ipairs(row.cells) do
@@ -435,7 +454,8 @@ function K.Build()
     f.keys = {}
     -- CENTRED ON THE WINDOW, however many there are (Arn, 16 Oct: a fourth tab, and "the top tabs
     -- shifted a little to the right" - they started at a fixed x)
-    local TABS = { { "RAIDERS", "raiders" }, { "BOSSES", "bosses" }, { "WHERE", "where" }, { "LOG", "log" } }
+    local TABS = { { "RAIDERS", "raiders" }, { "BOSSES", "bosses" }, { "WHERE", "where" }, { "ROSTER", "roster" },
+                   { "LOG", "log" } }
     local keyX = math.floor((K.W - (#TABS * 102 - 6)) / 2)
     for _, k in ipairs(TABS) do
         local b = CreateFrame("Button", nil, f)
@@ -525,6 +545,10 @@ function K.Build()
         K.LIST_ROWS, 22, function(name) K.Go(name .. " <raider>") end,
         { [1] = function() K.sort = "class" K.Paint() end, [3] = function() K.sort = "attend" K.Paint() end })
     pr.panel = plist
+    -- raid night's one button: every guild member on the record who is online (Core/Invite.lua)
+    pr.invite = BarButton(plist, "INVITE ONLINE", 110, "TOPLEFT", 90, function()
+        if ns.Inv then ns.Inv.Send(ns.Inv.OnlineRaiders(), "raiders on the record") end
+    end)
     f.pages.raiders = pr
 
     -- every boss
@@ -541,6 +565,9 @@ function K.Build()
     local rc = Page()
     local leftW = 470
     rc.armory = Panel(rc, "ARMORY", 8, 0, leftW, bodyH - 4)
+    rc.invite = BarButton(rc.armory, "INVITE", 64, "TOPRIGHT", -110, function()
+        if ns.Inv and K.key then ns.Inv.One(K.key) end
+    end)
     rc.gear = Grid(rc.armory, { "SLOT", "ITEM", "ILVL", "" },
         { { 62, "LEFT" }, { 250, "LEFT" }, { 34, "RIGHT" }, { 84, "RIGHT" } }, #S().SLOTS, 22)
     -- HOVER FOR THE ITEM, ENCHANT INCLUDED (Arn, 16 Oct: "click item and the tooltip come out,
@@ -617,6 +644,8 @@ function K.Build()
 
     -- WHERE: the map and who is where (Core/Where.lua builds it with the same kit)
     if K.BuildWhere then f.pages.where = K.BuildWhere(Page(), bodyH) end
+    -- ROSTER: paste a Discord raid tool's roster, invite who is online (Core/Invite.lua)
+    if K.BuildRoster then f.pages.roster = K.BuildRoster(Page(), bodyH) end
 
     -- the ticker along the bottom
     local tbg = f:CreateTexture(nil, "BORDER")
@@ -845,6 +874,7 @@ function K.Paint()
     elseif K.page == "raider" then PaintRaider(p, K.key)
     elseif K.page == "boss" then PaintBoss(p, K.key)
     elseif K.page == "where" and K.PaintWhere then K.PaintWhere(p)
+    elseif K.page == "roster" and K.PaintRoster then K.PaintRoster(p)
     end
     p:Show()
     -- the tab you are on is lit; a card lights the list it belongs to
@@ -898,11 +928,13 @@ function K.Go(line)
         if ns.U and ns.U.Show then ns.U.Show() end
         return "log"
     end
-    if kind == "raiders" or kind == "bosses" or kind == "where" then
+    if kind == "raiders" or kind == "bosses" or kind == "where" or kind == "roster" then
         K.trail = {}                                   -- a list is the top: nothing behind it
         K.Open(kind)
         Say((kind == "raiders" and "every raider - click one, or type a name   (click NAME or ATTEND to sort)")
             or (kind == "bosses" and "every boss - click one, or type a name")
+            or (kind == "roster" and ("paste a roster, READ IT, INVITE - " .. (ns.Inv and ns.Inv.Tools()
+                and "BiS Tools' invite list takes it from there" or "a second click sends")))
             or "who is where - a dot is a guildmate sharing their spot from a BiS addon; click a row to see their map")
         return kind
     end

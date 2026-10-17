@@ -1509,6 +1509,115 @@ do
 end
 
 --=============================================================================
+-- INVITES (16 Oct 2026). Arn: "it'll plug into or use its own invite to raid module like BiS Tools",
+-- "someone can import a code to build a roster and one click invites them", and then: "I like
+-- OpenMap, that opens its stuff via API ... if installed it can API-call it", "bisg can do its own
+-- thing if no BiS Tools".
+--=============================================================================
+H.section("invites: a pasted roster, BiS Tools' API when it is here, our own when not")
+do
+    local I, K = NS.Inv, NS.K
+    local ROSTER = {
+        { "Bob", "Raider", "WARRIOR", true }, { "Kio Alpha", "Raider", "MAGE", true },
+        { "Cara", "Raider", "MAGE", false }, { "Kumlust", "Officer", "SHAMAN", true },
+    }
+    local realNum, realInfo = _G.GetNumGuildMembers, _G.GetGuildRosterInfo
+    _G.GetNumGuildMembers = function() return #ROSTER end
+    _G.GetGuildRosterInfo = function(i)
+        local r = ROSTER[i]
+        if r then return r[1], r[2], 1, 30, r[3], "Orgrimmar", "", "", r[4], 0, r[3] end
+    end
+    K._guildDirty = true
+
+    -- A DISCORD ROSTER IN ANY SHAPE: headers, roles, classes, numbering, a whole Forever name
+    local pasted = "Molten Core - Tuesday 8pm\nTanks: Bob (Warrior)\nHealers: kio alpha, Cara\nDPS\n1. Darthsidiouz - Mage\n"
+    local rows = I.Read(pasted)
+    local byName = {}
+    for _, r in ipairs(rows) do byName[r.typed] = r end
+    H.ok(byName.Bob and byName.Bob.member, "Bob found in the guild, his class word ignored")
+    H.ok(byName["Kio Alpha"] and byName["Kio Alpha"].member, "'kio alpha' finds Forever's whole name, any case")
+    H.ok(byName.Cara and byName.Cara.member, "Cara on a comma line")
+    H.ok(byName.Darthsidiouz and not byName.Darthsidiouz.member, "Darthsidiouz is not in the guild - listed, not guessed")
+    H.ok(not byName.Tanks and not byName.Healers and not byName.DPS and not byName.Mage, "role and class words are not people")
+    local here = I.Here()
+    H.eq(I.Status(byName.Cara, here), "offline", "Cara is offline")
+    H.eq(I.Status(byName.Darthsidiouz, here), "not in guild", "and the stranger says so")
+
+    -- the ROSTER page: paste, READ IT, the list and its button
+    local f = K.Show("roster")
+    local rp = f.pages.roster
+    H.eq(K.page, "roster", "the ROSTER tab")
+    rp.box:SetText(pasted)
+    rp.read:Click()
+    H.eq(_G.BiSGuildDB.roster, pasted, "READ IT keeps the paste across a reload")
+    H.eq(rp.send.fs:GetText(), "INVITE 2 ONLINE", "two of them online and not you")
+
+    -- WITHOUT BiS Tools: the second click sends, one invite at a time, whole names
+    local invited = {}
+    local keepPI = _G.C_PartyInfo
+    _G.C_PartyInfo = { InviteUnit = function(n) invited[#invited + 1] = n end, ConvertToRaid = function() end }
+    _G.BiSToolsAPI = nil
+    rp.send:Click()
+    H.eq(#invited, 0, "the first click only asks")
+    H.ok(f.status:GetText():find("click again", 1, true), "and says how to send", f.status:GetText())
+    rp.send:Click()
+    for _ = 1, 5 do H.RunTimers() end
+    table.sort(invited)
+    H.ok(deq(invited, { "Bob", "Kio Alpha" }), "the second click invites who is online - never the stranger, never Cara",
+         table.concat(invited, ","))
+    H.clock = H.clock + 60
+    invited = {}
+    rp.send:Click()
+    H.eq(#invited, 0, "minutes later, a click asks again")
+    H.clock = H.clock + 60
+    I.armed = nil
+
+    -- WITH BiS Tools: its API takes the list (its confirm list, its show, its refusals in red)
+    local got
+    _G.BiSToolsAPI = { major = 1, version = 1, PartyReady = function() return true end,
+                       InviteList = function(label, people) got = { label = label, people = people } return #people end,
+                       InviteOne = function(n) got = { one = n } return 1 end }
+    rp.send:Click()
+    H.ok(got and got.label == "on the pasted roster" and #got.people == 2, "BiS Tools installed: its API gets the list")
+    H.eq(got and got.people[1].classFile ~= nil and true, true, "with each class, for its sort")
+    H.eq(#invited, 0, "and BiS Guild sends nothing itself")
+    _G.BiSToolsAPI.PartyReady = function() return false end
+    rp.send:Click()
+    H.ok(f.status:GetText():find("click again", 1, true), "its party tool off: BiS Guild does its own thing")
+    I.armed = nil
+
+    -- a raider's card: INVITE, at once, by the whole name
+    _G.BiSToolsAPI = nil
+    invited = {}
+    _G.BiSGuildDB.record.nights["2026-10-09"].raiders.Kio = raider(2, 3)
+    K.Go("kio <raider>")
+    f.pages.raider.invite:Click()
+    H.ok(deq(invited, { "Kio Alpha" }), "INVITE on Kio's card invites 'Kio Alpha' - the name an invite needs",
+         table.concat(invited, ","))
+
+    -- RAIDERS: INVITE ONLINE is everyone on the record who is online
+    local online = {}
+    for _, m in ipairs(I.OnlineRaiders()) do online[#online + 1] = m.name end
+    H.ok(deq(online, { "Bob", "Kio Alpha" }), "raiders on the record and online: Bob, Kio", table.concat(online, ","))
+
+    -- not the leader: nothing goes, and it says why
+    H.inRaid, H.raid = true, { { name = "Kumlust" }, { name = "Zed" } }
+    _G.UnitIsGroupLeader = function() return false end
+    invited = {}
+    I.Send(I.OnlineRaiders(), "raiders on the record")
+    I.Send(I.OnlineRaiders(), "raiders on the record")
+    H.ok(#invited == 0 and f.status:GetText():find("only the leader", 1, true), "only the leader invites", f.status:GetText())
+    H.inRaid, H.raid, _G.UnitIsGroupLeader = false, { { name = "Kumlust" } }, nil
+
+    _G.BiSGuildDB.record.nights["2026-10-09"].raiders.Kio = nil
+    _G.BiSGuildDB.roster = nil
+    _G.C_PartyInfo = keepPI
+    _G.GetNumGuildMembers, _G.GetGuildRosterInfo = realNum, realInfo
+    K._guildDirty = true
+    K.Hide()
+end
+
+--=============================================================================
 -- GUILDMATES ON THE WORLD MAP (16 Oct 2026). Arn: guildmates on the world map - and "not everyone
 -- is going to install OpenMap", so the game's own map, through HereBeDragons-Pins.
 --=============================================================================
