@@ -24,6 +24,15 @@ function ns.Say(cmd, rest)
         return
     end
     -- `/bisg dots on|off`: guildmates on the world map (Core/Pins.lua)
+    -- `/bisg logins on|off`: "X just logged in - invite?" (Core/Logins.lua)
+    if cmd == "logins" and ns.Login then
+        local r = rest:lower()
+        if r == "on" or r == "off" then ns.DB().logins = (r == "on") end
+        ns.Print("login pop-up for the pasted roster: %s%s. %s", ns.Login.On() and ns.T.text("good", "on")
+            or ns.T.text("warn", "off"), ns.Login.Armed() and " (armed now)" or "",
+            ns.T.text("muted", "/bisg logins on | off"))
+        return
+    end
     if cmd == "dots" and ns.Pins then
         local r = rest:lower()
         if r == "on" or r == "off" then ns.DB().mapDots = (r == "on") end
@@ -147,6 +156,7 @@ function ns.Say(cmd, rest)
         ns.Print("  %s  straight to one raider or boss", ns.T.text("accent", "/bisg <name>"))
         ns.Print("  %s  the log window: paste a path, copy a command", ns.T.text("accent", "/bisg window"))
         ns.Print("  %s  guildmates' dots on the world map", ns.T.text("accent", "/bisg dots on | off"))
+        ns.Print("  %s  'X just logged in - invite?' for the pasted roster", ns.T.text("accent", "/bisg logins on | off"))
         ns.Print("  %s  attendance and consumes from the combat log", ns.T.text("accent", "/bisg report"))
         ns.Print("  %s  where your logs are (once)", ns.T.text("accent", "/bisg logs <path>"))
         ns.Print("  %s  the line to run after a raid", ns.T.text("accent", "/bisg script"))

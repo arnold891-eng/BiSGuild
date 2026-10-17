@@ -249,6 +249,9 @@ local function newFrame(ftype, name, parent, template)
         self._propagate = v and true or false
     end
     function fr:EnableKeyboard(v) self._keyboard = v and true or false end
+    -- a frame remembers its alpha (16 Oct: the INVITE button's pulse had nothing to measure)
+    function fr:SetAlpha(a) self._alpha = a end
+    function fr:GetAlpha() return self._alpha or 1 end
     -- a frame remembers its layer (16 Oct: "which window is in front" had no answer in the suite)
     function fr:SetFrameStrata(s) self._strata = s end
     function fr:GetFrameStrata() return self._strata or "MEDIUM" end

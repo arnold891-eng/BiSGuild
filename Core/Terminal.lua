@@ -36,6 +36,38 @@ K.STRIP = 12                   -- nights in an attendance strip
 -- The client draws the HIGHLIGHT layer above the text, so a highlight at 0.8 washes the words out.
 K.HOVER = 0.18
 K.WHERE_EVERY = 5              -- seconds between redraws of the WHERE page while it shows
+K.GLANCE_W = 470               -- the raid-night line on the right of the command bar
+K.GLANCE_BEFORE, K.GLANCE_AFTER = 12 * 3600, 6 * 3600
+
+function K.PaintGlance()
+    local g = K.frame and K.frame.glance
+    if not g then return end
+    local s = K.GlanceText()
+    if s then g.fs:SetText(s) g:Show() else g:Hide() end
+end
+
+--- The raid-night line's words, or nil outside raid time / without a pasted event.
+---   RAID NIGHT  Illidan did nothing wrong  20:00  starts in 1 h 0 min  7 of 24 online
+function K.GlanceText()
+    local I = ns.Inv
+    local text = ns.DB().roster
+    if not (I and type(text) == "string" and text ~= "") then return nil end
+    local e = I.Event(text)
+    local now = GetServerTime and GetServerTime()
+    if not (e and e.start and now) or now < e.start - K.GLANCE_BEFORE or now > e.start + K.GLANCE_AFTER then return nil end
+    local signed, online = 0, 0
+    local here = I.Here()
+    for _, r in ipairs(I.Read(text)) do
+        if not (r.standing and I.OUT[r.standing]) then
+            signed = signed + 1
+            local s = I.Status(r, here)
+            if s == "online" or s == "with you" then online = online + 1 end
+        end
+    end
+    return ("%s  %s  %s  %s  %s"):format(ns.T.text("gold", "RAID NIGHT"), ns.T.text("ink", e.title or "raid"),
+        ns.T.text("accent", e.time or ""), ns.T.text("ink2", I.When(e) or ""),
+        ns.T.text(online > 0 and "good" or "muted", ("%d of %d online"):format(online, signed)))
+end
 
 local function T() return ns.T end
 local function S() return ns.S end
@@ -516,7 +548,7 @@ function K.Build()
     f.prompt:SetText("BiS>")
     local e = CreateFrame("EditBox", nil, f)
     e:SetPoint("TOPLEFT", 52, -30)
-    e:SetSize(K.W - 70, 22)
+    e:SetSize(K.W - 70 - K.GLANCE_W - 8, 22)   -- a name fits; the raid-night line takes the right of the bar
     e:SetAutoFocus(false)
     e:SetMaxLetters(0)               -- no cap: a roster pasted here goes to the ROSTER tab (K.Go)
     e:SetFontObject("GameFontHighlight")
@@ -529,6 +561,24 @@ function K.Build()
     end)
     e:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     f.cmd = e
+
+    -- RAID NIGHT AT A GLANCE (Arn, 16 Oct: "raid night > raiding <xxx> start time 00:00, any info that
+    -- is at a glance"): the pasted Raid-Helper event on the right of the command bar - its name, its
+    -- time, how long until it starts, how many of those signed are online. Shown from K.GLANCE_BEFORE
+    -- before the start to K.GLANCE_AFTER after; click it for the ROSTER tab.
+    local g = CreateFrame("Button", nil, f)
+    g:SetPoint("TOPRIGHT", -12, -31)
+    g:SetSize(K.GLANCE_W, 20)
+    g.fs = Text(g, 12, "ink", "RIGHT")
+    g.fs:SetAllPoints()
+    local ghi = g:CreateTexture(nil, "ARTWORK")
+    ghi:SetAllPoints()
+    Fill(ghi, "accent", K.HOVER)
+    ghi:Hide()
+    g:SetScript("OnEnter", function() ghi:Show() end)
+    g:SetScript("OnLeave", function() ghi:Hide() end)
+    g:SetScript("OnClick", function() K.Go("roster") end)
+    f.glance = g
     f.status = Text(f, 11, "muted")
     f.status:SetPoint("TOPLEFT", 12, -56)
     f.status:SetWidth(K.W - 24)
@@ -695,6 +745,18 @@ function K.Build()
         if K.page == "where" then
             self.whereT = (self.whereT or 0) + (elapsed or 0)
             if self.whereT >= K.WHERE_EVERY then self.whereT = 0 K.Paint() end
+        end
+        -- the raid-night line counts down with the clock, every K.WHERE_EVERY seconds
+        self.glanceT = (self.glanceT or 0) + (elapsed or 0)
+        if self.glanceT >= K.WHERE_EVERY then self.glanceT = 0 K.PaintGlance() end
+        -- THE INVITE BUTTONS PULSE while somebody who just logged in waits (Core/Logins.lua)
+        local pulse = ns.Login and ns.Login.Pulsing()
+        if pulse or self.pulsed then
+            local a = pulse and (0.55 + 0.45 * math.abs(math.sin((GetTime and GetTime() or 0) * 3))) or 1
+            local pr, ro = self.pages.raiders, self.pages.roster
+            if pr and pr.invite then pr.invite:SetAlpha(a) end
+            if ro and ro.send then ro.send:SetAlpha(a) end
+            self.pulsed = pulse
         end
         local w = self.tickW or 0
         if w <= 0 then return end
@@ -912,6 +974,7 @@ function K.Paint()
         Fill(b.bg, name == on and "accentSoft" or "sunken")
         b.fs:SetTextColor(rgb(name == on and "gold" or "ink"))
     end
+    K.PaintGlance()
     f.tick:SetText(K.TickerText())
     f.tickW = f.tick:GetStringWidth() or 0
 end

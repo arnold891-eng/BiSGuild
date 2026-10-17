@@ -102,8 +102,11 @@ end
 function I.ReadRaidHelper(text)
     local list = text:match('"signUps"%s*:%s*%[(.-)%]')
     if not list then return nil end
+    -- startTime is the raid's start as a unix time (Arn, 16 Oct: "does the json say what time the
+    -- raid is supposed to start?") - the same clock as GetServerTime(), so no time zone can bend it
     local event = { title = jstr(text, "displayTitle") or jstr(text, "title"), date = jstr(text, "date"),
-                    time = jstr(text, "time"), channel = jstr(text, "channelName") }
+                    time = jstr(text, "time"), channel = jstr(text, "channelName"),
+                    start = tonumber(text:match('"startTime"%s*:%s*(%d+)')) }
     local out = {}
     for obj in list:gmatch("{(.-)}") do
         local name = jstr(obj, "name")
@@ -118,15 +121,34 @@ function I.ReadRaidHelper(text)
     return out, event
 end
 
---- text -> rows { typed, member (roster entry or nil), key, signed, standing }, one per person.
-function I.Read(text)
+--- The pasted export's event, read once per new paste (a 20,000-character export is not re-read on
+--- every redraw or every system chat line - Logins.lua asks this on each one).
+function I.Event(text)
     text = tostring(text or "")
-    -- a 20,000-character export is read once, not every redraw; matching to the roster is cheap
     if I._readText ~= text then
         I._readText = text
         I._helper, I._event = I.ReadRaidHelper(text)
     end
     I.event = I._event
+    return I._event
+end
+
+--- "starts in 2 h 15 min" / "started 40 min ago" / nil without a start time.
+function I.When(e)
+    local start = e and e.start
+    local now = GetServerTime and GetServerTime()
+    if not (start and now) then return nil end
+    local d = start - now
+    local m = math.floor(math.abs(d) / 60)
+    local span = m >= 60 and ("%d h %d min"):format(math.floor(m / 60), m % 60) or ("%d min"):format(m)
+    if math.abs(d) > 2 * 86400 then return (e.date or "") .. " " .. (e.time or "") end
+    return d >= 0 and ("starts in " .. span) or ("started " .. span .. " ago")
+end
+
+--- text -> rows { typed, member (roster entry or nil), key, signed, standing }, one per person.
+function I.Read(text)
+    text = tostring(text or "")
+    I.Event(text)
     if I._helper then return I.Match(I._helper) end
     return I.ReadAny(text)
 end
@@ -476,7 +498,7 @@ function K.PaintRoster(p)
     if #rows == 0 then p.hint:Show() else p.hint:Hide() end
     -- the Raid-Helper event this came from, in the paste panel's corner
     local e = I.event
-    p.paste.right:SetText(e and e.title and ("%s  %s %s"):format(e.title, e.date or "", e.time or "")
+    p.paste.right:SetText(e and e.title and ("%s  %s"):format(e.title, I.When(e) or ((e.date or "") .. " " .. (e.time or "")))
         or "names, a list, a table, Raid-Helper's JSON")
     p.list.right:SetText(#rows == 0 and "" or ("%d on it, %d online, %d not in guild"):format(#rows, counts.online,
         counts["not in guild"] or 0) .. ui.Showing(p.grid))

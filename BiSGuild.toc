@@ -32,4 +32,5 @@ Core\Terminal.lua
 Core\Where.lua
 Core\Pins.lua
 Core\Invite.lua
+Core\Logins.lua
 Core\Say.lua

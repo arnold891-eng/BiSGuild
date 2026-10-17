@@ -1699,6 +1699,126 @@ do
 end
 
 --=============================================================================
+-- "X JUST LOGGED IN - INVITE?" (16 Oct 2026). Arn: "if the addons can see if someone logged in and
+-- they are on the roster, makes the invite button pulse or a window pop up". And: "does the json say
+-- what time the raid is supposed to start?" - it does, and the pop-up keeps to raid time.
+--=============================================================================
+H.section("logins: somebody on the roster comes online")
+do
+    local L, I, K = NS.Login, NS.Inv, NS.K
+    local ROSTER = {
+        { "Bob", "WARRIOR", false }, { "Kio Alpha", "MAGE", false }, { "Cara", "MAGE", false }, { "Zed", "ROGUE", false },
+    }
+    local realNum, realInfo, realPI = _G.GetNumGuildMembers, _G.GetGuildRosterInfo, _G.C_PartyInfo
+    _G.GetNumGuildMembers = function() return #ROSTER end
+    _G.GetGuildRosterInfo = function(i)
+        local r = ROSTER[i]
+        if r then return r[1], "Raider", 1, 30, r[2], "Orgrimmar", "", "", r[3], 0, r[2] end
+    end
+    local invited = {}
+    _G.C_PartyInfo = { InviteUnit = function(n) invited[#invited + 1] = n end, ConvertToRaid = function() end }
+    _G.ERR_FRIEND_ONLINE_SS = "|Hplayer:%s|h[%s]|h has come online."
+    K._guildDirty = true
+    L.waiting, L.told, L.lastOnline = {}, {}, nil
+    local start = clock + 3600                                   -- raid in an hour
+    _G.BiSGuildDB.roster = '{"date":"16-10-2026","signUps":['
+        .. '{"className":"Mage","specName":"Arcane","name":"Bloodbow/Kio","position":1},'
+        .. '{"className":"Warrior","specName":"Fury","name":"bob09","position":2},'
+        .. '{"className":"Absence","name":"Cara","position":3}'
+        .. '],"displayTitle":"Raid night","time":"20:00","startTime":' .. start .. '}'
+    local function online(name) fire("CHAT_MSG_SYSTEM", ("|Hplayer:%s-Realm|h[%s]|h has come online."):format(name, name)) end
+
+    H.ok(L.Armed(), "a roster pasted, raid in an hour, on my own: armed")
+    online("Kio Alpha")
+    H.eq(#L.waiting, 1, "Kio logs in: on the roster, so he waits for an invite")
+    H.ok(L.frame and L.frame:IsShown(), "the window pops up")
+    H.ok(L.frame.rows[1].name:GetText():find("Kio Alpha", 1, true) and L.frame.rows[1].name:GetText():find("Arcane", 1, true),
+         "named, with what he signed", L.frame.rows[1].name:GetText())
+    online("Kio Alpha")
+    H.eq(#L.waiting, 1, "the same login twice is one row")
+    online("Cara")
+    H.eq(#L.waiting, 1, "Cara signed Absence: not offered")
+    online("Zed")
+    H.eq(#L.waiting, 1, "Zed is not on the roster: not offered")
+    online("Bob")
+    H.eq(#L.waiting, 2, "Bob joins the same window")
+    H.eq(L.frame.all.fs:GetText(), "Invite all (2)", "Invite all says how many")
+    H.ok(math.abs(L.W / L.H - 1.43) < 0.01, "the family's 1.43:1")
+
+    -- the terminal's invite buttons pulse while somebody waits
+    local f = K.Show("raiders")
+    H.clock = H.clock + 0.3
+    f._scripts.OnUpdate(f, 0.016)
+    H.ok(f.pages.raiders.invite._alpha and f.pages.raiders.invite._alpha < 1 or (f.pages.raiders.invite.alpha or 1) < 1,
+         "INVITE ONLINE pulses while someone waits")
+
+    -- Invite on one row: he is invited by his whole name and leaves the window
+    L.frame.rows[1].invite:Click()
+    for _ = 1, 3 do H.RunTimers() end
+    H.ok(invited[1] == "Kio Alpha" and #L.waiting == 1, "Invite: Kio Alpha invited, one left", table.concat(invited, ","))
+    L.frame.later:Click()
+    H.ok(#L.waiting == 0 and not L.frame:IsShown(), "Not now: the window goes")
+    f._scripts.OnUpdate(f, 0.016)
+    H.eq(f.pages.raiders.invite._alpha or f.pages.raiders.invite.alpha or 1, 1, "and the pulse stops, the button solid again")
+    K.Hide()
+
+    -- RAID TIME ONLY: five hours after the start, the same roster is quiet
+    L.told = {}
+    local keepClock = clock
+    clock = start + 5 * 3600
+    H.ok(not L.Armed(), "five hours after the start: not armed")
+    online("Kio Alpha")
+    H.eq(#L.waiting, 0, "and no pop-up")
+    clock = keepClock
+
+    -- THE ROSTER AS BACKUP (the login chat line can be switched off): baseline, then Bob turns online
+    L.told, L.lastOnline = {}, nil
+    fire("GUILD_ROSTER_UPDATE")
+    H.eq(#L.waiting, 0, "the first roster look only takes the baseline - nobody 'just' logged in")
+    ROSTER[1][3] = true
+    fire("GUILD_ROSTER_UPDATE")
+    H.ok(#L.waiting == 1 and L.waiting[1].name == "Bob", "Bob turned online in the roster: offered")
+    L.waiting = {}
+    if L.frame then L.frame:Hide() end
+
+    -- not the leader of the group you are in: quiet
+    H.inRaid, H.raid = true, { { name = "Kumlust" }, { name = "Zed" } }
+    _G.UnitIsGroupLeader = function() return false end
+    L.told = {}
+    H.ok(not L.Armed(), "in someone else's group: not armed")
+    H.inRaid, H.raid, _G.UnitIsGroupLeader = false, { { name = "Kumlust" } }, nil
+
+    -- /bisg logins off
+    _G.SlashCmdList.BISGUILD("logins off")
+    H.ok(not L.Armed(), "/bisg logins off: never")
+    _G.SlashCmdList.BISGUILD("logins on")
+
+    -- the countdown over the paste
+    H.eq(I.When(I.Event(_G.BiSGuildDB.roster)), "starts in 1 h 0 min", "the ROSTER header counts down to the start")
+
+    -- RAID NIGHT AT A GLANCE (Arn: "raid night > raiding <xxx> start time 00:00, any info at a glance")
+    local tf = K.Show("raiders")
+    local gl = strip(tf.glance.fs:GetText() or "")
+    H.ok(tf.glance:IsShown() and gl:find("RAID NIGHT", 1, true) and gl:find("Raid night", 1, true)
+         and gl:find("20:00", 1, true) and gl:find("starts in 1 h", 1, true) and gl:find("of 2 online", 1, true),
+         "the command bar: the raid, its time, the countdown, who is on", gl)
+    tf.glance:Click()
+    H.eq(K.page, "roster", "clicking it opens the roster")
+    local keepClock2 = clock
+    clock = start + 7 * 3600
+    K.Paint()
+    H.ok(not tf.glance:IsShown(), "the morning after: gone")
+    clock = keepClock2
+    K.Hide()
+
+    _G.BiSGuildDB.roster = nil
+    _G.ERR_FRIEND_ONLINE_SS = nil
+    _G.GetNumGuildMembers, _G.GetGuildRosterInfo, _G.C_PartyInfo = realNum, realInfo, realPI
+    K._guildDirty = true
+    L.waiting, L.told, L.lastOnline = {}, {}, nil
+end
+
+--=============================================================================
 -- GUILDMATES ON THE WORLD MAP (16 Oct 2026). Arn: guildmates on the world map - and "not everyone
 -- is going to install OpenMap", so the game's own map, through HereBeDragons-Pins.
 --=============================================================================
