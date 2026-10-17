@@ -23,6 +23,15 @@ function ns.Say(cmd, rest)
         ns.K.Toggle()
         return
     end
+    -- `/bisg dots on|off`: guildmates on the world map (Core/Pins.lua)
+    if cmd == "dots" and ns.Pins then
+        local r = rest:lower()
+        if r == "on" or r == "off" then ns.DB().mapDots = (r == "on") end
+        local n = ns.Pins.Update()
+        ns.Print("guildmates on the world map: %s - %d dot(s) now. %s", ns.Pins.On() and ns.T.text("good", "on")
+            or ns.T.text("warn", "off"), n, ns.T.text("muted", "/bisg dots on | off"))
+        return
+    end
     if cmd == "terminal" or cmd == "t" then
         if ns.K then ns.K.Show(rest ~= "" and rest or nil) end
         return
@@ -129,6 +138,7 @@ function ns.Say(cmd, rest)
         ns.Print("  %s  the raider terminal: type a raider or a boss", ns.T.text("accent", "/bisg"))
         ns.Print("  %s  straight to one raider or boss", ns.T.text("accent", "/bisg <name>"))
         ns.Print("  %s  the log window: paste a path, copy a command", ns.T.text("accent", "/bisg window"))
+        ns.Print("  %s  guildmates' dots on the world map", ns.T.text("accent", "/bisg dots on | off"))
         ns.Print("  %s  attendance and consumes from the combat log", ns.T.text("accent", "/bisg report"))
         ns.Print("  %s  where your logs are (once)", ns.T.text("accent", "/bisg logs <path>"))
         ns.Print("  %s  the line to run after a raid", ns.T.text("accent", "/bisg script"))

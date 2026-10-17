@@ -11,7 +11,8 @@ H.section("before BiSTheme.lua runs (only the embedded Console fallback)")
 local NS = {}
 for _, rel in ipairs(FILES) do
     local chunk = assert(loadfile(ROOT .. "/" .. rel))
-    chunk("BiSGuild", NS)
+    -- HereBeDragons drives the client's map engine: compiled here, never run (dev/tests.lua's rule)
+    if not rel:find("HereBeDragons", 1, true) then chunk("BiSGuild", NS) end
 end
 H.ok(math.abs(NS.T.rgb("accent") - 0xb9 / 255) < 0.01, "accent falls back to b980ff")
 H.ok(select(1, NS.T.rgb("nosuchcolour")) ~= nil, "an unknown colour still returns numbers")

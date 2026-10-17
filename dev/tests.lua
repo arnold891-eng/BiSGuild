@@ -9,7 +9,41 @@ local FILES = H.TOC(ROOT, "BiSGuild.toc")
 local ALLOWED = {
     BiSGuildDB = true, SLASH_BISGUILD1 = true,
     HARNESS = true, print = true, BiSTheme = true, LibBiSComm = true, SLASH_BISCOMM1 = true,
+    -- the third-party map libs (Libs/THIRD-PARTY.txt): LibStub's one global, the pins' show flags
+    LibStub = true, HBD_PINS_WORLDMAP_SHOW_PARENT = true, HBD_PINS_WORLDMAP_SHOW_CONTINENT = true,
+    HBD_PINS_WORLDMAP_SHOW_WORLD = true,
 }
+-- HEREBEDRAGONS DRIVES THE CLIENT'S OWN MAP ENGINE (the world map's data providers, the minimap's
+-- zoom tables), which a headless mock cannot stand in for honestly - BiS Tools' suite found the same.
+-- So its two files must COMPILE, and in their place a stand-in registers under the same LibStub name,
+-- raises the real one's argument errors, refuses one frame on two maps, and records every pin.
+local PINS = { world = {}, minimap = {} }
+local function fakeHBDPins()
+    local P = LibStub:NewLibrary("HereBeDragons-Pins-2.0", 999)
+    local function check(ref, icon, map, x, y, what)
+        if not ref then error("HereBeDragons-Pins-2.0: " .. what .. ": 'ref' must not be nil", 3) end
+        if type(icon) ~= "table" or not icon.SetPoint then error("HereBeDragons-Pins-2.0: " .. what .. ": 'icon' must be a frame", 3) end
+        if type(map) ~= "number" or type(x) ~= "number" or type(y) ~= "number" then
+            error("HereBeDragons-Pins-2.0: " .. what .. ": 'uiMapID', 'x' and 'y' must be numbers", 3)
+        end
+    end
+    function P:AddMinimapIconMap(ref, icon, map, x, y)
+        check(ref, icon, map, x, y, "AddMinimapIconMap")
+        if PINS.world[icon] then error("this frame is already a pin on the other map", 2) end
+        PINS.minimap[icon] = { map = map, x = x, y = y } return true
+    end
+    function P:AddWorldMapIconMap(ref, icon, map, x, y, flag)
+        check(ref, icon, map, x, y, "AddWorldMapIconMap")
+        if PINS.minimap[icon] then error("this frame is already a pin on the other map", 2) end
+        if flag ~= nil and type(flag) ~= "number" then error("showFlag must be a number (or nil)", 2) end
+        PINS.world[icon] = { map = map, x = x, y = y, flag = flag } return true
+    end
+    function P:RemoveWorldMapIcon(ref, icon) PINS.world[icon] = nil end
+    function P:RemoveMinimapIcon(ref, icon) PINS.minimap[icon] = nil end
+    function P:RemoveAllWorldMapIcons() PINS.world = {} end
+    function P:RemoveAllMinimapIcons() PINS.minimap = {} end
+    _G.HBD_PINS_WORLDMAP_SHOW_PARENT, _G.HBD_PINS_WORLDMAP_SHOW_CONTINENT, _G.HBD_PINS_WORLDMAP_SHOW_WORLD = 1, 2, 3
+end
 local function Load()
     local before = {}
     for k in pairs(_G) do before[k] = true end
@@ -17,7 +51,13 @@ local function Load()
     for _, rel in ipairs(FILES) do
         local chunk, err = loadfile(ROOT .. "/" .. rel)
         if not chunk then error("load " .. rel .. ": " .. tostring(err), 0) end
-        chunk("BiSGuild", NS)
+        if rel:find("HereBeDragons-2.0.lua", 1, true) then
+            -- compiled; the engine is the client's
+        elseif rel:find("HereBeDragons-Pins-2.0.lua", 1, true) then
+            fakeHBDPins()
+        else
+            chunk("BiSGuild", NS)
+        end
     end
     H.leaked = {}
     for k in pairs(_G) do
@@ -55,6 +95,14 @@ H.section("embedded libs are canon (drift fences)")
 H.eq(_G.LibBiSComm.MINOR, 12, "LibBiSComm minor 12")
 local function listed(rel) for _, f in ipairs(FILES) do if f == rel then return true end end return false end
 H.ok(listed("Libs/BiSTheme/Console.lua"), "TOC lists the Console embed")
+-- the third-party map libs are BiS Tools' copies byte for byte, so the family carries one version
+for _, rel in ipairs({ "Libs/LibStub/LibStub.lua", "Libs/CallbackHandler-1.0/CallbackHandler-1.0.lua",
+                       "Libs/HereBeDragons/HereBeDragons-2.0.lua", "Libs/HereBeDragons/HereBeDragons-Pins-2.0.lua" }) do
+    H.ok(listed(rel), "TOC lists " .. rel)
+    local theirs = bytes((os.getenv("BISTOOLS") or (ROOT .. "/../BiSTools")) .. "/" .. rel)
+    if theirs then H.ok(bytes(ROOT .. "/" .. rel) == theirs, rel .. " byte-identical to BiS Tools'")
+    else H.say("  (note) no BiSTools beside the checkout - " .. rel .. " fence skipped") end
+end
 H.ok(listed("Libs/LibBiSComm-1.0/LibBiSComm-1.0.lua"), "TOC lists the comm embed")
 do
     local canon = bytes((os.getenv("BISTHEME") or (ROOT .. "/../BiSTheme")) .. "/Console.lua")
@@ -1346,6 +1394,87 @@ do
 
     _G.GetItemInfo = nil
     _G.BiSGuildDB.record = saved
+end
+
+--=============================================================================
+-- GUILDMATES ON THE WORLD MAP (16 Oct 2026). Arn: guildmates on the world map - and "not everyone
+-- is going to install OpenMap", so the game's own map, through HereBeDragons-Pins.
+--=============================================================================
+H.section("guildmates' dots on the world map")
+do
+    local M = NS.Pins
+    local function pins()
+        local out = {}
+        for icon, p in pairs(PINS.world) do out[#out + 1] = { who = icon.who, map = p.map, x = p.x, flag = p.flag, icon = icon } end
+        table.sort(out, function(a, b) return a.who < b.who end)
+        return out
+    end
+    local ROSTER = { { "Bob", "Raider", "WARRIOR" }, { "Cara", "Raider", "MAGE" } }
+    local realNum, realInfo, realColours = _G.GetNumGuildMembers, _G.GetGuildRosterInfo, _G.RAID_CLASS_COLORS
+    _G.GetNumGuildMembers = function() return #ROSTER end
+    _G.GetGuildRosterInfo = function(i) local r = ROSTER[i] if r then return r[1], r[2], 0, 30, r[3], "Durotar", "", "", true, 0, r[3] end end
+    _G.RAID_CLASS_COLORS = { WARRIOR = { r = 0.78, g = 0.61, b = 0.43 } }
+    NS.K._guildDirty = true
+    lib.spots = {}
+    H.eq(M.Update(), 0, "nobody sharing: no dots")
+
+    lib.spots.Bob = { map = 1411, x = 0.5, y = 0.4, at = H.clock }
+    lib.spots.Cara = { map = 1454, x = 0.3, y = 0.6, at = H.clock }
+    H.eq(M.Update(), 2, "two guildmates sharing: two dots")
+    local p = pins()
+    H.ok(p[1].who == "Bob" and p[1].map == 1411 and p[1].x == 0.5, "Bob on his zone map, where he is")
+    H.eq(p[1].flag, _G.HBD_PINS_WORLDMAP_SHOW_PARENT, "on his zone and one level up - not the whole world (Forever's world positions are off)")
+    H.eq(next(PINS.minimap), nil, "nothing on the minimap: the world map only")
+
+    -- he moves: his dot moves, it is not drawn twice
+    lib.spots.Bob = { map = 1411, x = 0.6, y = 0.4, at = H.clock }
+    M.Update()
+    p = pins()
+    H.eq(#p, 2, "still two dots")
+    H.eq(p[1].x, 0.6, "Bob's dot followed him")
+
+    -- he logs off (the lib drops the stale spot): his dot goes, the frame goes back to the pool
+    lib.spots.Bob = nil
+    M.Update()
+    p = pins()
+    H.ok(#p == 1 and p[1].who == "Cara", "Bob gone from the map")
+    H.eq(#M.pool, 1, "his pin frame kept for the next one")
+
+    -- the tooltip and the click
+    local lines = {}
+    _G.GameTooltip = { SetOwner = function() end, Show = function() end, Hide = function() end,
+                       AddLine = function(_, s) lines[#lines + 1] = s end }
+    p[1].icon:Fire("OnEnter")
+    H.eq(lines[1], "Cara", "hovering a dot names them")
+    H.ok(lines[3] == "Durotar", "with the zone the roster gives", table.concat(lines, " | "))
+    _G.GameTooltip = nil
+    p[1].icon:Click()
+    H.ok(NS.K.frame:IsShown() and NS.K.key == "Cara", "clicking a dot opens their card in the terminal")
+    NS.K.Hide()
+
+    -- /bisg dots off takes them all away; on brings them back
+    _G.SlashCmdList.BISGUILD("dots off")
+    H.eq(#pins(), 0, "/bisg dots off: no dots")
+    H.eq(_G.BiSGuildDB.mapDots, false, "and it is remembered")
+    _G.SlashCmdList.BISGUILD("dots on")
+    H.eq(#pins(), 1, "/bisg dots on: back")
+
+    -- a spot arriving draws within a second, once for a burst
+    local timers = #H.timers
+    M.Soon() M.Soon() M.Soon()
+    H.eq(#H.timers - timers, 1, "a burst of spots is one redraw")
+    H.RunTimers()
+
+    -- no library at all (a stripped copy): nothing drawn, nothing thrown
+    local keep = LibStub.libs["HereBeDragons-Pins-2.0"]
+    LibStub.libs["HereBeDragons-Pins-2.0"] = nil
+    H.eq(M.Update(), 0, "without the pins library: no dots and no error")
+    LibStub.libs["HereBeDragons-Pins-2.0"] = keep
+
+    lib.spots = {}
+    M.Update()
+    _G.GetNumGuildMembers, _G.GetGuildRosterInfo, _G.RAID_CLASS_COLORS = realNum, realInfo, realColours
+    NS.K._guildDirty = true
 end
 
 -- WHAT AN OPEN WINDOW COSTS, IN CLIENT CALLS (7 Oct 2026). BiSHealing asked the client ~630,000

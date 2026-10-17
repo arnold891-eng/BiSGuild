@@ -13,6 +13,10 @@
 
 Libs\BiSTheme\Console.lua
 Libs\LibBiSComm-1.0\LibBiSComm-1.0.lua
+Libs\LibStub\LibStub.lua
+Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
+Libs\HereBeDragons\HereBeDragons-2.0.lua
+Libs\HereBeDragons\HereBeDragons-Pins-2.0.lua
 
 # Written by dev/logreport.py --write, never by hand and never committed: it is raid data, not
 # source. A file named here that does not exist is skipped by the client, so a fresh install and a
@@ -26,4 +30,5 @@ Core\Share.lua
 Core\Window.lua
 Core\Terminal.lua
 Core\Where.lua
+Core\Pins.lua
 Core\Say.lua

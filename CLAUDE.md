@@ -30,6 +30,13 @@ Read ../_bisdev/CLAUDE.md first.
   `script` are the rest, and anything unrecognised is the report, because there is nothing else it
   could mean now.
 - `Libs/`: embedded `BiSTheme/Console.lua` and `LibBiSComm-1.0` — copies, see `../_bisdev/CLAUDE.md`.
+  Since 16 Oct also three THIRD-PARTY libs, BiS Tools' copies byte for byte (the suite checks):
+  `LibStub`, `CallbackHandler-1.0`, `HereBeDragons` (BSD) - sources and commits in
+  `Libs/THIRD-PARTY.txt`. Never edit them. The suites compile HereBeDragons but never run it (it drives
+  the client's map engine); `dev/tests.lua` swaps in a strict pins stand-in.
+- `Core/Store.lua`, `Core/Share.lua`: the guild's record (`BiSGuildDB.record`) and its sharing over
+  LibBiSComm GUILD ("GLOG", officers believed). `Core/Terminal.lua`, `Core/Where.lua`: the raider
+  terminal and its WHERE page. `Core/Pins.lua`: guildmates' dots on the world map. Plan: `dev/TERMINAL.md`.
 - `dev/tests.lua`: headless suite on `dev/kit.lua` (Nebbinator's strict harness, verbatim). Loads the TOC's
   files in order, fails on any global not in `ALLOWED`. `dev/theme.lua`: the palette law.
 - `dev/release.ps1`: zip + CurseForge upload (normally GitHub runs it on a tag — see
