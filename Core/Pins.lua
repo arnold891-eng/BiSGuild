@@ -142,4 +142,4 @@ local f = CreateFrame("Frame")
 f:RegisterEvent("PLAYER_LOGIN")
 f:SetScript("OnEvent", function() M.Boot() M.Update() end)
 
-ns.parts["Core/Pins.lua"] = "0.0.1"
+ns.parts["Core/Pins.lua"] = "0.1.0"

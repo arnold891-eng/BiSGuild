@@ -84,12 +84,15 @@ $re = '(?m)^(    Fingerprint   )[0-9A-F]{64}[ \t]*$'      # not \s*: that eats t
 if ($text -notmatch $re) { $bad += "dev\cf-desc.md has no '    Fingerprint   <64 hex>' line" }
 else { Put "dev\cf-desc.md" ([regex]::Replace($text, $re, ('${1}' + $fp))) "the CurseForge page" }
 
-# 5. the changelog's top entry: one line straight under its heading
+# 5. the changelog's top entry: one line straight under its heading - ONLY IF IT ALREADY HAS ONE.
+#    Arn, 16 Oct, before the first release: "dont put the fingerprint lets get approved first". The
+#    line is opt-in per release: put "Fingerprint (SHA-256" under the heading and this keeps it right.
 $cl = Join-Path $root "CHANGELOG.md"
 $text = Read-Text $cl
 $fline = "Fingerprint (SHA-256 of the whole addon, check it with the command on the CurseForge page): ``$fp``"
 $m = [regex]::Match($text, '(?m)^## [^\n]*\n')
 if (-not $m.Success) { $bad += "CHANGELOG.md has no ## entry" }
+elseif ($text.Substring($m.Index + $m.Length) -notmatch '^\nFingerprint \(SHA-256') { Write-Host "CHANGELOG.md : no fingerprint line in the top entry - left alone" }
 else {
     $at = $m.Index + $m.Length
     $rest = $text.Substring($at)

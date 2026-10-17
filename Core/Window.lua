@@ -582,4 +582,4 @@ function U.Toggle()
     return true
 end
 
-ns.parts["Core/Window.lua"] = "0.0.1"
+ns.parts["Core/Window.lua"] = "0.1.0"

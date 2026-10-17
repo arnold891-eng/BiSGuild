@@ -242,4 +242,4 @@ function S.Bosses()
     return pages
 end
 
-ns.parts["Core/Store.lua"] = "0.0.1"
+ns.parts["Core/Store.lua"] = "0.1.0"

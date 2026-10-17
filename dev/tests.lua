@@ -522,8 +522,14 @@ do
              "and the CurseForge page's check line is the addon's, letter for letter")
         local cl = bytes(ROOT .. "/CHANGELOG.md") or ""
         local top = cl:match("\n## [^\n]*\n(.-)\n## ") or cl:match("\n## [^\n]*\n(.*)$") or ""
-        H.ok(FP and top:find("`" .. FP .. "`", 1, true) ~= nil,
-             "the changelog's top entry (the release notes) carries it")
+        -- opt-in per release (Arn, 16 Oct: "dont put the fingerprint lets get approved first"):
+        -- no line is fine; a line with another number is not
+        local inLog = top:match("^\nFingerprint %(SHA%-256[^\n]*`(%x+)`")
+        if inLog then
+            H.eq(inLog, FP, "the changelog's top entry (the release notes) carries it")
+        else
+            H.say("  (note) the changelog's top entry has no fingerprint line - fine until it does")
+        end
         local ps = bytes(ROOT .. "/Tools/fingerprint.ps1") or ""
         H.ok(ps:find("$script:BiSGuildSkip = '" .. P.SKIP .. "'", 1, true) ~= nil,
              "the script's rule for which files count is the addon's, letter for letter")

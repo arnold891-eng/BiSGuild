@@ -7,8 +7,8 @@
 -- instead that it is exactly this text and nothing else.
 local _, ns = ...
 ns.BUILD = {
-    version = "0.0.1",
-    fingerprint = "EBD654678174C51E5A903510A4A2131DB05B4C105062819DC800F3773E2D33F1",
+    version = "0.1.0",
+    fingerprint = "D0375501644F887783CC69320842BDA7696F962DE882782BFE520070D68B3F33",
     parts = {
         "Core/Init.lua",
         "Core/Report.lua",

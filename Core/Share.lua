@@ -524,4 +524,4 @@ f:SetScript("OnEvent", function(_, event, isLogin, isReload)
     end
 end)
 
-ns.parts["Core/Share.lua"] = "0.0.1"
+ns.parts["Core/Share.lua"] = "0.1.0"

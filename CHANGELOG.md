@@ -1,12 +1,17 @@
 # BiSGuild
 
-## Unreleased
+## 0.1.0
 
-Fingerprint (SHA-256 of the whole addon, check it with the command on the CurseForge page): `EBD654678174C51E5A903510A4A2131DB05B4C105062819DC800F3773E2D33F1`
+The first public release. Loot night, two raiders, one trinket, and everyone thinks they remember who showed up. BiS Guild read the log instead.
 
-- **Your copy is checked, three ways.** One fingerprint covers every file of the addon, published on the CurseForge page with a one-line PowerShell check you can run yourself. The log script refuses to run if any file was changed, added or removed, and says which. In game, a file that is missing, broke while loading, or is left over from an older version switches BiS Guild off and says why.
-- **Your guild checks too.** At login each copy tells guildmates its version and fingerprint. Yours tells you if it differs from everyone else's or is out of date; `/bisg copy` shows how yours compares, and officers see who runs what.
-- Shared messaging library updated (LibBiSComm minor 10): after a boss, when the game lifts its chat lockdown, BiS addons say hello again so group lists stay current; it respects a realm that blocks addon messages, picks the raid channel only when the game confirms you are in a raid, and ignores anyone flooding it.
+- **The raider terminal** (`/bisg`): RAIDERS, BOSSES, WHERE, ROSTER and LOG. Attendance, deaths, flasks and food, gear issues in red, item tooltips with the enchant, the game's own right-click menu on every name. Esc steps back a page.
+- **The record comes from your combat log.** A small PowerShell script reads it, only the logs it hasn't read yet, and the addon picks the night up at `/reload`. Nothing to paste.
+- **Shared with your officers.** Any officer who reads a log hands the night to the whole guild, so a missed raid still fills in. Only officers are believed. Each guild keeps its own books, so an alt in another guild never sees your main's.
+- **Raid night.** Paste the Raid-Helper sign-up: who's online, absent or not in the guild, one button to invite everyone online, a pop-up when a sign-up logs in, and punctuality kept raid after raid.
+- **WHERE**: your guildmates on a map, opening in OpenMap when it's installed.
+- **Loot**: awards in a tamper-evident ledger per guild, `/bisl`. BiS Loot is folded in.
+- **Your copy is checked, three ways.** One fingerprint covers every file, with a one-line PowerShell check on the CurseForge page. The script refuses to run on a copy that doesn't match. In game, a missing or mismatched file switches BiS Guild off and says which, and your guildmates' copies tell you if yours differs or is out of date (`/bisg copy`).
+- Works with BiS Tools (invites through its party list) and OpenMap. Needs neither.
 
 ## 0.0.1
 

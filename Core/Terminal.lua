@@ -1168,4 +1168,4 @@ function K.Toggle()
     if K.frame and K.frame:IsShown() then K.Hide() else K.Show() end
 end
 
-ns.parts["Core/Terminal.lua"] = "0.0.1"
+ns.parts["Core/Terminal.lua"] = "0.1.0"
