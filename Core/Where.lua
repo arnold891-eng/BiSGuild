@@ -137,8 +137,42 @@ function W.Spots()
     return out
 end
 
---- Which map to show when nobody picked one: where most dots are; else where I am.
+--- THE WORLD VIEW (Arn, 16 Oct: "world view"). Azeroth's map, with every zone's spots placed on it by
+--- the client's own C_Map.GetMapRectOnMap - where a zone sits on another map - and not by a library's
+--- arithmetic: OpenMap's notes (16 Oct) say HereBeDragons' world positions come out wrong on Forever.
+W.WORLD = 947
+W.rects = {}                    -- "from>to" -> { minX, maxX, minY, maxY } or false
+function W.OnMap(from, x, y, to)
+    if from == to then return x, y end
+    if not (from and to and C_Map and C_Map.GetMapRectOnMap) then return nil end
+    local k = from .. ">" .. to
+    local r = W.rects[k]
+    if r == nil then
+        local ok, a, b, c, d = pcall(C_Map.GetMapRectOnMap, from, to)
+        a, b, c, d = ok and num(a), ok and num(b), ok and num(c), ok and num(d)
+        r = (a and b and c and d and b > a and d > c) and { a, b, c, d } or false
+        W.rects[k] = r
+    end
+    if not r then return nil end
+    return r[1] + x * (r[2] - r[1]), r[3] + y * (r[4] - r[3])
+end
+
+--- The map's kind (0 cosmic, 1 world, 2 continent, 3 zone...), or nil.
+function W.MapInfoType(map)
+    if not (map and C_Map and C_Map.GetMapInfo) then return nil end
+    local ok, info = pcall(C_Map.GetMapInfo, map)
+    return ok and type(info) == "table" and num(info.mapType) or nil
+end
+
+--- Can the world view be drawn: its art, and the client placing zones on it.
+function W.WorldReady()
+    return C_Map and C_Map.GetMapRectOnMap ~= nil and W.Pieces(W.WORLD) ~= nil
+end
+
+--- Which map to show when nobody picked one: the world, when it can be drawn; else where most dots
+--- are; else where I am.
 function W.AutoMap(spots)
+    if W.WorldReady() then return W.WORLD end
     local count, best = {}, nil
     for _, s in ipairs(spots) do
         count[s.map] = (count[s.map] or 0) + 1
@@ -282,7 +316,7 @@ function K.BuildWhere(page, bodyH)
     -- trimmed parchment would otherwise show again in the panel's spare room (16 Oct, Orgrimmar)
     page.land = CreateFrame("Frame", nil, canvas)
     if page.land.SetClipsChildren then page.land:SetClipsChildren(true) end
-    page.tiles, page.dots, page.labels = {}, {}, {}
+    page.tiles, page.dots, page.labels, page.marks = {}, {}, {}, {}
     page.none = ui.Text(canvas, 13, "ink2")
     page.none:SetPoint("TOPLEFT", 12, -12)
     page.none:SetWidth(W.MAP_W - 40)
@@ -304,6 +338,21 @@ function K.BuildWhere(page, bodyH)
     open.fs:SetPoint("CENTER", 0, 0)
     open:SetScript("OnClick", function() W.OpenBig() end)
     page.open = open
+    -- WORLD: back out to the whole guild after a click zoomed into somebody's zone
+    local world = CreateFrame("Button", nil, page.map)
+    world:SetPoint("RIGHT", open, "LEFT", -6, 0)
+    world:SetSize(60, 16)
+    local wbg = world:CreateTexture(nil, "BACKGROUND")
+    wbg:SetAllPoints()
+    ui.Fill(wbg, "sunken")
+    local whi = world:CreateTexture(nil, "HIGHLIGHT")
+    whi:SetAllPoints()
+    ui.Fill(whi, "accent", K.HOVER)
+    world.fs = ui.Text(world, 11, "gold", "CENTER")
+    world.fs:SetPoint("CENTER", 0, 0)
+    world.fs:SetText("WORLD")
+    world:SetScript("OnClick", function() K.whereMap, W.focus = W.WORLD, nil K.Paint() end)
+    page.world = world
 
     page.who = ui.Panel(page, "WHO IS WHERE", lx, 0, K.W - lx - 8, bodyH - 4)
     page.grid = ui.Grid(page.who, { "NAME", "LVL", "RANK", "" },
@@ -327,6 +376,27 @@ local function Tile(p, i)
         p.tiles[i] = t
     end
     return t
+end
+
+--- A zone marker: a hollow muted square, and "Zone N" under it.
+local function Mark(p, i)
+    local m = p.marks[i]
+    if not m then
+        m = CreateFrame("Frame", nil, p.land)
+        m:SetSize(12, 12)
+        for _, side in ipairs({ { "TOPLEFT", "TOPRIGHT", nil, 2 }, { "BOTTOMLEFT", "BOTTOMRIGHT", nil, 2 },
+                                { "TOPLEFT", "BOTTOMLEFT", 2, nil }, { "TOPRIGHT", "BOTTOMRIGHT", 2, nil } }) do
+            local t = m:CreateTexture(nil, "OVERLAY")
+            t:SetPoint(side[1], 0, 0)
+            t:SetPoint(side[2], 0, 0)
+            if side[3] then t:SetWidth(side[3]) else t:SetHeight(side[4]) end
+            t:SetColorTexture(K.ui.rgb("gold"))
+        end
+        m.label = K.ui.Text(p.land, 10, "gold")
+        m.label:SetPoint("TOP", m, "BOTTOM", 0, -1)
+        p.marks[i] = m
+    end
+    return m
 end
 
 local function Dot(p, i)
@@ -387,8 +457,10 @@ function K.PaintWhere(p)
         local colours = _G.RAID_CLASS_COLORS
         local n = 0
         for _, sp in ipairs(spots) do
-            if sp.map == map then
-                local px, py = (sp.x * lw - x0) * s, (sp.y * lh - y0) * s
+            -- a spot on its own zone, or placed onto the map shown (the world view)
+            local mx, my = W.OnMap(sp.map, sp.x, sp.y, map)
+            if mx then
+                local px, py = (mx * lw - x0) * s, (my * lh - y0) * s
                 if px >= 0 and py >= 0 and px <= landW and py <= landH then
                     n = n + 1
                     local d, l = Dot(p, n)
@@ -409,7 +481,39 @@ function K.PaintWhere(p)
                 end
             end
         end
-        p.map.right:SetText(("%d on this map"):format(n))
+        -- ZONE MARKERS on a map bigger than a zone: guildmates with no dot (no BiS addon sharing),
+        -- counted in the middle of the zone the roster says they are in - never a dot we invented
+        for _, m in ipairs(p.marks) do m:Hide() m.label:Hide() end
+        local marks = 0
+        if map == W.WORLD or (W.MapInfoType(map) or 9) <= 2 then
+            local nodot = {}
+            for _, r in ipairs(W.Rows(spots)) do
+                if not r.header and not r.spot and r.zone and r.zone ~= "?" then
+                    nodot[r.zone] = (nodot[r.zone] or 0) + 1
+                end
+            end
+            for zone, count in pairs(nodot) do
+                local zm = W.MapForZone(zone)
+                local cx, cy
+                if zm then cx, cy = W.OnMap(zm, 0.5, 0.5, map) end
+                if cx then
+                    local px, py = (cx * lw - x0) * s, (cy * lh - y0) * s
+                    if px >= 0 and py >= 0 and px <= landW and py <= landH then
+                        marks = marks + 1
+                        local mk = Mark(p, marks)
+                        mk:ClearAllPoints()
+                        mk:SetPoint("CENTER", p.land, "TOPLEFT", px, -py)
+                        mk:Show()
+                        mk.label:SetText(("%s %d"):format(zone, count))
+                        mk.label:Show()
+                    end
+                end
+            end
+        end
+        p.map.right:SetText(("%d on this map"):format(n) .. (marks > 0 and ("  +%d zone(s) without a dot"):format(marks) or ""))
+    end
+    if p.world then
+        if map == W.WORLD or not W.WorldReady() then p.world:Hide() else p.world:Show() end
     end
 
     -- the list

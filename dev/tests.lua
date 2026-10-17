@@ -1368,6 +1368,52 @@ do
              "Orgrimmar's land is its crop box, not the parchment", wp.land:GetWidth() / wp.land:GetHeight())
         H.eq(wp.map.right:GetText(), "1 on this map", "with her dot on it")
 
+        -- THE WORLD VIEW (Arn, 16 Oct: "world view"): when the client can place zones on Azeroth's
+        -- map, WHERE opens on the whole world - dots where people are, a marker per zone for the rest
+        _G.C_Map.GetMapRectOnMap = function(from, to)
+            if to ~= 947 then return nil end
+            if from == 1411 then return 0.40, 0.50, 0.50, 0.60 end     -- Durotar, somewhere east
+            if from == 1454 then return 0.42, 0.44, 0.48, 0.50 end     -- Orgrimmar, north of it
+            if from == 2001 then return 0.70, 0.80, 0.20, 0.30 end     -- an island
+        end
+        _G.C_Map.GetMapChildrenInfo = function(root)
+            if root ~= 947 then return {} end
+            return { { name = "Orgrimmar", mapID = 1454, mapType = 3 }, { name = "Durotar", mapID = 1411, mapType = 3 } }
+        end
+        local keepInfo = _G.C_Map.GetMapInfo
+        _G.C_Map.GetMapInfo = function(id) return { name = id == 947 and "Azeroth" or (id == 1411 and "Durotar" or "Orgrimmar"),
+                                                     mapType = id == 947 and 1 or 3 } end
+        Wh.zoneMaps, Wh.rects = nil, {}
+        local keepWhere = K.whereMap
+        K.whereMap, Wh.focus = nil, nil
+        K.Paint()
+        H.eq(Wh.shown, 947, "WHERE opens on the world")
+        H.ok(wp.map.title:GetText():find("AZEROTH", 1, true), "titled so", wp.map.title:GetText())
+        local wl = {}
+        for i, l in ipairs(wp.labels) do if wp.dots[i]:IsShown() then wl[#wl + 1] = l:GetText() end end
+        table.sort(wl)
+        H.ok(deq(wl, { "Bob", "Cara", "you" }), "every dot, from every zone, on one map", table.concat(wl, ","))
+        local shownMarks = 0
+        for _, m in ipairs(wp.marks) do if m:IsShown() then shownMarks = shownMarks + 1 end end
+        H.eq(shownMarks, 0, "everyone online here has a dot: no zone markers")
+        lib.spots.Cara = nil
+        K.Paint()
+        local markText
+        for _, m in ipairs(wp.marks) do if m:IsShown() then markText = m.label:GetText() end end
+        H.eq(markText, "Orgrimmar 1", "Cara without a dot: a marker in Orgrimmar, counted - never an invented dot")
+        H.ok(wp.map.right:GetText():find("zone(s) without a dot", 1, true), "and the corner says so")
+        H.ok(not wp.world:IsShown(), "on the world: no WORLD button")
+        rows[2]:Click()                                       -- Bob, who has a dot
+        H.eq(Wh.shown, 1411, "clicking somebody zooms to their zone")
+        H.ok(wp.world:IsShown(), "and WORLD appears")
+        wp.world:Click()
+        H.eq(Wh.shown, 947, "WORLD goes back out")
+        lib.spots.Cara = { map = 1454, x = 0.3, y = 0.3, at = H.clock }
+        _G.C_Map.GetMapRectOnMap, _G.C_Map.GetMapChildrenInfo, _G.C_Map.GetMapInfo = nil, nil, keepInfo
+        Wh.zoneMaps, Wh.rects = nil, {}
+        K.whereMap = keepWhere
+        K.Paint()
+
         -- THE BIG MAP: OpenMap's close-up when it is installed, the game's map when not
         local opened, glided, setTo
         _G.OpenWorldMap = function(m) opened = m end
