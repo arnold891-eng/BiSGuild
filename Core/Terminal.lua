@@ -403,7 +403,10 @@ function K.Build()
     K.frame = f
     f:SetSize(K.W, K.H)
     f:SetPoint("CENTER")
-    f:SetFrameStrata("DIALOG")
+    -- THE WORLD MAP'S LAYER, not above it (Arn, 16 Oct: "if i click open on OpenMap, it closes our
+    -- window"). On DIALOG the terminal covered the map, so opening the map had to hide it; on HIGH,
+    -- with SetToplevel, the two are ordinary windows - the one clicked last is in front.
+    f:SetFrameStrata("HIGH")
     f:EnableMouse(true)
     f:SetMovable(true)
     f:RegisterForDrag("LeftButton")

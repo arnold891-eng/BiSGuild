@@ -245,6 +245,9 @@ local function newFrame(ftype, name, parent, template)
         self._propagate = v and true or false
     end
     function fr:EnableKeyboard(v) self._keyboard = v and true or false end
+    -- a frame remembers its layer (16 Oct: "which window is in front" had no answer in the suite)
+    function fr:SetFrameStrata(s) self._strata = s end
+    function fr:GetFrameStrata() return self._strata or "MEDIUM" end
     function fr:SetVerticalScroll(v) self._scroll = v end
     function fr:GetVerticalScroll() return self._scroll or 0 end
     function fr:SetScrollChild(c) self._child = c end

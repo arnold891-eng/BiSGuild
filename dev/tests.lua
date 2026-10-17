@@ -1306,7 +1306,35 @@ do
         _G.WorldMapFrame = { SetMapID = function(_, m) setTo = m end }
         H.eq(wp.open.fs:GetText(), "OPEN WORLD MAP", "no OpenMap: the button opens the game's map")
         wp.open:Click()
-        H.ok(opened == 1454 and setTo == 1454 and not f:IsShown(), "on Cara's zone, the terminal out of the way")
+        H.ok(opened == 1454 and setTo == 1454, "on Cara's zone")
+        H.ok(f:IsShown(), "and the terminal stays open (Arn: 'it closes our window')")
+        H.eq(f._strata, "HIGH", "on the world map's layer, so the one clicked last is in front")
+
+        -- somebody without a dot: their card by the first word of a Forever whole name, or a plain why
+        Wh.Person({ name = "Bob Ofpills", zone = "Durotar", level = 9 })
+        H.ok(K.page == "raider" and K.key == "Bob", "'Bob Ofpills' from the roster opens Bob's card from the log")
+        K.Go("where")
+        Wh.Person({ name = "Fistfull Ofpills", zone = "Zephras Isle", level = 9 })
+        H.ok(K.page == "where" and f.status:GetText():find("no raid nights yet", 1, true),
+             "nobody on the record: it says why instead of 'no raider called'", f.status:GetText())
+
+        -- THEIR ZONE WITHOUT A BIS ADDON (Arn: "can it still read where they are at and open to that
+        -- map?"): the roster's zone name, found among the maps, opened - with no invented dot
+        _G.C_Map.GetMapChildrenInfo = function(root)
+            if root ~= 947 then return {} end
+            return { { name = "Orgrimmar", mapID = 1454, mapType = 3 }, { name = "Orgrimmar", mapID = 9999, mapType = 4 },
+                     { name = "Zephras Isle", mapID = 2001, mapType = 3 } }
+        end
+        Wh.zoneMaps = nil
+        H.eq(Wh.MapForZone("orgrimmar"), 1454, "a zone name finds its map, the city before a dungeon floor of that name")
+        K.whereMap = 1411
+        Wh.Person({ name = "Fistfull Ofpills", zone = "Zephras Isle", level = 9 })
+        H.eq(K.whereMap, 2001, "Fistfull's zone opens from the roster alone")
+        H.ok(f.status:GetText():find("somewhere in Zephras Isle", 1, true), "and says 'somewhere in' - no exact spot",
+             f.status:GetText())
+        H.eq(Wh.focus, nil, "no dot to zoom on")
+        _G.C_Map.GetMapChildrenInfo = nil
+        Wh.zoneMaps = nil
         _G.OpenMapAPI = {
             WorldFromMap = function(m, x, y) return m == 1454 and 0.2 + x / 10 or nil, 0.3 + y / 10 end,
             IsStitched = function() return true end,

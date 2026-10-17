@@ -145,7 +145,7 @@ function W.AutoMap(spots)
 end
 
 --- The list: online guild members grouped by zone, the busiest zone first, alphabetical inside.
---- rows = { { zone = name, n = count } | { person } }
+--- rows = { { header = true, zone = name, n = count } | { person, with its zone } }
 function W.Rows(spots)
     local bySpot = {}
     for _, s in ipairs(spots) do bySpot[s.key] = s end
@@ -154,7 +154,7 @@ function W.Rows(spots)
         if m.online then
             local z = m.zone or "?"
             if not zones[z] then zones[z] = {} order[#order + 1] = z end
-            table.insert(zones[z], { name = m.name or key, key = key, class = m.class, level = m.level,
+            table.insert(zones[z], { name = m.name or key, key = key, class = m.class, level = m.level, zone = z,
                                      rank = m.rank, spot = bySpot[key] })
         end
     end
@@ -164,7 +164,7 @@ function W.Rows(spots)
     end)
     local rows = {}
     for _, z in ipairs(order) do
-        rows[#rows + 1] = { zone = z, n = #zones[z] }
+        rows[#rows + 1] = { header = true, zone = z, n = #zones[z] }
         table.sort(zones[z], function(a, b) return a.name < b.name end)
         for _, p in ipairs(zones[z]) do rows[#rows + 1] = p end
     end
@@ -190,7 +190,8 @@ function W.OpenBig()
     if not map then K.Say("no map to open", "warn") return false end
     local x, y = 0.5, 0.5
     if W.focus and W.focus.map == map then x, y = W.focus.x, W.focus.y end
-    K.Hide()                                           -- the terminal sits above the map's strata
+    -- the terminal STAYS OPEN (Arn: "it closes our window"): it shares the map's layer now, and the
+    -- map, opened last, comes up in front
     if OpenWorldMap then pcall(OpenWorldMap, map) elseif ToggleWorldMap then pcall(ToggleWorldMap) end
     local api = W.OpenMapHere() and _G.OpenMapAPI
     if api then
@@ -204,6 +205,57 @@ function W.OpenBig()
         pcall(WorldMapFrame.SetMapID, WorldMapFrame, map)
     end
     return true
+end
+
+--- Somebody without a dot was clicked: their raider card if they have one, else say plainly why
+--- there is nothing to show (Arn, 16 Oct: "no raider or boss called Fistfull Ofpills <raider>").
+--- The roster gives Forever's whole name and the log the first one, so the first word is tried too.
+---
+--- THEIR ZONE, EVEN WITHOUT A BIS ADDON (Arn, 16 Oct: "if i click on people that dont have our
+--- addon can it still read where they are at and open to that map?"). The roster says which ZONE
+--- every online member is in; only a BiS addon says where in it. So the click opens that zone's map
+--- and says "somewhere in" - never a dot we would have to invent.
+W.ROOTS = { 947, 946 }          -- Azeroth, then the cosmic map: every zone hangs under one of them
+W.zoneMaps = nil                -- zone name, lowercased -> uiMapID, filled on first need
+function W.MapForZone(zone)
+    if type(zone) ~= "string" or zone == "" or zone == "?" then return nil end
+    if not W.zoneMaps then
+        W.zoneMaps = {}
+        if C_Map and C_Map.GetMapChildrenInfo then
+            for _, root in ipairs(W.ROOTS) do
+                local ok, list = pcall(C_Map.GetMapChildrenInfo, root, nil, true)
+                for _, info in ipairs(ok and type(list) == "table" and list or {}) do
+                    local name, id = info.name, num(info.mapID)
+                    if type(name) == "string" and id and not hidden(name) then
+                        local key = name:lower()
+                        -- a zone or a city beats a dungeon floor of the same name
+                        local t = num(info.mapType) or 9
+                        local have = W.zoneMaps[key]
+                        if not have or t < have.t then W.zoneMaps[key] = { id = id, t = t } end
+                    end
+                end
+            end
+        end
+    end
+    local hit = W.zoneMaps[zone:lower()]
+    return hit and hit.id or nil
+end
+
+function W.Person(row)
+    local map = W.MapForZone(row.zone)
+    if map and W.Pieces(map) then
+        K.whereMap, W.focus = map, nil
+        K.Paint()
+        K.Say(("%s is somewhere in %s - no exact spot: no BiS addon is sharing theirs"):format(row.name, row.zone), "ink2")
+        return "map"
+    end
+    local cards = ns.S.Cards()
+    for _, name in ipairs({ row.name, (row.name:match("^(%S+)")) }) do
+        if K.Parse(name .. " <raider>", cards, {}) == "raider" then return K.Go(name .. " <raider>") end
+    end
+    K.Say(("%s - %s, level %s: no dot (no BiS addon sharing a spot), no map for that place, no raid nights yet")
+        :format(row.name, row.zone or "?", tostring(row.level or "?")), "ink2")
+    return nil
 end
 
 --------------------------------------------------------------------
@@ -251,7 +303,7 @@ function K.BuildWhere(page, bodyH)
         function(key)
             local row = W.byKey and W.byKey[key]
             if row and row.spot then K.whereMap, W.focus = row.spot.map, row.spot K.Paint()
-            elseif row and row.name then K.Go(row.name .. " <raider>") end
+            elseif row and row.name then W.Person(row) end
         end)
     page.hint = ui.Text(page.who, 12, "ink2")
     page.hint:SetPoint("TOPLEFT", 12, -44)
@@ -356,7 +408,7 @@ function K.PaintWhere(p)
     W.byKey = {}
     local off = ui.Scroll(p.grid, #rows)
     local online = 0
-    for _, r in ipairs(rows) do if not r.zone then online = online + 1 end end
+    for _, r in ipairs(rows) do if not r.header then online = online + 1 end end
     p.who.right:SetText(("%d online"):format(online) .. ui.Showing(p.grid))
     if #rows == 0 then
         p.hint:SetText(IsInGuild and IsInGuild() and "Nobody in the guild is online - or the roster has not arrived yet."
@@ -370,7 +422,7 @@ function K.PaintWhere(p)
         local r = rows[i + off]
         if not r then
             ui.SetRow(row, nil, {})
-        elseif r.zone then
+        elseif r.header then
             ui.SetRow(row, "#" .. r.zone, { r.zone, r.n, "", "" }, { "gold", "gold", "muted", "muted" })
             W.byKey["#" .. r.zone] = r
         else
