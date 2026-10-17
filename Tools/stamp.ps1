@@ -80,7 +80,7 @@ Put "Core\Build.lua" (Get-BiSGuildBuildLua $version $fp $parts) "what the copy s
 # 4. the CurseForge page: the number line in its check block
 $cf = Join-Path $root "dev\cf-desc.md"
 $text = Read-Text $cf
-$re = '(?m)^(    Fingerprint   )[0-9A-F]{64}\s*$'
+$re = '(?m)^(    Fingerprint   )[0-9A-F]{64}[ \t]*$'      # not \s*: that eats the blank line after it
 if ($text -notmatch $re) { $bad += "dev\cf-desc.md has no '    Fingerprint   <64 hex>' line" }
 else { Put "dev\cf-desc.md" ([regex]::Replace($text, $re, ('${1}' + $fp))) "the CurseForge page" }
 

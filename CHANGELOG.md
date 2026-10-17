@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-Fingerprint (SHA-256 of the whole addon, check it with the command on the CurseForge page): `97C48532548C217DD1CD6CF3B81906FEB25E55B4C41DAFE14C8D684D07369AD7`
+Fingerprint (SHA-256 of the whole addon, check it with the command on the CurseForge page): `BC5A601062DE8825026AF35AA54F667811BAD16DDA97E376D6995746DB66FF5F`
 
 - **Your copy is checked, three ways.** One fingerprint covers every file of the addon, published on the CurseForge page with a one-line PowerShell check you can run yourself. The log script refuses to run if any file was changed, added or removed, and says which. In game, a file that is missing, broke while loading, or is left over from an older version switches BiS Guild off and says why.
 - **Your guild checks too.** At login each copy tells guildmates its version and fingerprint. Yours tells you if it differs from everyone else's or is out of date; `/bisg copy` shows how yours compares, and officers see who runs what.
