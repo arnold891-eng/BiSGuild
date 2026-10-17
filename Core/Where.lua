@@ -72,13 +72,18 @@ function W.Pieces(mapID)
     local cols = math.ceil(lw / tw)
     for i, file in ipairs(files) do
         local c, r = (i - 1) % cols, math.floor((i - 1) / cols)
-        pieces[#pieces + 1] = { file, c * tw, r * th, tw, th, tw, th }
+        pieces[#pieces + 1] = { file, c * tw, r * th, tw, th, tw, th, "BORDER" }
     end
+    -- what this map gave, for `/bisg mapwhy`
+    W.why = { map = mapID, base = #pieces, explored = 0, records = 0, hidden = false }
     -- the explored pieces over it, cut the way the client cuts them (BiS Tools' overlay, 14 Oct)
     local info = C_MapExplorationInfo and C_MapExplorationInfo.GetExploredMapTextures
     local okE, explored = false, nil
     if info then okE, explored = pcall(info, mapID) end
+    W.why.hidden = okE and hidden(explored) or false
+    W.why.call = info and (okE and "answered" or "errored") or "missing"
     if okE and type(explored) == "table" and not hidden(explored) then
+        W.why.records = #explored
         for _, e in ipairs(explored) do
             local tw2, th2 = num(e.textureWidth), num(e.textureHeight)
             local ox, oy = num(e.offsetX) or 0, num(e.offsetY) or 0
@@ -90,8 +95,11 @@ function W.Pieces(mapID)
                         local pw = (k < wide) and W.TILE or (tw2 - W.TILE * (wide - 1))
                         local file = e.fileDataIDs[(j - 1) * wide + k]
                         if file then
+                            -- ARTWORK, over the base's BORDER (Arn, 16 Oct, Zephras Isle: "it shows fog of
+                            -- war, I've explored some of that map" - one shared layer let the fog draw last)
                             pieces[#pieces + 1] = { file, ox + W.TILE * (k - 1), oy + W.TILE * (j - 1), pw, ph,
-                                (k < wide) and W.TILE or fileSize(pw), (j < tall) and W.TILE or fileSize(ph) }
+                                (k < wide) and W.TILE or fileSize(pw), (j < tall) and W.TILE or fileSize(ph), "ARTWORK" }
+                            W.why.explored = W.why.explored + 1
                         end
                     end
                 end
@@ -366,6 +374,7 @@ function K.PaintWhere(p)
         p.land:Show()
         for i, pc in ipairs(pieces) do
             local t = Tile(p, i)
+            t:SetDrawLayer(pc[8] or "BORDER")             -- the fog under, the explored over
             t:SetTexture(pc[1])
             t:SetTexCoord(0, pc[4] / pc[6], 0, pc[5] / pc[7])
             t:SetSize(pc[4] * s, pc[5] * s)

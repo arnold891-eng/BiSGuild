@@ -32,6 +32,14 @@ function ns.Say(cmd, rest)
             or ns.T.text("warn", "off"), n, ns.T.text("muted", "/bisg dots on | off"))
         return
     end
+    -- `/bisg mapwhy`: what the WHERE map's last drawing got from the game (16 Oct: Zephras Isle fog)
+    if cmd == "mapwhy" and ns.Where then
+        local w = ns.Where.why
+        if not w then ns.Print("the WHERE map has not drawn yet - open it first") return end
+        ns.Print("map %s: %d base tile(s); explored pieces: call %s, %d record(s), %d piece(s)%s", tostring(w.map),
+            w.base, tostring(w.call), w.records, w.explored, w.hidden and ", HIDDEN by the client" or "")
+        return
+    end
     if cmd == "terminal" or cmd == "t" then
         if ns.K then ns.K.Show(rest ~= "" and rest or nil) end
         return

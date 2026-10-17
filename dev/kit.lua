@@ -59,6 +59,10 @@ local function newTexture(owner)
     function t:SetWidth(w) self._w = w end
     function t:SetHeight(h) self._h = h end
     function t:SetSize(w, h) self._w, self._h = w, h end
+    -- a texture remembers its draw layer (16 Oct: Zephras Isle's fog drew over the explored pieces,
+    -- both on BORDER, and the suite had no way to see which layer anything was on)
+    function t:SetDrawLayer(l) self._layer = l end
+    function t:GetDrawLayer() return self._layer or "ARTWORK" end
     function t:SetColorTexture(r, g, b, a)
         if not (isnum(r) and isnum(g) and isnum(b)) then
             error(("SetColorTexture needs r,g,b(,a) numbers - got %s,%s,%s")
@@ -219,7 +223,7 @@ local function newFrame(ftype, name, parent, template)
         end
         return true
     end
-    function fr:CreateTexture() local t = newTexture(self); self._regions = self._regions or {}; table.insert(self._regions, t); return t end
+    function fr:CreateTexture(_, layer) local t = newTexture(self); t._layer = layer; self._regions = self._regions or {}; table.insert(self._regions, t); return t end
     function fr:CreateFontString(_, _, template) local f = newFontString(self, template); self._regions = self._regions or {}; table.insert(self._regions, f); return f end
     function fr:SetScript(k, fn) self._scripts[k] = fn end
     function fr:GetScript(k) return self._scripts[k] end

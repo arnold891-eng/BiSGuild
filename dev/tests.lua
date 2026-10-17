@@ -1269,6 +1269,26 @@ do
         local shownTiles = 0
         for _, t in ipairs(wp.tiles) do if t:IsShown() then shownTiles = shownTiles + 1 end end
         H.eq(shownTiles, 12, "the zone drawn from its twelve tiles")
+
+        -- THE EXPLORED PIECES DRAW OVER THE FOG (Arn, Zephras Isle: "it shows fog of war, I've
+        -- explored some of that map") - a separate, higher layer, never the base's
+        _G.C_MapExplorationInfo = { GetExploredMapTextures = function()
+            return { { textureWidth = 300, textureHeight = 200, offsetX = 100, offsetY = 50, fileDataIDs = { 7001, 7002 } } }
+        end }
+        K.Paint()
+        local base, over = 0, 0
+        for _, t in ipairs(wp.tiles) do
+            if t:IsShown() then
+                if t._layer == "BORDER" then base = base + 1 elseif t._layer == "ARTWORK" then over = over + 1 end
+            end
+        end
+        H.ok(base == 12 and over == 2, "12 fog tiles under, 2 explored pieces over: " .. base .. "/" .. over)
+        H.ok(Wh.why.explored == 2 and Wh.why.records == 1, "and /bisg mapwhy can say what the game gave")
+        local before = #said
+        _G.SlashCmdList.BISGUILD("mapwhy")
+        H.ok(said[before + 1] and said[before + 1]:find("12 base tile", 1, true), "/bisg mapwhy", said[before + 1])
+        _G.C_MapExplorationInfo = nil
+        K.Paint()
         H.eq(wp.map.right:GetText(), "2 on this map", "Bob's dot and mine")
         local labels = {}
         for i, l in ipairs(wp.labels) do if wp.dots[i]:IsShown() then labels[#labels + 1] = l:GetText() end end
