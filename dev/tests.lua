@@ -1600,12 +1600,67 @@ do
     for _, m in ipairs(I.OnlineRaiders()) do online[#online + 1] = m.name end
     H.ok(deq(online, { "Bob", "Kio Alpha" }), "raiders on the record and online: Bob, Kio", table.concat(online, ","))
 
+    -- INVITE ONLINE SAYS WHO IT LEFT OUT (Arn: "it only invited Shwed, it ignored Ari and Mare")
+    _G.BiSGuildDB.record.nights["2026-10-09"].raiders.Cara = raider(2, 3)
+    invited = {}
+    I.InviteOnline()
+    I.InviteOnline()
+    for _ = 1, 5 do H.RunTimers() end
+    H.ok(f.status:GetText():find("offline, not invited: Cara", 1, true), "Cara, offline, is named - not silently skipped",
+         f.status:GetText())
+    _G.BiSGuildDB.record.nights["2026-10-09"].raiders.Cara = nil
+    H.clock = H.clock + 60
+    I.armed = nil
+
+    -- RAID-HELPER'S EXPORT (Arn: "raid helper only does json"; two real exports pasted 16 Oct):
+    -- sign-ups only, Discord nicknames, absences, one person signed for several specs
+    local json = '{"date":"06-10-2026","signUps":['
+        .. '{"cClassName":"Absence","className":"Absence","name":"Cara","id":1,"position":8,"status":"primary"},'
+        .. '{"cClassName":"Mage","className":"Mage","specName":"Arcane","name":"Bloodbow/Kio","roleName":"Ranged","position":2},'
+        .. '{"className":"Melee","specName":"Fury","name":"bob09","roleName":"Dps","position":3,"note":"Don\\u2019t know yet"},'
+        .. '{"className":"Healer","specName":"Holy","name":"bob09","roleName":"Healers","position":4},'
+        .. '{"className":"Tentative","specName":"Holy","name":"Figs","position":5}'
+        .. '],"classes":[{"specs":[{"cName":"Protection","name":"Protection","roleName":"Tanks"}],"name":"Tank"}],'
+        .. '"displayTitle":"Illidan did nothing wrong","time":"20:00","channelName":"tuesday-raid-sign-up"}'
+    local hr = I.Read(json)
+    local by = {}
+    for _, r in ipairs(hr) do by[r.typed] = r end
+    H.eq(#hr, 4, "four people: the class tables after the sign-ups are not people")
+    H.ok(by["Kio Alpha"] and by["Kio Alpha"].member, "'Bloodbow/Kio' - a Discord main/alt - finds Kio Alpha")
+    H.ok(by.Bob and by.Bob.signed == "Fury, Holy", "'bob09' is Bob, both his sign-ups on one row", by.Bob and by.Bob.signed)
+    H.eq(I.Status(by.Cara, I.Here()), "absent", "Cara signed Absence: absent, never invited")
+    H.ok(by.Figs and not by.Figs.member and by.Figs.standing == "tentative", "Figs: tentative, not in the guild")
+    H.eq(I.event and I.event.title, "Illidan did nothing wrong", "the event's title for the header")
+    local rp2 = f.pages.roster
+    K.Go("roster")
+    rp2.box:SetText(json)
+    rp2.read:Click()
+    H.ok(rp2.paste.right:GetText():find("Illidan did nothing wrong", 1, true), "shown over the paste")
+    H.eq(rp2.send.fs:GetText(), "INVITE 2 ONLINE", "Kio and Bob online; Cara absent; Figs a stranger")
+    _G.BiSGuildDB.roster = nil
+
+    -- RIGHT-CLICK A RAIDER: the game's player menu (Arn: "can we right click and pull up the blizz menu?")
+    local menu
+    _G.UnitPopup_OpenMenu = function(which, ctx) menu = { which = which, name = ctx.name, chat = ctx.chatTarget } end
+    _G.BiSGuildDB.record.nights["2026-10-09"].raiders.Kio = raider(2, 3)
+    K.Go("raiders")
+    local kioRow
+    for _, row in ipairs(f.pages.raiders.grid.rows) do if row.key == "Kio" then kioRow = row end end
+    kioRow:Click("RightButton")
+    H.ok(menu and menu.which == "FRIEND" and menu.name == "Kio Alpha" and menu.chat == "Kio Alpha",
+         "the player menu, by Forever's whole name - never the guild menu", menu and (menu.which .. " " .. menu.name))
+    H.eq(K.page, "raiders", "and the right-click does not open the card")
+    kioRow:Click("LeftButton")
+    H.eq(K.key, "Kio", "a left-click still does")
+    _G.UnitPopup_OpenMenu = nil
+    _G.BiSGuildDB.record.nights["2026-10-09"].raiders.Kio = nil
+
     -- not the leader: nothing goes, and it says why
     H.inRaid, H.raid = true, { { name = "Kumlust" }, { name = "Zed" } }
     _G.UnitIsGroupLeader = function() return false end
     invited = {}
-    I.Send(I.OnlineRaiders(), "raiders on the record")
-    I.Send(I.OnlineRaiders(), "raiders on the record")
+    I.Send((I.OnlineRaiders()), "raiders on the record")
+    I.Send((I.OnlineRaiders()), "raiders on the record")
     H.ok(#invited == 0 and f.status:GetText():find("only the leader", 1, true), "only the leader invites", f.status:GetText())
     H.inRaid, H.raid, _G.UnitIsGroupLeader = false, { { name = "Kumlust" } }, nil
 

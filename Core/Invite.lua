@@ -83,8 +83,90 @@ function I.Words(piece)
     return out
 end
 
---- text -> rows { typed, member (roster entry or nil), key }, one per person, in the order pasted.
+--- RAID-HELPER'S EXPORT (Arn pasted one, 16 Oct): JSON, with a "signUps" list. Each sign-up is a flat
+--- object - name (the DISCORD nickname: "Mani/Asta", "Bloodbow/Yoshihide", "shwed09"), className
+--- (a class, or "Absence" / "Tentative" / "Late" / "Bench"), specName, roleName. The rest of the
+--- export (class and spec tables, emote ids, settings) is not about people and is never read: fed to
+--- the any-shape reader it became a hundred fake "not in guild" people named cClassName and userId.
+I.STANDING = { Absence = "absent", Bench = "bench", Tentative = "tentative", Late = "late" }
+I.OUT = { absent = true, bench = true }       -- signed up as not coming: never invited
+local function jstr(obj, key)
+    local v = obj:match('"' .. key .. '"%s*:%s*"(.-)"')
+    return v and v:gsub("\\u(%x%x%x%x)", function(h)
+        local n = tonumber(h, 16)
+        if n < 128 then return string.char(n) end
+        if n < 2048 then return string.char(192 + math.floor(n / 64), 128 + n % 64) end
+        return string.char(224 + math.floor(n / 4096), 128 + math.floor(n / 64) % 64, 128 + n % 64)
+    end):gsub('\\"', '"') or nil
+end
+function I.ReadRaidHelper(text)
+    local list = text:match('"signUps"%s*:%s*%[(.-)%]')
+    if not list then return nil end
+    local event = { title = jstr(text, "displayTitle") or jstr(text, "title"), date = jstr(text, "date"),
+                    time = jstr(text, "time"), channel = jstr(text, "channelName") }
+    local out = {}
+    for obj in list:gmatch("{(.-)}") do
+        local name = jstr(obj, "name")
+        if name and name ~= "" then
+            local cls = jstr(obj, "className")
+            out[#out + 1] = { name = name, standing = I.STANDING[cls or ""],
+                              signed = jstr(obj, "specName") or I.STANDING[cls or ""] or cls,
+                              position = tonumber(obj:match('"position"%s*:%s*(%d+)')) or 999 }
+        end
+    end
+    table.sort(out, function(a, b) return a.position < b.position end)
+    return out, event
+end
+
+--- text -> rows { typed, member (roster entry or nil), key, signed, standing }, one per person.
 function I.Read(text)
+    text = tostring(text or "")
+    -- a 20,000-character export is read once, not every redraw; matching to the roster is cheap
+    if I._readText ~= text then
+        I._readText = text
+        I._helper, I._event = I.ReadRaidHelper(text)
+    end
+    I.event = I._event
+    if I._helper then return I.Match(I._helper) end
+    return I.ReadAny(text)
+end
+
+--- Raid-Helper's sign-ups matched to the guild: every part of a nickname is tried ("Bloodbow/
+--- Yoshihide" is Yoshihide's main and alt), digits and symbols dropped ("shwed09" is Shwed).
+function I.Match(signups)
+    local guild = K.Guild().members
+    local whole = {}
+    for key, m in pairs(guild) do if m.name then whole[m.name:lower()] = key end end
+    local rows, seen = {}, {}
+    for _, s in ipairs(signups) do
+        local hit
+        local words = {}
+        for w in s.name:gmatch("[%a\128-\255']+") do if #w >= 2 then words[#words + 1] = w end end
+        for i, w in ipairs(words) do
+            local two = words[i + 1] and (w .. " " .. words[i + 1]):lower()
+            hit = (two and whole[two]) or (guild[w:lower()] and w:lower())
+            if hit then break end
+        end
+        local key = hit or ("?" .. s.name:lower())
+        local row = seen[key]
+        if not row then
+            row = { typed = hit and guild[hit].name or s.name, member = hit and guild[hit] or nil, key = key,
+                    specs = {}, standing = s.standing }
+            seen[key] = row
+            rows[#rows + 1] = row
+        end
+        -- ONE PERSON, SEVERAL SIGN-UPS (Arn's "Forever Class" export: Gnomerpills signed Fire,
+        -- Subtlety, Holy, Shadow): one row, every spec. A real sign-up beats an earlier absence.
+        if s.signed and not row.specs[s.signed] then
+            row.specs[s.signed] = true
+            row.signed = row.signed and (row.signed .. ", " .. s.signed) or s.signed
+        end
+        if not s.standing or not I.OUT[s.standing] then row.standing = s.standing end
+    end
+    return rows
+end
+
+function I.ReadAny(text)
     local guild = K.Guild().members
     local whole = {}
     for key, m in pairs(guild) do
@@ -115,8 +197,10 @@ function I.Read(text)
     return rows
 end
 
---- Where each row stands now: "here" (with you), "online", "offline", "not in guild".
+--- Where each row stands now: "absent" / "bench" (signed up as not coming), "not in guild",
+--- "with you", "online", "offline". Only "online" is ever invited.
 function I.Status(row, here)
+    if row.standing and I.OUT[row.standing] then return row.standing end
     if not row.member then return "not in guild" end
     if here[row.key] then return "with you" end
     return row.member.online and "online" or "offline"
@@ -217,22 +301,39 @@ function I.Pump()
     end
 end
 
---- Every guild member on the record who is online and not with you: raid night's one button.
+--- Every guild member on the record who is online and not with you: raid night's one button. Also
+--- answers who was LEFT OUT and why (Arn, 16 Oct: "it only invited Shwed, it ignored Ari and Mare" -
+--- the roster had them offline, and the button said nothing about it). The roster is read afresh:
+--- the copy kept between roster events can be minutes old.
 function I.OnlineRaiders()
-    local out = {}
+    K._guildDirty = true
+    local out, offline = {}, {}
     for name in pairs(ns.S.Cards()) do
         local m = K.Guild().members[Key(name)]
-        if m and m.online then out[#out + 1] = m end
+        if m and m.online then out[#out + 1] = m elseif m then offline[#offline + 1] = m.name end
     end
     table.sort(out, function(a, b) return a.name < b.name end)
-    return out
+    table.sort(offline)
+    return out, offline
+end
+
+--- The RAIDERS list's INVITE ONLINE: send who is online, then say who was not.
+function I.InviteOnline()
+    local members, offline = I.OnlineRaiders()
+    local n = I.Send(members, "raiders on the record")
+    if #offline > 0 then
+        local said = K.frame and K.frame.status:GetText() or ""
+        K.Say(said .. ("   |   offline, not invited: %s"):format(table.concat(offline, ", ")), "ink2")
+    end
+    return n, offline
 end
 
 --------------------------------------------------------------------
 -- the ROSTER page
 --------------------------------------------------------------------
 
-I.STATUS_COLOUR = { ["online"] = "good", ["with you"] = "accent", ["offline"] = "muted", ["not in guild"] = "warn" }
+I.STATUS_COLOUR = { ["online"] = "good", ["with you"] = "accent", ["offline"] = "muted", ["not in guild"] = "warn",
+                    ["absent"] = "warn", ["bench"] = "gold" }
 
 function K.BuildRoster(page, bodyH)
     local ui = K.ui
@@ -243,7 +344,7 @@ function K.BuildRoster(page, bodyH)
     box:SetSize(leftW - 16, bodyH - 70)
     box:SetMultiLine(true)
     box:SetAutoFocus(false)
-    box:SetMaxLetters(6000)
+    box:SetMaxLetters(0)                 -- no cap: a Raid-Helper export runs past 20,000 characters
     box:SetFontObject("GameFontHighlightSmall")
     if box.SetFont then pcall(box.SetFont, box, K.FONT, 12, "") end
     box:SetTextColor(ui.rgb("ink"))
@@ -284,8 +385,8 @@ function K.BuildRoster(page, bodyH)
 
     local rx = leftW + 16
     page.list = ui.Panel(page, "THE ROSTER", rx, 0, K.W - rx - 8, bodyH - 4)
-    page.grid = ui.Grid(page.list, { "NAME", "CLASS", "RANK", "NOW" },
-        { { 170, "LEFT" }, { 90, "LEFT" }, { 100, "LEFT" }, { 80, "RIGHT" } }, K.LIST_ROWS - 2, 22,
+    page.grid = ui.Grid(page.list, { "NAME", "CLASS", "SIGNED", "NOW" },
+        { { 140, "LEFT" }, { 70, "LEFT" }, { 170, "LEFT" }, { 80, "RIGHT" } }, K.LIST_ROWS - 2, 22,
         function(key)
             local r = I.byKey and I.byKey[key]
             if r and r.member then K.Go(r.member.name .. " <raider>") end
@@ -321,6 +422,10 @@ function K.PaintRoster(p)
         I.byKey[r.key] = r
     end
     if #rows == 0 then p.hint:Show() else p.hint:Hide() end
+    -- the Raid-Helper event this came from, in the paste panel's corner
+    local e = I.event
+    p.paste.right:SetText(e and e.title and ("%s  %s %s"):format(e.title, e.date or "", e.time or "")
+        or "names, a list, a table, Raid-Helper's JSON")
     p.list.right:SetText(#rows == 0 and "" or ("%d on it, %d online, %d not in guild"):format(#rows, counts.online,
         counts["not in guild"] or 0) .. ui.Showing(p.grid))
     p.send.fs:SetText(("INVITE %d ONLINE"):format(counts.online))
@@ -332,8 +437,11 @@ function K.PaintRoster(p)
             local s = I.Status(r, here)
             local m = r.member
             local cc = m and m.class and colours and colours[m.class]
-            ui.SetRow(row, r.key, { m and m.name or r.typed, m and ClassName(m.class) or "", m and m.rank or "", s },
-                { cc and { cc.r, cc.g, cc.b } or (m and "ink" or "muted"), "ink2", "muted", I.STATUS_COLOUR[s] or "ink" })
+            ui.SetRow(row, r.key, { m and m.name or r.typed, m and ClassName(m.class) or "",
+                                    r.signed or (m and m.rank) or "", s },
+                { cc and { cc.r, cc.g, cc.b } or (m and "ink" or "muted"), "ink2",
+                  r.standing and "gold" or "muted", I.STATUS_COLOUR[s] or "ink" })
+            row.who = m and m.name or nil               -- right-click: the game's player menu
         else
             ui.SetRow(row, nil, {})
         end

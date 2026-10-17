@@ -439,6 +439,7 @@ function K.PaintWhere(p)
             ui.SetRow(row, r.key, { "  " .. r.name, r.level or "", r.rank or "", r.spot and "on map" or "" },
                 { cc and { cc.r, cc.g, cc.b } or "ink", "ink2", "muted",
                   (r.spot and r.spot.map == map) and "good" or "accent" })
+            row.who = r.name
             W.byKey[r.key] = r
         end
     end

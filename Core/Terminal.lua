@@ -377,7 +377,16 @@ local function Grid(parent, heads, cols, n, y0, onClick, onHead)
             row.cells[i] = fs
             cx = cx + c[1] + 6
         end
-        if onClick then row:SetScript("OnClick", function(self) if self.key then onClick(self.key) end end) end
+        -- RIGHT-CLICK: the game's own player menu for the row's person (Arn, 16 Oct: "on the raider
+        -- screen can we right click and pull up the blizz menu?") - painters set row.who
+        if row.RegisterForClicks then row:RegisterForClicks("LeftButtonUp", "RightButtonUp") end
+        row:SetScript("OnClick", function(self, button)
+            if button == "RightButton" then
+                if self.who then K.PlayerMenu(self.who) end
+                return
+            end
+            if onClick and self.key then onClick(self.key) end
+        end)
         g.rows[r] = row
     end
     return g
@@ -403,12 +412,31 @@ end
 
 local function SetRow(row, key, values, colours)
     row.key = key
+    row.who = nil                                  -- the painter names the person, if the row is one
     for i, fs in ipairs(row.cells) do
         fs:SetText(values[i] ~= nil and tostring(values[i]) or "")
         local c = colours and colours[i] or "ink"
         if type(c) == "table" then fs:SetTextColor(c[1], c[2], c[3]) else fs:SetTextColor(rgb(c)) end
     end
     if key then row:Show() else row:Hide() end
+end
+
+--- THE GAME'S OWN PLAYER MENU for a name (Arn, 16 Oct: "right click and pull up the blizz menu"):
+--- whisper, invite, add friend, ignore - and BiS Tools' "BiS" lines, which join that menu. The
+--- FRIEND menu, not the guild roster's: a guild menu opened by an addon can taint promote and kick
+--- (BiS Tools keeps its guild-menu line behind a switch for that reason). Forever's whole name, from
+--- the roster, so whisper and invite reach the right person.
+function K.PlayerMenu(name)
+    local m = K.Guild().members[K.NameKey(name)]
+    local whole = m and m.name or name
+    if type(whole) ~= "string" or whole == "" then return false end
+    if UnitPopup_OpenMenu then
+        local ok = pcall(UnitPopup_OpenMenu, "FRIEND",
+            { name = whole, chatTarget = whole, connected = m and m.online or nil })
+        if ok then return true end
+    end
+    if FriendsFrame_ShowDropdown then return (pcall(FriendsFrame_ShowDropdown, whole, m and m.online)) end
+    return false
 end
 
 -- the kit, for pages built in other files (Core/Where.lua) so they look the same
@@ -547,7 +575,7 @@ function K.Build()
     pr.panel = plist
     -- raid night's one button: every guild member on the record who is online (Core/Invite.lua)
     pr.invite = BarButton(plist, "INVITE ONLINE", 110, "TOPLEFT", 90, function()
-        if ns.Inv then ns.Inv.Send(ns.Inv.OnlineRaiders(), "raiders on the record") end
+        if ns.Inv then ns.Inv.InviteOnline() end
     end)
     f.pages.raiders = pr
 
@@ -729,6 +757,7 @@ local function PaintRaiders(p)
                 { nameColour, r.pug and "muted" or "ink2", r.att >= 75 and "good" or (r.att >= 50 and "gold" or "warn"), "ink2",
                   r.flask and "good" or "warn", r.deaths > 0 and "warn" or "ink2",
                   not r.geared and "muted" or (r.issues > 0 and "warn" or "good") })
+            row.who = r.name
         else
             SetRow(row, nil, {})
         end
@@ -859,7 +888,7 @@ local function PaintBoss(p, name)
     p.killers.right:SetText(("%d raiders"):format(#who) .. Showing(p.grid))
     for i, row in ipairs(p.grid.rows) do
         local w = who[i + off]
-        if w then SetRow(row, w[1], { w[1], w[2] }, { "ink", "good" }) else SetRow(row, nil, {}) end
+        if w then SetRow(row, w[1], { w[1], w[2] }, { "ink", "good" }) row.who = w[1] else SetRow(row, nil, {}) end
     end
     return true
 end
