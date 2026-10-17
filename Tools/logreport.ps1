@@ -28,7 +28,10 @@ param(
     [switch] $Review,
     # Count five-man bosses too. Useful for proving the whole chain works on a client that has no
     # raids yet; wrong for a record, because a Tuesday heroic is not a raid night.
-    [switch] $Dungeons
+    [switch] $Dungeons,
+    # Set only when this script reads one of several logs for itself. The copy is still checked -
+    # it only stops saying so a second time (16 Oct: Arn saw the line four times for four logs).
+    [switch] $Nested
 )
 
 $ErrorActionPreference = "Stop"
@@ -52,8 +55,10 @@ if (-not $copy.ok) {
     Write-Host "BiSGuild folder first, then install it again), or ask an officer."
     exit 1
 }
-Write-Host ("copy checked: every file matches - fingerprint {0}" -f $copy.fingerprint)
-Write-Host "  (compare it with the CurseForge page, not with anything the addon shows you)"
+if (-not $Nested) {
+    Write-Host ("copy checked: every file matches - fingerprint {0}" -f $copy.fingerprint)
+    Write-Host "  (compare it with the CurseForge page, not with anything the addon shows you)"
+}
 
 # ---------------------------------------------------------------- the log ----
 if (-not (Test-Path -LiteralPath $Logs)) { throw "no such folder: $Logs" }
@@ -89,7 +94,7 @@ if ($Log) {
     } else {
         if ($todo.Count -gt 1) { Write-Host ("{0} logs not read yet - reading them oldest first" -f $todo.Count) }
         for ($i = 0; $i -lt $todo.Count - 1; $i++) {
-            $one = @{ Logs = $Logs; Log = $todo[$i].FullName }
+            $one = @{ Logs = $Logs; Log = $todo[$i].FullName; Nested = $true }
             if ($Dungeons) { $one.Dungeons = $true }
             if ($AllPulls) { $one.AllPulls = $true }
             try { & $PSCommandPath @one } catch { Write-Host ("  {0} could not be read: {1}" -f $todo[$i].Name, $_) }

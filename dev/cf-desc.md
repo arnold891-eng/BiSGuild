@@ -30,7 +30,7 @@ PowerShell (it only reads; it changes nothing):
 
 The answer must be exactly this, for **the current version**:
 
-    Fingerprint   E22C6B157846971787956C3B647D7A6F9522BA658D7102423CF5FF3B81E72C7C
+    Fingerprint   23CFDC60B49D8634AF4D3BEEC34928811B4A7830040376147BB85B3C5FD1AED4
 `/bisg script` in game shows the same line and a number too — but **take the line from this page and
 compare against this page**. Whoever doctors a copy can change what the addon shows you just as
 easily, and then both agree and you feel like you checked something. **The only number that helps is
