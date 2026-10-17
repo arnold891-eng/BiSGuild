@@ -36,18 +36,31 @@ local function Key(name) return K.NameKey(name) end
 -- who is with me
 --------------------------------------------------------------------
 
+--- Who is with me, by first name AND by whole name (members are filed whole since 16 Oct - the three
+--- Nebeons - and the client may name a group member either way).
 function I.Here()
     local here = {}
-    local me = UnitName and UnitName("player")
-    if type(me) == "string" then here[Key(me)] = true end
+    local function add(name)
+        if type(name) ~= "string" then return end
+        here[Key(name)] = true
+        here[(name:match("^([^%-]+)") or name):lower()] = true
+    end
+    add(UnitName and UnitName("player"))
     local n = (GetNumGroupMembers and GetNumGroupMembers()) or 0
     local raid = IsInRaid and IsInRaid()
     for i = 1, n do
         local unit = raid and ("raid" .. i) or ("party" .. i)
         local ok, name = pcall(UnitName, unit)
-        if ok and type(name) == "string" then here[Key(name)] = true end
+        if ok then add(name) end
     end
     return here
+end
+
+--- Is this member with me? By whole name, or by first name when the client named them that way.
+function I.IsHere(here, m)
+    if not m then return false end
+    if m.key and here[m.key] then return true end
+    return m.name ~= nil and here[Key(m.name)] == true
 end
 
 function I.Leads()
@@ -166,7 +179,8 @@ function I.Match(signups)
         for w in s.name:gmatch("[%a\128-\255']+") do if #w >= 2 then words[#words + 1] = w end end
         for i, w in ipairs(words) do
             local two = words[i + 1] and (w .. " " .. words[i + 1]):lower()
-            hit = (two and whole[two]) or (guild[w:lower()] and w:lower())
+            local mm = K.Member(w)
+            hit = (two and whole[two]) or (mm and mm.key)
             if hit then break end
         end
         local key = hit or ("?" .. s.name:lower())
@@ -200,7 +214,8 @@ function I.ReadAny(text)
         local hit, typed
         for i, w in ipairs(words) do
             local two = words[i + 1] and (w .. " " .. words[i + 1]):lower()
-            local key = (two and whole[two]) or (guild[w:lower()] and w:lower())
+            local mm = K.Member(w)
+            local key = (two and whole[two]) or (mm and mm.key)
             if key then hit, typed = key, guild[key].name or w break end
         end
         if hit then
@@ -224,7 +239,7 @@ end
 function I.Status(row, here)
     if row.standing and I.OUT[row.standing] then return row.standing end
     if not row.member then return "not in guild" end
-    if here[row.key] then return "with you" end
+    if I.IsHere(here, row.member) then return "with you" end
     return row.member.online and "online" or "offline"
 end
 
@@ -285,7 +300,7 @@ end
 
 --- One raider, from their card: no confirm - the click on their own card is the choice.
 function I.One(name)
-    local m = K.Guild().members[Key(name)]
+    local m = K.Member(name)
     local whole = m and m.name or name
     if I.Here()[Key(whole)] then K.Say(whole .. " is already with you", "good") return 0 end
     if not I.Leads() then K.Say("only the leader (or an assistant) can invite", "warn") return 0 end
@@ -331,7 +346,7 @@ function I.OnlineRaiders()
     K._guildDirty = true
     local out, offline = {}, {}
     for name in pairs(ns.S.Cards()) do
-        local m = K.Guild().members[Key(name)]
+        local m = K.Member(name)
         if m and m.online then out[#out + 1] = m elseif m then offline[#offline + 1] = m.name end
     end
     table.sort(out, function(a, b) return a.name < b.name end)

@@ -1531,11 +1531,26 @@ do
         fire("GUILD_ROSTER_UPDATE")
         H.RunTimers()
         local seen = false
-        for _, r in ipairs(wp.grid.rows) do if r.key == "nebeon" and r:IsShown() then seen = true end end
+        for _, r in ipairs(wp.grid.rows) do if r.key == "nebeon nohealzforu" and r:IsShown() then seen = true end end
         H.ok(seen, "and the answer redraws WHERE: Nebeon is listed")
         ROSTER[#ROSTER] = nil
         K._guildDirty = true
         _G.C_GuildInfo = keepGI
+
+        -- THREE NEBEONS (Arn: "not sure why the GM Neb is not showing up") - one first name, three
+        -- characters; the online GM must not be overwritten by an offline alt
+        ROSTER[#ROSTER + 1] = { "Nebeon Nohealzforu", "Guild Master", "PRIEST", "Mulgore", true }
+        ROSTER[#ROSTER + 1] = { "Nebeon Nohotzforu", "Raider", "MAGE", "Orgrimmar", false }
+        ROSTER[#ROSTER + 1] = { "Nebeon Nolightforu", "Raider", "PALADIN", "Orgrimmar", false }
+        K._guildDirty = true
+        K.Paint()
+        local neb = 0
+        for _, r in ipairs(wp.grid.rows) do if r:IsShown() and r.key and r.key:find("^nebeon") then neb = neb + 1 end end
+        H.eq(neb, 1, "the online Nebeon is listed - and only he, the alts are offline")
+        H.eq(K.Member("Nebeon").name, "Nebeon Nohealzforu", "a first name alone finds the online one")
+        H.eq(K.Member("nebeon nolightforu").name, "Nebeon Nolightforu", "a whole name finds exactly that one")
+        for _ = 1, 3 do ROSTER[#ROSTER] = nil end
+        K._guildDirty = true
 
         -- it redraws itself while showing: a spot that moves, moves on the page
         lib.spots.Cara = { map = 1454, x = 0.6, y = 0.6, at = H.clock }
@@ -1973,7 +1988,7 @@ do
     clock = start + 60                                        -- the start passes
     L.Tick()
     local book = NS.Books().punctual
-    H.ok(book.kio and book.kio[start] and book.kio[start].late == false and book.kio[start].d == -600,
+    H.ok(book["kio alpha"] and book["kio alpha"][start] and book["kio alpha"][start].late == false and book["kio alpha"][start].d == -600,
          "at the start, online: on time - 10 min early on record")
     H.eq(book.bob, nil, "Bob is not online at the start: nothing yet")
     clock = start + 12 * 60                                   -- Bob, twelve minutes late
@@ -1986,19 +2001,19 @@ do
     H.ok(bobRow and bobRow.note:GetText():find("+12 min late", 1, true), "the pop-up: '+12 min late'", bobRow and bobRow.note:GetText())
     H.ok(bobRow and bobRow.note:GetText():find("late 1 of last 1", 1, true), "and his habit so far", bobRow and bobRow.note:GetText())
     L.Tick()
-    H.ok(book.kio[start].late == false, "a second look at the start changes nothing")
+    H.ok(book["kio alpha"][start].late == false, "a second look at the start changes nothing")
     -- a few more raids: Kio perfect, Bob late again and a no-show
     for n = 1, 3 do
         local s = start + n * 7 * 86400
-        L.Mark("kio", s, { d = -300, late = false })
+        L.Mark("kio alpha", s, { d = -300, late = false })
         L.Mark("bob", s, n == 3 and { noshow = true } or { d = 600, late = true })
     end
     H.eq(L.HabitText("Kio Alpha"), "perfect 4 of 4", "Kio: perfect 4 of 4")
     local bh, bc = L.HabitText("Bob")
     H.ok(bh == "late 3 of last 4, avg 11 min, 1 no-show" and bc == "warn", "Bob: habitually late, and once not at all", bh)
-    for n = 4, 12 do L.Mark("kio", start + n * 7 * 86400, { d = -60, late = false }) end
+    for n = 4, 12 do L.Mark("kio alpha", start + n * 7 * 86400, { d = -60, late = false }) end
     local kept = 0
-    for _ in pairs(book.kio) do kept = kept + 1 end
+    for _ in pairs(book["kio alpha"]) do kept = kept + 1 end
     H.eq(kept, L.KEEP, "only the last " .. L.KEEP .. " raids are kept")
     -- the window closes: whoever signed and never came is a no-show (Cara signed Absence - she is not)
     NS.Books().roster = NS.Books().roster:gsub('"name":"Cara"', '"name":"Zed","specName":"Combat"'):gsub("Absence", "Rogue")

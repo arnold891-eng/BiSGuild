@@ -54,7 +54,9 @@ end
 
 --- This person's roster row, if they are one we would invite (in the guild, not absent or bench).
 function L.OnRoster(name)
-    local key = K.NameKey(name)
+    local m = K.Member(name)                   -- the whole name: three Nebeons are three people
+    local key = m and m.key
+    if not key then return nil end
     for _, r in ipairs(ns.Inv.Read(ns.Books().roster)) do
         if r.key == key and r.member and not (r.standing and ns.Inv.OUT[r.standing]) then return r end
     end
@@ -71,7 +73,7 @@ function L.CameOnline(name)
     L.told[r.key] = Now()
     -- the punctuality record first, whether or not there is an invite to offer
     local delta = L.Logged(r.key)
-    if ns.Inv.Here()[r.key] then return false end
+    if ns.Inv.IsHere(ns.Inv.Here(), r.member) then return false end
     for _, w in ipairs(L.waiting) do if w.key == r.key then return false end end
     L.waiting[#L.waiting + 1] = { name = r.member.name, key = r.key, signed = r.signed, class = r.member.class,
                                   delta = delta }
@@ -215,7 +217,9 @@ end
 
 --- The habit, over the raids on record: { raids, late, noshow, avgLate (minutes) } or nil.
 function L.Habit(key)
-    local p = L.Book()[K.NameKey(key)]
+    -- by the whole name: the punctuality of one Nebeon is not the others' (16 Oct)
+    local m = K.Member(key)
+    local p = L.Book()[m and m.key or (key:match("^([^%-]+)") or key):lower()] or L.Book()[K.NameKey(key)]
     if not p then return nil end
     local n, late, noshow, sum = 0, 0, 0, 0
     for _, v in pairs(p) do
@@ -249,7 +253,7 @@ end
 --- Who is still waiting: not yet with you. Joined people drop off by themselves.
 function L.Prune()
     local here, keep = ns.Inv.Here(), {}
-    for _, w in ipairs(L.waiting) do if not here[w.key] then keep[#keep + 1] = w end end
+    for _, w in ipairs(L.waiting) do if not ns.Inv.IsHere(here, { name = w.name, key = w.key }) then keep[#keep + 1] = w end end
     L.waiting = keep
     return #keep
 end

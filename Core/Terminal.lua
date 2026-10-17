@@ -218,22 +218,47 @@ function K.NameKey(name)
     return s and s:lower() or ""
 end
 
+--- One guild member by any name a log, a roster or a player writes: the whole "Name Surname" (any
+--- case, realm dropped) exactly; a first name alone when only one member has it - and when several
+--- share it, the ONLINE one, since on raid night the Nebeon in your raid is the one logged in.
+function K.Member(name)
+    if type(name) ~= "string" or name == "" then return nil end
+    local g = K.Guild()
+    local whole = (name:match("^([^%-]+)") or name):lower()
+    if g.members[whole] then return g.members[whole] end
+    local list = g.byFirst and g.byFirst[K.NameKey(name)]
+    if not list then return nil end
+    if #list == 1 then return list[1] end
+    for _, m in ipairs(list) do if m.online then return m end end
+    return list[1]
+end
+
 function K.Guild()
     if K._guild and not K._guildDirty then return K._guild end
     local g = { members = {}, complete = false }
     if IsInGuild and IsInGuild() and GetNumGuildMembers and GetGuildRosterInfo then
         local total = tonumber((GetNumGuildMembers())) or 0
         local seen = 0
+        g.byFirst = {}
         for i = 1, total do
             local name, rank, _, level, _, zone, _, _, online, _, class = GetGuildRosterInfo(i)
             if type(name) == "string" then
-                local ok, key = pcall(K.NameKey, name)
-                if ok and key ~= "" then
+                local ok, first = pcall(K.NameKey, name)
+                if ok and first ~= "" then
                     seen = seen + 1
-                    -- zone and online for the WHERE page (Core/Where.lua)
-                    g.members[key] = { rank = rank, class = class, name = name:match("^([^%-]+)") or name,
-                                       zone = type(zone) == "string" and zone or nil, online = online and true or false,
-                                       level = tonumber(level) }
+                    -- FILED BY THE WHOLE NAME (Arn, 16 Oct: "not sure why the GM Neb is not showing up" -
+                    -- the guild has Nebeon Nohealzforu, Nebeon Nohotzforu and Nebeon Nolightforu, and
+                    -- filing by first name let an offline alt overwrite the online GM). K.Member finds
+                    -- a first name alone.
+                    local whole = (name:match("^([^%-]+)") or name)
+                    local key = whole:lower()
+                    local m = { key = key, rank = rank, class = class, name = whole,
+                                zone = type(zone) == "string" and zone or nil, online = online and true or false,
+                                level = tonumber(level) }
+                    g.members[key] = m
+                    local list = g.byFirst[first]
+                    if not list then list = {} g.byFirst[first] = list end
+                    list[#list + 1] = m
                 end
             end
         end
@@ -268,7 +293,7 @@ function K.Rows(cards)
     local guild = K.Guild()
     local out = {}
     for name, c in pairs(cards) do
-        local m = guild.members[K.NameKey(name)]
+        local m = K.Member(name)
         out[#out + 1] = {
             name = name,
             rank = m and m.rank or (guild.complete and "pug" or "?"),
@@ -469,7 +494,7 @@ end
 --- (BiS Tools keeps its guild-menu line behind a switch for that reason). Forever's whole name, from
 --- the roster, so whisper and invite reach the right person.
 function K.PlayerMenu(name)
-    local m = K.Guild().members[K.NameKey(name)]
+    local m = K.Member(name)
     local whole = m and m.name or name
     if type(whole) ~= "string" or whole == "" then return false end
     if UnitPopup_OpenMenu then

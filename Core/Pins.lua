@@ -51,7 +51,7 @@ local function NewPin()
         if not (tip and self.who) then return end
         tip:SetOwner(self, "ANCHOR_RIGHT")
         tip:AddLine(self.who)
-        local m = ns.K and ns.K.Guild().members[ns.K.NameKey(self.who)]
+        local m = ns.K and ns.K.Member(self.who)
         if m then
             tip:AddLine(("level %s  %s"):format(tostring(m.level or "?"), tostring(m.rank or "")), 1, 1, 1)
             if m.zone then tip:AddLine(m.zone, 0.7, 0.7, 0.7) end
@@ -102,7 +102,7 @@ function M.Update()
             if not p.placed then
                 local b = p.frame
                 b.who = sender
-                local m = ns.K and ns.K.Guild().members[ns.K.NameKey(sender)]
+                local m = ns.K and ns.K.Member(sender)
                 local cc = m and m.class and colours and colours[m.class]
                 if cc then b.tex:SetColorTexture(cc.r, cc.g, cc.b, 1) else b.tex:SetColorTexture(0.93, 0.91, 0.96, 1) end
                 p.map, p.x, p.y = s.map, s.x, s.y

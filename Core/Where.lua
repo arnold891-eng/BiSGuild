@@ -194,7 +194,7 @@ end
 --- rows = { { header = true, zone = name, n = count } | { person, with its zone } }
 function W.Rows(spots)
     local bySpot = {}
-    for _, s in ipairs(spots) do bySpot[s.key] = s end
+    for _, s in ipairs(spots) do local mm = K.Member(s.name) if mm then bySpot[mm.key] = s end end
     local zones, order = {}, {}
     for key, m in pairs(K.Guild().members) do
         if m.online then
@@ -488,7 +488,7 @@ function K.PaintWhere(p)
                 if px >= 0 and py >= 0 and px <= landW and py <= landH then
                     n = n + 1
                     local d, l = Dot(p, n)
-                    local m = K.Guild().members[sp.key]
+                    local m = K.Member(sp.name)
                     local cc = m and m.class and colours and colours[m.class]
                     local size = sp.me and 10 or 8
                     d:SetSize(size, size)
