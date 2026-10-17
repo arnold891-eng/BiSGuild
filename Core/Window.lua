@@ -144,17 +144,9 @@ function U.Build()
     -- ESCAPE CLOSES IT, the house way (Arn: "esc does not close this window"). NOT via
     -- UISpecialFrames: that list is also what CloseAllWindows() empties, so a window added to it to
     -- get one keybind is SHUT every time the player opens their spellbook. Handle the key here and
-    -- swallow only ESCAPE - propagate everything else, or typing stops reaching chat.
-    f:EnableKeyboard(true)
-    f:SetPropagateKeyboardInput(true)
-    f:SetScript("OnKeyDown", function(self, key)
-        if key == "ESCAPE" then
-            self:SetPropagateKeyboardInput(false)
-            U.Hide()
-        else
-            self:SetPropagateKeyboardInput(true)
-        end
-    end)
+    -- swallow only ESCAPE - propagate everything else, or typing stops reaching chat. Combat-safe
+    -- (16 Oct, ADDON_ACTION_BLOCKED in a fight): Init.lua's ns.EscKeys.
+    ns.EscKeys(f, function() U.Hide() end)
 
     -- A WAY BACK. Arn: "no way to go back from this screen". Pressing "I understand" was one-way,
     -- so the warning and the hash check - the only safety on the page - could be read exactly once

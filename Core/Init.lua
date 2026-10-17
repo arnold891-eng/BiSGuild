@@ -47,6 +47,41 @@ local function db()
 end
 ns.DB = db
 
+--- ESC FOR A WINDOW, SAFE IN COMBAT (16 Oct 2026). Arn opened the terminal mid-fight and got
+--- ADDON_ACTION_BLOCKED: SetPropagateKeyboardInput is protected in combat. So:
+---   * in combat it is never called - the keyboard is switched on when combat ends instead;
+---   * ESC still runs `onEscape` in combat; the game may open its menu too (a key cannot be held back
+---     in combat), which is harmless;
+---   * the "swallow this ESC" is undone a moment later, so the NEXT key never vanishes and a fight
+---     starting right after can never leave every key swallowed.
+local function locked() return InCombatLockdown and InCombatLockdown() end
+function ns.EscKeys(f, onEscape)
+    local function arm()
+        if locked() then return false end
+        f:EnableKeyboard(true)
+        f:SetPropagateKeyboardInput(true)
+        return true
+    end
+    f:SetScript("OnKeyDown", function(self, key)
+        if key ~= "ESCAPE" then
+            if not locked() then self:SetPropagateKeyboardInput(true) end
+            return
+        end
+        if not locked() then
+            self:SetPropagateKeyboardInput(false)
+            if C_Timer and C_Timer.After then
+                C_Timer.After(0, function() if not locked() then self:SetPropagateKeyboardInput(true) end end)
+            end
+        end
+        onEscape()
+    end)
+    if not arm() then
+        local w = CreateFrame("Frame")
+        w:RegisterEvent("PLAYER_REGEN_ENABLED")
+        w:SetScript("OnEvent", function(self) if arm() then self:UnregisterAllEvents() end end)
+    end
+end
+
 -- the shared BiS channel: no setting of this addon may gate it; only /biscomm off does,
 -- and that choice survives a logout here
 ns.Comm = {}

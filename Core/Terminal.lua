@@ -482,17 +482,9 @@ function K.Build()
     f.status:SetPoint("TOPLEFT", 12, -56)
     f.status:SetWidth(K.W - 24)
 
-    -- ESC: the command line takes the first press (it gives the keyboard back), the window the next
-    f:EnableKeyboard(true)
-    f:SetPropagateKeyboardInput(true)
-    f:SetScript("OnKeyDown", function(self, key)
-        if key == "ESCAPE" then
-            self:SetPropagateKeyboardInput(false)
-            if not K.Back() then K.Hide() end            -- a card steps back; a list closes
-        else
-            self:SetPropagateKeyboardInput(true)
-        end
-    end)
+    -- ESC: the command line takes the first press (it gives the keyboard back), the window the next;
+    -- a card steps back, a list closes. Combat-safe: Init.lua's ns.EscKeys.
+    ns.EscKeys(f, function() if not K.Back() then K.Hide() end end)
 
     -- the pages, one shown at a time, between the status line and the ticker
     local top, bottom = 72, 24

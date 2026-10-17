@@ -236,6 +236,15 @@ local function newFrame(ftype, name, parent, template)
     function fr:SetEnabled(v) self._enabled = v and true or false end
     function fr:IsEnabled() return self._enabled end
     function fr:EnableMouse(v) self._mouse = v end
+    -- PROTECTED IN COMBAT, as on the client (16 Oct 2026: Arn opened BiS Guild's terminal mid-fight,
+    -- ADDON_ACTION_BLOCKED; this was an auto no-op and the suite was green)
+    function fr:SetPropagateKeyboardInput(v)
+        if _G.InCombatLockdown and _G.InCombatLockdown() then
+            error("ADDON_ACTION_BLOCKED: SetPropagateKeyboardInput() in combat", 2)
+        end
+        self._propagate = v and true or false
+    end
+    function fr:EnableKeyboard(v) self._keyboard = v and true or false end
     function fr:SetVerticalScroll(v) self._scroll = v end
     function fr:GetVerticalScroll() return self._scroll or 0 end
     function fr:SetScrollChild(c) self._child = c end

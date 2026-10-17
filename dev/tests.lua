@@ -1396,6 +1396,44 @@ do
     _G.BiSGuildDB.record = saved
 end
 
+H.section("ESC in combat (Arn, 16 Oct: ADDON_ACTION_BLOCKED opening the terminal mid-fight)")
+do
+    local fighting = true
+    _G.InCombatLockdown = function() return fighting end
+    local f = CreateFrame("Frame")
+    local escaped = 0
+    local ok, err = pcall(NS.EscKeys, f, function() escaped = escaped + 1 end)
+    H.ok(ok, "a window built in combat does not touch the protected call", err)
+    H.ok(not f._keyboard, "and leaves the keyboard alone until the fight is over")
+    ok, err = pcall(f._scripts.OnKeyDown, f, "ESCAPE")
+    H.ok(ok and escaped == 1, "ESC in combat still steps back or closes", err)
+    ok = pcall(f._scripts.OnKeyDown, f, "W")
+    H.ok(ok, "any other key in combat: no protected call")
+    fighting = false
+    fire("PLAYER_REGEN_ENABLED")
+    H.ok(f._keyboard and f._propagate, "out of combat: keyboard on, every key passing through to the game")
+    f._scripts.OnKeyDown(f, "ESCAPE")
+    H.eq(f._propagate, false, "ESC out of combat is kept from the game menu")
+    H.RunTimers()
+    H.eq(f._propagate, true, "and a moment later keys pass through again - the next one never vanishes")
+
+    -- the real windows, opened mid-fight
+    fighting = true
+    local K = NS.K
+    K.frame = nil
+    ok, err = pcall(K.Show, "raiders")
+    H.ok(ok and K.frame and K.frame:IsShown(), "the terminal opens mid-fight without a blocked action", err)
+    ok, err = pcall(K.frame._scripts.OnKeyDown, K.frame, "ESCAPE")
+    H.ok(ok and not K.frame:IsShown(), "and ESC closes it mid-fight", err)
+    NS.U.frame = nil
+    ok, err = pcall(NS.U.Show)
+    H.ok(ok, "the log window too", err)
+    NS.U.Hide()
+    fighting = false
+    fire("PLAYER_REGEN_ENABLED")
+    _G.InCombatLockdown = nil
+end
+
 --=============================================================================
 -- GUILDMATES ON THE WORLD MAP (16 Oct 2026). Arn: guildmates on the world map - and "not everyone
 -- is going to install OpenMap", so the game's own map, through HereBeDragons-Pins.
