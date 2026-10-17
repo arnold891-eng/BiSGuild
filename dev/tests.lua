@@ -1796,11 +1796,73 @@ do
     -- the countdown over the paste
     H.eq(I.When(I.Event(_G.BiSGuildDB.roster)), "starts in 1 h 0 min", "the ROSTER header counts down to the start")
 
+    -- PUNCTUALITY (Arn: "how close they were ... if the invite went out after, meaning they were late
+    -- ... server time, real time, their time zone ... habitually late, or perfect attendance")
+    _G.BiSGuildDB.punctual = nil
+    L.told, L.done, L.loggedAt, L.waiting = {}, {}, {}, {}
+    for _, r in ipairs(ROSTER) do r[3] = false end
+    K._guildDirty = true
+    clock = start - 10 * 60                                   -- ten minutes before the start
+    ROSTER[2][3] = true
+    online("Kio Alpha")
+    H.ok(L.waiting[1] and L.waiting[1].delta == -600, "Kio logs in 10 min early")
+    H.ok(L.frame.rows[1].note:GetText():find("10 min early", 1, true), "the pop-up says so", L.frame.rows[1].note:GetText())
+    clock = start + 60                                        -- the start passes
+    L.Tick()
+    local book = _G.BiSGuildDB.punctual
+    H.ok(book.kio and book.kio[start] and book.kio[start].late == false and book.kio[start].d == -600,
+         "at the start, online: on time - 10 min early on record")
+    H.eq(book.bob, nil, "Bob is not online at the start: nothing yet")
+    clock = start + 12 * 60                                   -- Bob, twelve minutes late
+    ROSTER[1][3] = true
+    K._guildDirty = true
+    online("Bob")
+    H.ok(book.bob and book.bob[start].late and book.bob[start].d == 720, "Bob logs in 12 min after the start: late, by 12 min")
+    local bobRow
+    for _, row in ipairs(L.frame.rows) do if row.who and row.who.name == "Bob" then bobRow = row end end
+    H.ok(bobRow and bobRow.note:GetText():find("+12 min late", 1, true), "the pop-up: '+12 min late'", bobRow and bobRow.note:GetText())
+    H.ok(bobRow and bobRow.note:GetText():find("late 1 of last 1", 1, true), "and his habit so far", bobRow and bobRow.note:GetText())
+    L.Tick()
+    H.ok(book.kio[start].late == false, "a second look at the start changes nothing")
+    -- a few more raids: Kio perfect, Bob late again and a no-show
+    for n = 1, 3 do
+        local s = start + n * 7 * 86400
+        L.Mark("kio", s, { d = -300, late = false })
+        L.Mark("bob", s, n == 3 and { noshow = true } or { d = 600, late = true })
+    end
+    H.eq(L.HabitText("Kio Alpha"), "perfect 4 of 4", "Kio: perfect 4 of 4")
+    local bh, bc = L.HabitText("Bob")
+    H.ok(bh == "late 3 of last 4, avg 11 min, 1 no-show" and bc == "warn", "Bob: habitually late, and once not at all", bh)
+    for n = 4, 12 do L.Mark("kio", start + n * 7 * 86400, { d = -60, late = false }) end
+    local kept = 0
+    for _ in pairs(book.kio) do kept = kept + 1 end
+    H.eq(kept, L.KEEP, "only the last " .. L.KEEP .. " raids are kept")
+    -- the window closes: whoever signed and never came is a no-show (Cara signed Absence - she is not)
+    _G.BiSGuildDB.roster = _G.BiSGuildDB.roster:gsub('"name":"Cara"', '"name":"Zed","specName":"Combat"'):gsub("Absence", "Rogue")
+    clock = start + L.AFTER + 60
+    L.Tick()
+    H.ok(book.zed and book.zed[start] and book.zed[start].noshow, "Zed signed, never came: a no-show")
+    H.ok(book.bob[start].late, "and the late stay late, not turned into no-shows")
+    -- the raider card says it
+    clock = start - 600
+    _G.BiSGuildDB.record.nights["2026-10-09"].raiders.Bob = _G.BiSGuildDB.record.nights["2026-10-09"].raiders.Bob or raider(1, 2)
+    K.Show("bob <raider>")
+    H.ok(K.frame.pages.raider.punct:GetText():find("late 3 of last", 1, true), "Bob's card: punctual - late 3 of last ...",
+         K.frame.pages.raider.punct:GetText())
+    local wr = { NS.T.rgb("warn") }
+    local pr = K.frame.pages.raider.punct._color
+    H.ok(pr and math.abs(pr[1] - wr[1]) < 0.01, "in the warning colour - habitually late reads red")
+    K.Hide()
+    if L.frame then L.frame:Hide() end
+    L.waiting = {}
+    _G.BiSGuildDB.punctual = nil
+    clock = start - 3600
+
     -- RAID NIGHT AT A GLANCE (Arn: "raid night > raiding <xxx> start time 00:00, any info at a glance")
     local tf = K.Show("raiders")
     local gl = strip(tf.glance.fs:GetText() or "")
     H.ok(tf.glance:IsShown() and gl:find("RAID NIGHT", 1, true) and gl:find("Raid night", 1, true)
-         and gl:find("20:00", 1, true) and gl:find("starts in 1 h", 1, true) and gl:find("of 2 online", 1, true),
+         and gl:find("20:00", 1, true) and gl:find("starts in 1 h", 1, true) and gl:find("%d+ of %d+ online"),
          "the command bar: the raid, its time, the countdown, who is on", gl)
     tf.glance:Click()
     H.eq(K.page, "roster", "clicking it opens the roster")

@@ -23,7 +23,7 @@ local L = {}
 ns.Login = L
 
 L.W, L.H = 280, 196          -- 1.43:1
-L.ROWS = 5
+L.ROWS = 4                   -- two lines each: the name, and how punctual they are
 L.AGAIN = 60                 -- seconds before the same person is announced again
 L.waiting = {}               -- { { name, signed, at } } in the order they came online
 L.told = {}                  -- key -> GetTime() last announced
@@ -66,14 +66,152 @@ function L.CameOnline(name)
     if type(name) ~= "string" or hidden(name) or not L.Armed() then return false end
     local r = L.OnRoster(name)
     if not r then return false end
-    if ns.Inv.Here()[r.key] then return false end
     local last = L.told[r.key]
     if last and Now() - last < L.AGAIN then return false end
     L.told[r.key] = Now()
+    -- the punctuality record first, whether or not there is an invite to offer
+    local delta = L.Logged(r.key)
+    if ns.Inv.Here()[r.key] then return false end
     for _, w in ipairs(L.waiting) do if w.key == r.key then return false end end
-    L.waiting[#L.waiting + 1] = { name = r.member.name, key = r.key, signed = r.signed, class = r.member.class }
+    L.waiting[#L.waiting + 1] = { name = r.member.name, key = r.key, signed = r.signed, class = r.member.class,
+                                  delta = delta }
     L.Show()
     return true
+end
+
+--------------------------------------------------------------------
+-- punctuality
+--------------------------------------------------------------------
+
+--[[ ON TIME, LATE, NO-SHOW (Arn, 16 Oct: "how close they were and if the invite went out after,
+  meaning they were late. Have to account for server time, real time and their time zone. Maybe we
+  even keep a record - habitually late, or perfect attendance").
+
+  ONE CLOCK: Raid-Helper's startTime and GetServerTime() are both seconds since 1970 in UTC, so
+  "how long after the start" is a subtraction no time zone can bend. Only showing a clock time needs
+  a zone, and date() uses the reader's own. (The export's "time":"20:00" is the event creator's zone
+  - never used for arithmetic.)
+
+  WHAT COUNTS IS BEING ONLINE, not being invited: online at the start is on time, whenever the leader
+  got round to the invite - a late invite is the leader's, not the raider's. Logged in after the start
+  is late, by that much. Signed (not Absence or Bench), never online until the window closes: a
+  no-show. Measured on the leader's client, while it holds the roster.
+
+  Kept in BiSGuildDB.punctual[nameKey][startTime] = { d = seconds after the start (negative: early,
+  nil: online before we could see the login), late = bool, noshow = bool }; L.KEEP raids per person. ]]
+L.KEEP = 8
+L.loggedAt = {}               -- key -> GetServerTime() we saw them come online this session
+
+function L.Book()
+    local d = ns.DB()
+    if type(d.punctual) ~= "table" then d.punctual = {} end
+    return d.punctual
+end
+
+local function ServerNow() return GetServerTime and GetServerTime() or nil end
+
+--- Write one raid's verdict for one person - the first verdict stands (a relog does not undo late).
+function L.Mark(key, start, entry)
+    local book = L.Book()
+    local p = book[key]
+    if not p then p = {} book[key] = p end
+    if p[start] then return false end
+    p[start] = entry
+    -- keep the newest L.KEEP raids
+    local starts = {}
+    for s in pairs(p) do starts[#starts + 1] = s end
+    table.sort(starts)
+    for i = 1, #starts - L.KEEP do p[starts[i]] = nil end
+    return true
+end
+
+--- Seen logging in now: remember when, and if the raid has started, they are late by that much.
+--- Answers the seconds after the start (negative = early), or nil without a start time.
+function L.Logged(key)
+    local now = ServerNow()
+    if now then L.loggedAt[key] = now end
+    local e = ns.Inv and ns.Inv.Event(ns.DB().roster)
+    if not (e and e.start and now) then return nil end
+    local d = now - e.start
+    if d > 0 then L.Mark(key, e.start, { d = d, late = true }) end
+    return d
+end
+
+--- The start has passed: whoever on the roster is online is on time (early by what we saw, if we
+--- saw it). Once per raid.
+function L.AtStart(e)
+    local I = ns.Inv
+    local here = I.Here()
+    for _, r in ipairs(I.Read(ns.DB().roster)) do
+        if r.member and not (r.standing and I.OUT[r.standing]) then
+            local s = I.Status(r, here)
+            if s == "online" or s == "with you" then
+                local at = L.loggedAt[r.key]
+                L.Mark(r.key, e.start, { d = at and (at - e.start) or nil, late = false })
+            end
+        end
+    end
+end
+
+--- The window has closed: whoever signed and never came is a no-show. Once per raid.
+function L.AtEnd(e)
+    local I = ns.Inv
+    for _, r in ipairs(I.Read(ns.DB().roster)) do
+        if r.member and not (r.standing and I.OUT[r.standing]) then
+            L.Mark(r.key, e.start, { noshow = true })
+        end
+    end
+end
+
+--- The clock's two moments, checked every L.TICK seconds - a comparison of two numbers, nothing more
+--- until a moment arrives.
+L.TICK = 30
+L.done = {}                   -- "start:<t>" / "end:<t>" already handled
+function L.Tick()
+    local e = ns.Inv and ns.DB().roster and ns.Inv.Event(ns.DB().roster)
+    local now = ServerNow()
+    if not (e and e.start and now) or not L.On() then return end
+    if now >= e.start and now < e.start + L.AFTER and not L.done["start:" .. e.start] then
+        L.done["start:" .. e.start] = true
+        if ns.Inv.Leads() then L.AtStart(e) end
+    end
+    if now >= e.start + L.AFTER and now < e.start + L.AFTER + 86400 and not L.done["end:" .. e.start] then
+        L.done["end:" .. e.start] = true
+        if ns.Inv.Leads() then L.AtEnd(e) end
+    end
+end
+
+--- The habit, over the raids on record: { raids, late, noshow, avgLate (minutes) } or nil.
+function L.Habit(key)
+    local p = L.Book()[K.NameKey(key)]
+    if not p then return nil end
+    local n, late, noshow, sum = 0, 0, 0, 0
+    for _, v in pairs(p) do
+        n = n + 1
+        if v.noshow then noshow = noshow + 1
+        elseif v.late then late = late + 1 sum = sum + (v.d or 0) end
+    end
+    if n == 0 then return nil end
+    return { raids = n, late = late, noshow = noshow, avgLate = late > 0 and math.floor(sum / late / 60 + 0.5) or 0 }
+end
+
+--- "late 3 of last 5, avg 11 min" / "perfect 6 of 6" / "1 no-show in 4" - and its colour.
+function L.HabitText(key)
+    local h = L.Habit(key)
+    if not h then return nil end
+    if h.late == 0 and h.noshow == 0 then return ("perfect %d of %d"):format(h.raids, h.raids), "good" end
+    local parts = {}
+    if h.late > 0 then parts[#parts + 1] = ("late %d of last %d, avg %d min"):format(h.late, h.raids, h.avgLate) end
+    if h.noshow > 0 then parts[#parts + 1] = ("%d no-show"):format(h.noshow) end
+    return table.concat(parts, ", "), (h.late + h.noshow) * 2 > h.raids and "warn" or "gold"
+end
+
+--- This login, in words: "8 min early" / "+12 min late" / nil.
+function L.DeltaText(d)
+    if not d then return nil end
+    local m = math.floor(math.abs(d) / 60 + 0.5)
+    if d > 0 then return ("+%d min late"):format(m), "warn" end
+    return ("%d min early"):format(m), "good"
 end
 
 --- Who is still waiting: not yet with you. Joined people drop off by themselves.
@@ -182,11 +320,16 @@ function L.Build()
     f.rows = {}
     for i = 1, L.ROWS do
         local row = CreateFrame("Frame", nil, f)
-        row:SetPoint("TOPLEFT", 8, -40 - (i - 1) * 21)
-        row:SetSize(L.W - 16, 20)
+        row:SetPoint("TOPLEFT", 8, -40 - (i - 1) * 30)
+        row:SetSize(L.W - 16, 28)
         row.name = ui.Text(row, 12, "ink")
-        row.name:SetPoint("LEFT", 2, 0)
+        row.name:SetPoint("TOPLEFT", 2, -1)
         row.name:SetWidth(L.W - 100)
+        -- the second line: this login against the start, and the habit (Arn: "habitually late, or
+        -- perfect attendance")
+        row.note = ui.Text(row, 10, "muted")
+        row.note:SetPoint("TOPLEFT", 2, -15)
+        row.note:SetWidth(L.W - 100)
         row.invite = Btn(row, "Invite", 64, function()
             local w = row.who
             if w then ns.Inv.One(w.name) L.Done(w.key) end
@@ -224,6 +367,12 @@ function L.Paint()
         if w then
             local cc = w.class and colours and colours[w.class]
             row.name:SetText(w.signed and (w.name .. "  " .. ns.T.text("muted", w.signed)) or w.name)
+            local now, nowC = L.DeltaText(w.delta)
+            local habit, habitC = L.HabitText(w.key)
+            local parts = {}
+            if now then parts[#parts + 1] = ns.T.text(nowC, now) end
+            if habit then parts[#parts + 1] = ns.T.text(habitC, habit) end
+            row.note:SetText(#parts > 0 and table.concat(parts, "  ·  ") or ns.T.text("muted", "first raid on record"))
             if cc then row.name:SetTextColor(cc.r, cc.g, cc.b) else row.name:SetTextColor(K.ui.rgb("ink")) end
             row:Show()
         else
@@ -267,3 +416,6 @@ ev:SetScript("OnEvent", function(_, event, msg)
     local who = L.FromChat(msg)
     if who then L.CameOnline(who) end
 end)
+
+-- the start and the end of raid time, looked for every L.TICK seconds
+if C_Timer and C_Timer.NewTicker then C_Timer.NewTicker(L.TICK, function() L.Tick() end) end

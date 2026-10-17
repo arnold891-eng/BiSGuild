@@ -670,7 +670,7 @@ function K.Build()
         end)
     end
     local rx, rw = leftW + 16, K.W - leftW - 24
-    rc.att = Panel(rc, "ATTENDANCE", rx, 0, rw, 74)
+    rc.att = Panel(rc, "ATTENDANCE", rx, 0, rw, 92)
     rc.attLine = Text(rc.att, 13, "ink")
     rc.attLine:SetPoint("TOPLEFT", 8, -24)
     rc.strip = {}
@@ -680,7 +680,12 @@ function K.Build()
         sq:SetSize(24, 14)
         rc.strip[i] = sq
     end
-    rc.cons = Panel(rc, "CONSUMES", rx, 80, rw, 132)
+    -- PUNCTUAL: on time / late / no-show over their last raids (Core/Logins.lua; Arn, 16 Oct:
+    -- "habitually late, or perfect attendance")
+    rc.punct = Text(rc.att, 11, "muted")
+    rc.punct:SetPoint("TOPLEFT", 8, -68)
+    rc.punct:SetWidth(rw - 16)
+    rc.cons = Panel(rc, "CONSUMES", rx, 98, rw, 132)
     rc.consLines = {}
     for i = 1, 6 do
         local l = Text(rc.cons, 12, "ink")
@@ -688,7 +693,7 @@ function K.Build()
         l:SetWidth(rw - 16)
         rc.consLines[i] = l
     end
-    rc.loot = Panel(rc, "LOOT WON", rx, 218, rw, bodyH - 222)
+    rc.loot = Panel(rc, "LOOT WON", rx, 236, rw, bodyH - 240)
     rc.lootLines = {}
     for i = 1, 14 do
         local l = Text(rc.loot, 12, "ink")
@@ -877,6 +882,10 @@ local function PaintRaider(p, name)
         if s then Fill(sq, s.earned and "good" or "line2") sq:Show() else sq:Hide() end
     end
     p.att.right:SetText(strip[1] and (strip[1].date .. " ->") or "")
+    local habit, habitC
+    if ns.Login then habit, habitC = ns.Login.HabitText(name) end
+    p.punct:SetText("punctual  " .. (habit or "nothing measured yet - it counts at raid time, from a pasted roster"))
+    p.punct:SetTextColor(rgb(habit and habitC or "muted"))
 
     local l = card.last
     local lines = {}
