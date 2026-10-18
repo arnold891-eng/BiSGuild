@@ -2902,8 +2902,18 @@ do
     -- the script window's button opens it, above the PowerShell warning
     U.Build()
     p:Hide()
+    U.frame:Show()
     U.frame.pasteBtn:GetScript("OnClick")()
     H.ok(p:IsShown(), "'Paste from the notebook' on the script window opens it")
+    -- Arn's first paste (18 Oct): it opened BEHIND the script window, and the text ran off the screen
+    H.ok(not U.frame:IsShown(), "and the script window steps aside, so the paste is in front")
+    local onText = p.box:GetScript("OnTextChanged")
+    p.box:SetText(good)
+    onText(p.box, true)
+    H.ok(p.status:GetText():find("pasted: 4 lines", 1, true), "pasting says what came in, in words", p.status:GetText())
+    p.box:SetText("hello")
+    onText(p.box, true)
+    H.ok(p.status:GetText():find("doesn't look like", 1, true), "and when it is something else", p.status:GetText())
     p:Hide()
     NS.Books().record = keep
 end

@@ -441,6 +441,9 @@ function U.BuildPaste()
     local wrap = CreateFrame("Frame", nil, p)
     wrap:SetPoint("TOPLEFT", 12, -84)
     wrap:SetPoint("BOTTOMRIGHT", -12, 64)
+    -- CLIPPED (Arn's first paste, 18 Oct: 14 KB of text ran down over the whole screen and over the
+    -- buttons). The text is not for reading anyway - the line under the box says what was pasted.
+    if wrap.SetClipsChildren then wrap:SetClipsChildren(true) end
     local wbg = wrap:CreateTexture(nil, "BACKGROUND")
     wbg:SetAllPoints()
     wbg:SetColorTexture(PS_BLUE[1], PS_BLUE[2], PS_BLUE[3], PS_BLUE[4])
@@ -454,6 +457,20 @@ function U.BuildPaste()
     if box.SetFont then pcall(box.SetFont, box, PS_FONT, 10, "") end
     box:SetTextColor(0.88, 0.92, 1, 1)
     box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    -- what was pasted, said in words: the box shows a wall of text nobody reads
+    box:SetScript("OnTextChanged", function(self, userInput)
+        if not userInput or not p.status then return end
+        local text = self:GetText() or ""
+        local n = 0
+        for _ in text:gmatch("[^\n]+") do n = n + 1 end
+        if text:find("BiSGuild paste", 1, true) then
+            p.status:SetText(T().text("accent", ("pasted: %d lines - press Import"):format(n)))
+        elseif text ~= "" then
+            p.status:SetText(T().text("muted", "that doesn't look like the notebook's text yet"))
+        else
+            p.status:SetText("")
+        end
+    end)
     p.box = box
 
     p.status = p:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -496,10 +513,14 @@ function U.DoPaste()
     return raids, gear, bad
 end
 
+--- IN FRONT, ALONE (Arn's first paste, 18 Oct: it opened BEHIND the script window). The script
+--- window steps aside - the paste is the other way in, not a part of it - and this one is raised.
 function U.ShowPaste()
     local p = U.BuildPaste()
     if not p then return end
+    if U.frame and U.frame:IsShown() then U.Hide() end
     p:Show()
+    if p.Raise then p:Raise() end
     p.box:SetFocus()
 end
 
