@@ -49,6 +49,11 @@ function ns.Say(cmd, rest)
             w.base, tostring(w.call), w.records, w.explored, w.hidden and ", HIDDEN by the client" or "")
         return
     end
+    -- `/bisg attune probe`: the Onyxia chain's quests on this character (Core/Attune.lua, 17 Oct)
+    if cmd == "attune" and ns.Attune then
+        ns.Attune.Slash(rest)
+        return
+    end
     if cmd == "terminal" or cmd == "t" then
         if ns.K then ns.K.Show(rest ~= "" and rest or nil) end
         return

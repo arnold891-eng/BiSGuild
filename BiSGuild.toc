@@ -39,5 +39,6 @@ Core\Pins.lua
 Core\Invite.lua
 Core\Logins.lua
 Core\Loot.lua
+Core\Attune.lua
 API.lua
 Core\Say.lua

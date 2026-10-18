@@ -2667,4 +2667,44 @@ do
     NS.X._ranksDirty = true
 end
 
+-- ATTUNE, STEP 0: THE PROBE (Arn, 17 Oct: track who is attuned; first, check Forever's quest numbers).
+-- The mock is the client's shape, awkward parts included: a quest's NAME is nil until the client has
+-- loaded it (RequestLoadQuestByID), the done flag is a plain boolean, the completed list an array.
+do
+    H.section("attune probe")
+    local A = NS.Attune
+    H.ok(A and A.Probe and A.CHAINS.Horde and A.CHAINS.Alliance, "Core/Attune.lua is loaded, with both chains")
+    local names = { [4903] = "Warlord's Command", [6602] = "Blood of the Black Dragon Champion",
+                    [6570] = "Emberstrife (Forever)", [9990] = "Black Dragon Business" }
+    local loaded, asked = {}, {}
+    local done = { [4903] = true, [6602] = true, [9990] = true }
+    local keep = { _G.C_QuestLog, _G.C_Item, _G.UnitFactionGroup }
+    _G.C_QuestLog = {
+        IsQuestFlaggedCompleted = function(id) return done[id] or false end,
+        GetTitleForQuestID = function(id) if loaded[id] then return names[id] end return nil end,
+        RequestLoadQuestByID = function(id) asked[id] = true if names[id] then loaded[id] = true end end,
+        GetAllCompletedQuestIDs = function() local t = {} for id in pairs(done) do t[#t + 1] = id end table.sort(t) return t end,
+    }
+    _G.C_Item = { GetItemCount = function(id) return id == A.AMULET and 1 or 0 end,
+                  GetItemNameByID = function(id) return id == A.AMULET and "Drakefire Amulet" or nil end }
+    _G.UnitFactionGroup = function() return "Horde", "Horde" end
+    local first = table.concat(A.Probe(), "\n")
+    H.ok(first:find("(name loading)", 1, true) and first:find("run /bisg attune probe once more", 1, true),
+         "the first run: names not loaded yet, and it says to run it again")
+    H.ok(asked[4903] and asked[6602], "and it asked the client to load them")
+    local again = table.concat(A.Probe(), "\n")
+    H.ok(again:find("4903  Warlord's Command", 1, true) and again:find("6602  Blood of the Black Dragon Champion", 1, true),
+         "the second run: the names", again)
+    H.ok(again:find("Emberstrife (Forever)", 1, true) and again:find("expected Emberstrife", 1, true),
+         "a name that differs from the original game's is flagged")
+    H.ok(again:find("2 of 14 done", 1, true), "how far along the Horde chain")
+    H.ok(again:find("1 carried", 1, true) and again:find("Drakefire Amulet", 1, true), "the amulet in the bags")
+    H.ok(again:find("9990 Black Dragon Business", 1, true), "a completed quest that sounds like the chain is listed - a renumbered step")
+    -- a hidden answer is "?", never a guess
+    _G.C_QuestLog.IsQuestFlaggedCompleted = function() return HARNESS and HARNESS.secret and HARNESS.secret() or nil end
+    H.ok(pcall(A.Probe), "a hidden done flag does not throw")
+    _G.C_QuestLog, _G.C_Item, _G.UnitFactionGroup = keep[1], keep[2], keep[3]
+    H.ok(pcall(A.Probe), "and with no quest API at all, it still answers")
+end
+
 H.report()
