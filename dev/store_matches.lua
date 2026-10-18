@@ -14,7 +14,9 @@ chunk()
 local report = env.BiSGuildReport
 
 local db = {}
-local ns = { DB = function() return db end }
+-- the per-guild books (16 Oct): this harness lacked them and died on load, unseen, because the
+-- Python test that runs it is not in check.sh (17 Oct)
+local ns = { DB = function() return db end, Books = function() return db end }
 assert(loadfile(arg[2]))("BiSGuild", ns)
 local S = ns.S
 S.Import(report)

@@ -573,5 +573,3 @@ function K.PaintWhere(p)
         end
     end
 end
-
-ns.parts["Core/Where.lua"] = "0.1.1"

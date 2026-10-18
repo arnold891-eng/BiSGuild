@@ -5,13 +5,11 @@
   to write out commands, also the warning can get lost easy in the chat, better to make them a pop
   up in the window where they can confirm with a button".
 
-  Both halves of that are right, and the second one is the important one.
-
-  THE WARNING WAS IN THE WRONG PLACE. A caution printed into the chat frame competes with loot
-  rolls, zone changes and somebody saying "haha" - it scrolls away while you are reading it. A
-  warning you must press a button to get past cannot scroll away, and the press is a deliberate act
-  rather than a thing that happened above the thing you copied. So the command is not shown AT ALL
-  until the warning has been answered.
+  THE OFFICERS' WINDOW SINCE 18 OCT 2026. Arn: "can we get rid of the fingerprint thing and just do
+  a secret powershell feature just for us". Raiders read their logs in the notebook (the paste window
+  below, which the terminal's LOG tab opens); this one is `/bisg window`, unadvertised. Its warning
+  screen and the typed-out hash check (5-17 Oct) went with the fingerprint: the people who open it
+  know where their copy came from.
 
   Nothing here is secure and nothing here casts: it is a text box and some labels. The command is
   an EditBox because a FontString cannot be selected - the same trick every export string in every
@@ -148,18 +146,6 @@ function U.Build()
     -- (16 Oct, ADDON_ACTION_BLOCKED in a fight): Init.lua's ns.EscKeys.
     ns.EscKeys(f, function() U.Hide() end)
 
-    -- A WAY BACK. Arn: "no way to go back from this screen". Pressing "I understand" was one-way,
-    -- so the warning and the hash check - the only safety on the page - could be read exactly once
-    -- per session and never again.
-    f.back = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-    f.back:SetSize(150, 20)
-    f.back:SetPoint("BOTTOMLEFT", 12, 10)
-    f.back:SetText("Check this copy again")
-    f.back:SetScript("OnClick", function()
-        U.agreed, U.hash = nil, true     -- straight back to the warning, hash check already open
-        U.Refresh()
-    end)
-
     -- 1. where the logs are
     local l1 = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     l1:SetPoint("TOPLEFT", 12, -40)
@@ -174,7 +160,7 @@ function U.Build()
         self:ClearFocus()
     end)
 
-    -- 2. the command, hidden behind the warning
+    -- 2. the command
     local l2 = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     l2:SetPoint("TOPLEFT", 12, -92)
     l2:SetText("2. After a raid, run this, then " .. T().text("accent", "/reload") .. ":")
@@ -209,8 +195,7 @@ function U.Build()
     f.caret:SetTextColor(0.88, 0.92, 1, 1)
     f.caret:SetText("_")
 
-    -- ON TOP OF EVERYTHING, including the warning: a "copied" that appears behind the thing you
-    -- just clicked is the hash box printing through the warning all over again.
+    -- "selected - press Ctrl+C", over the top of the window
     f.flash = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     f.flash:SetPoint("TOP", f, "TOP", 0, -32)
     f.flash:Hide()
@@ -231,127 +216,7 @@ function U.Build()
         -- blink against each other
         if f.caret then f.caret:SetAlpha(((self.t % 1) < 0.5) and 1 or 0) end
         if f.con and f.con.Paint then f.con:Paint() end
-        U.Type(elapsed)
     end)
-
-    -- THE WARNING, over the top of the command and not beside it. It is a child of the window so
-    -- it moves with it, and it covers the command box so the words cannot be copied before the
-    -- warning has been answered. A caution you can ignore by looking slightly to the left is a
-    -- caution that does not work.
-    local warn = CreateFrame("Frame", nil, f)
-    warn:SetPoint("TOPLEFT", 8, -86)
-    warn:SetPoint("BOTTOMRIGHT", -8, 8)
-    warn:EnableMouse(true)                      -- swallows clicks aimed at what is underneath
-    -- AND NOTHING DRAWS THROUGH IT. Children of the window made after this one were drawing on top
-    -- - the hash box printed straight through the warning's words (Arn's screenshot, 5 Oct). A
-    -- warning anything can print over is not covering anything.
-    if warn.SetFrameLevel and f.GetFrameLevel then
-        local lvl = f:GetFrameLevel()
-        if type(lvl) == "number" then warn:SetFrameLevel(lvl + 10) end
-    end
-    local wbg = warn:CreateTexture(nil, "BACKGROUND")
-    wbg:SetAllPoints()
-    wbg:SetColorTexture(0.12, 0.02, 0.05, 0.97)
-
-    local wt = warn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    wt:SetPoint("TOPLEFT", 14, -12)
-    wt:SetText(T().text("warn", "This runs a PowerShell script on your computer"))
-
-    local wb = warn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    wb:SetPoint("TOPLEFT", 14, -34)
-    wb:SetPoint("RIGHT", warn, "RIGHT", -14, 0)
-    wb:SetJustifyH("LEFT")
-    wb:SetJustifyV("TOP")
-    wb:SetText(
-        "A script can do anything you can do on this computer - read your files, change them, send\n"
-        .. "them away.\n\n"
-        .. T().text("accent", "Only run it if you got BiSGuild from CurseForge or from your own officers.")
-        .. "\nIf somebody sent you a copy, do not run it - not even if they seem helpful. Where you\n"
-        .. "got it is the check that actually matters.\n\n"
-        .. "You can also compare this copy against the fingerprint on our CurseForge page. A faked\n"
-        .. "addon would show you a faked one here too, so that check only means something against the\n"
-        .. "page - never against the number this window shows you.")
-
-    local okb = CreateFrame("Button", nil, warn, "UIPanelButtonTemplate")
-    okb:SetSize(190, 22)
-    okb:SetPoint("BOTTOMLEFT", 14, 14)
-    okb:SetText("I understand - show the command")
-    okb:SetScript("OnClick", function()
-        U.agreed = true
-        U.Refresh()
-    end)
-
-    local hashb = CreateFrame("Button", nil, warn, "UIPanelButtonTemplate")
-    hashb:SetSize(150, 22)
-    hashb:SetPoint("LEFT", okb, "RIGHT", 8, 0)
-    hashb:SetText("Show me the hash check")
-    hashb:SetScript("OnClick", function() U.hash = not U.hash U.Refresh() end)
-    f.warn = warn
-
-    -- THE HASH CHECK LIVES INSIDE THE WARNING. It was a box on the window behind, so pressing the
-    -- button printed it through the warning's own words. It belongs here anyway: it is part of
-    -- this conversation, not part of the window underneath.
-    --
-    -- AND IT TYPES ITSELF OUT. Arn: "make it type it out like powershell". A line that simply
-    -- appears is a line the eye skips; one that arrives a character at a time is one you watch -
-    -- which is the right behaviour for the only instruction on this page that is a real check.
-    -- WHAT TO DO WITH IT. Arn, looking at the typed line: "what do i do with this". It said nothing
-    -- about itself and - worse - it was a FontString, which cannot be selected. A line of shell you
-    -- can read and cannot copy is a dead end dressed as an instruction.
-    f.hashWhat = warn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    f.hashWhat:SetPoint("BOTTOMLEFT", 14, 122)   -- over the check line, which is five lines of shell now (16 Oct)
-    f.hashWhat:SetPoint("RIGHT", warn, "RIGHT", -14, 0)
-    f.hashWhat:SetJustifyH("LEFT")
-    f.hashWhat:SetText("")
-
-    -- AN EDITBOX, so it can be taken. Clicking it finishes the typing at once and selects the whole
-    -- line: nobody should wait on a flourish, and nobody should drag across a path to copy it.
-    -- THE PROMPT IS A LABEL, NOT PART OF THE TEXT (5 Oct 2026). It was inside the copied string, so
-    -- the player pasted `PS> Get-FileHash ...` into PowerShell and got:
-    --
-    --     PS> : The term 'PS>' is not recognized as the name of a cmdlet
-    --
-    -- The command box got this right from the start - a FontString beside the box - and the hash
-    -- line baked it in. A decoration that travels with the thing being copied is not a decoration.
-    f.hashPrompt = warn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    if f.hashPrompt.SetFont then pcall(f.hashPrompt.SetFont, f.hashPrompt, PS_FONT, 12, "") end
-    f.hashPrompt:SetTextColor(0.98, 0.98, 0.55, 1)
-    f.hashPrompt:SetText("")
-
-    f.hashLine = CreateFrame("EditBox", nil, warn)
-    f.hashLine:SetPoint("BOTTOMLEFT", 14, 44)
-    f.hashLine:SetPoint("RIGHT", warn, "RIGHT", -14, 0)
-    f.hashLine:SetHeight(74)
-    f.hashLine:SetMultiLine(true)
-    f.hashLine:SetAutoFocus(false)
-    f.hashLine:SetTextInsets(34, 6, 2, 2)   -- room for the PS> label beside it
-    if f.hashLine.SetFont then pcall(f.hashLine.SetFont, f.hashLine, PS_FONT, 12, "") end
-    f.hashLine:SetTextColor(0.88, 0.92, 1, 1)
-    local hbg = f.hashLine:CreateTexture(nil, "BACKGROUND")
-    hbg:SetAllPoints()
-    hbg:SetColorTexture(PS_BLUE[1], PS_BLUE[2], PS_BLUE[3], PS_BLUE[4])
-    f.hashLine:SetScript("OnMouseUp", function(self)
-        U.TypeNow()
-        self:HighlightText()
-        self:SetFocus()
-        U.Flash(U.Copy())
-    end)
-    f.hashLine:SetScript("OnEditFocusGained", function(self) self:HighlightText() end)
-    f.hashLine:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-    f.hashLine:SetText("")
-    f.hashLine:Hide()
-
-    -- ANCHORED TO THE BOX, not to the warning with a guessed offset. Arn: "ps> in the window get a
-    -- little cut off" - it was placed by a number I worked out from the bottom of the frame, which
-    -- stops being right the moment anything above it changes height. Hung off the box's own top-left
-    -- it lines up with the first line of text and cannot drift again.
-    f.hashPrompt:SetPoint("TOPLEFT", f.hashLine, "TOPLEFT", 6, -3)
-
-    -- the hash line, shown under the command once asked for
-    f.hashLabel = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    f.hashLabel:SetPoint("TOPLEFT", 12, -160)
-    f.hashBox = copyBox(f, W - 24, true)
-    f.hashBox:SetPoint("TOPLEFT", 12, -176)
 
     -- the report
     f.report = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -381,70 +246,481 @@ function U.Build()
     f.lastHit:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
     f.lastHit:Hide()
 
+    -- THE OTHER WAY IN: no PowerShell at all (17 Oct 2026, the notebook)
+    f.pasteBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    f.pasteBtn:SetSize(190, 20)
+    f.pasteBtn:SetPoint("BOTTOMRIGHT", -12, 10)
+    f.pasteBtn:SetText("Paste from the notebook")
+    if f.pasteBtn.SetFrameLevel and f.GetFrameLevel then
+        local lvl = f:GetFrameLevel()
+        if type(lvl) == "number" then f.pasteBtn:SetFrameLevel(lvl + 12) end
+    end
+    f.pasteBtn:SetScript("OnClick", function() U.ShowPaste() end)
+
     f:Hide()
     U.frame = f
     return f
 end
 
---- TYPED OUT, A CHARACTER AT A TIME. Arn: "make it type it out like powershell".
----
---- CPS is deliberately brisk: this is a flourish, not a cutscene. A sixty-character line lands in
---- about a second, which is long enough to be watched and short enough that nobody waits for it.
---- Clicking the line at any point finishes it instantly - a person who wants to copy it should
---- never have to wait for an animation.
-U.CPS = 55
+--------------------------------------------------------------------
+-- THE PASTE WINDOW (17 Oct 2026). Arn: a notebook "so people can just drag and drop their log ...
+-- hit run ... something to paste". The notebook (BiSGuild/notebook) reads the log on Google's
+-- computer and prints text; this takes it in through Core/Share.lua X.ImportPaste - each raid merged
+-- like an officer's copy. Its own window at the family's 1.43:1. The terminal's LOG tab opens it.
+--------------------------------------------------------------------
+U.PW, U.PH = 520, 364
 
---- SETTEXT CLEARS THE SELECTION, so it is called only when the text actually CHANGES (5 Oct 2026).
----
---- Arn: "i cant select it it shows selected for a split second and then unselects. maybe our
---- blinking _". Right about the cause, and it was the typewriter rather than the caret: this ran on
---- every frame and re-set the same finished string forever, wiping the highlight a frame after the
---- click put it there.
----
---- An animation that keeps running after it has finished is not idle - it is holding the thing it
---- drew.
-local function put(fs, text)
-    if U.typeShown == text then return end
-    U.typeShown = text
-    fs:SetText(text)
-end
+-- THE LINK, IN THE WINDOW (Arn, 18 Oct: "in the logs we give them the link to go to the google code
+-- thing"). An addon cannot open a browser, so it is a box: click, Ctrl+C, paste in the browser. The
+-- CurseForge page carries the same link "so people can double check" - the suite holds the two equal.
+U.NOTEBOOK = "https://colab.research.google.com/github/blankfer/BiSGuild/blob/main/dev/BiSGuild.ipynb"
 
-function U.Type(elapsed)
-    local f = U.frame
-    if not (f and f.hashLine and U.typeTarget) then return end
-    if U.typeAt >= #U.typeTarget then
-        put(f.hashLine, U.typeTarget)
-        return
+function U.BuildPaste()
+    if U.paste then return U.paste end
+    if not CreateFrame then return nil end
+    local p = CreateFrame("Frame", "BiSGuildPaste", UIParent)
+    p:SetSize(U.PW, U.PH)
+    p:SetPoint("CENTER")
+    p:SetFrameStrata("DIALOG")
+    p:EnableMouse(true)
+    p:SetMovable(true)
+    p:RegisterForDrag("LeftButton")
+    p:SetScript("OnDragStart", function(self) self:StartMoving() end)
+    p:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+    local bg = p:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(0, 0, 0, 1)   -- solid: it opens over the terminal, whose rows read through 0.96 (Arn, 18 Oct)
+    local head = p:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    head:SetPoint("TOPLEFT", 12, -10)
+    head:SetText(T().text("accent", "BiS> Guild") .. "  paste from the notebook")
+    local close = CreateFrame("Button", nil, p, "UIPanelCloseButton")
+    close:SetPoint("TOPRIGHT", -4, -4)
+    close:SetScript("OnClick", function() p:Hide() end)
+    ns.EscKeys(p, function() p:Hide() end)
+    -- the raids on record, to archive a wrong one (U.ShowRaids)
+    local list = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
+    list:SetSize(130, 20)
+    list:SetPoint("TOPRIGHT", -36, -7)
+    list:SetText("Raids on record")
+    list:SetScript("OnClick", function() U.ShowRaids() end)
+    p.listBtn = list
+
+    local l1 = p:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    l1:SetPoint("TOPLEFT", 12, -34)
+    l1:SetText("1. Click the link, press " .. T().text("accent", "Ctrl+C") .. ", and paste it into your browser:")
+
+    -- selects itself on a click; typing into it changes nothing (the link put back at once)
+    local link = copyBox(p, U.PW - 24)
+    link:SetPoint("TOPLEFT", 12, -50)
+    link:SetTextColor(0.72, 0.5, 1, 1)
+    link:SetText(U.NOTEBOOK)
+    link:SetScript("OnTextChanged", function(self, userInput)
+        if userInput and self:GetText() ~= U.NOTEBOOK then self:SetText(U.NOTEBOOK) self:HighlightText() end
+    end)
+    p.link = link
+
+    local how = p:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    how:SetPoint("TOPLEFT", 12, -78)
+    how:SetPoint("RIGHT", p, "RIGHT", -12, 0)
+    how:SetJustifyH("LEFT")
+    how:SetText("2. Press Run all, drop your combat log in, and copy the text it prints.\n"
+        .. "3. Paste it below " .. T().text("accent", "(Ctrl+V)") .. " and press Import. Nothing runs on this computer.")
+
+    local wrap = CreateFrame("Frame", nil, p)
+    wrap:SetPoint("TOPLEFT", 12, -108)
+    wrap:SetPoint("BOTTOMRIGHT", -12, 64)
+    -- CLIPPED (Arn's first paste, 18 Oct: 14 KB of text ran down over the whole screen and over the
+    -- buttons). The text is not for reading anyway - the line under the box says what was pasted.
+    if wrap.SetClipsChildren then wrap:SetClipsChildren(true) end
+    local wbg = wrap:CreateTexture(nil, "BACKGROUND")
+    wbg:SetAllPoints()
+    wbg:SetColorTexture(PS_BLUE[1], PS_BLUE[2], PS_BLUE[3], PS_BLUE[4])
+
+    local box = CreateFrame("EditBox", nil, wrap)
+    box:SetPoint("TOPLEFT", 6, -6)
+    box:SetPoint("BOTTOMRIGHT", -6, 6)
+    box:SetMultiLine(true)
+    box:SetAutoFocus(false)
+    if box.SetMaxLetters then box:SetMaxLetters(0) end       -- a raid is thousands of letters
+    if box.SetFont then pcall(box.SetFont, box, PS_FONT, 10, "") end
+    box:SetTextColor(0.88, 0.92, 1, 1)
+    box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    -- what was pasted, said in words: the box shows a wall of text nobody reads
+    box:SetScript("OnTextChanged", function(self, userInput)
+        if not userInput or not p.status then return end
+        local text = self:GetText() or ""
+        local n = 0
+        for _ in text:gmatch("[^\n]+") do n = n + 1 end
+        if text:find("BiSGuild paste", 1, true) then
+            p.status:SetText(T().text("accent", ("pasted: %d lines - press Import"):format(n)))
+        elseif text ~= "" then
+            p.status:SetText(T().text("muted", "that doesn't look like the notebook's text yet"))
+        else
+            p.status:SetText("")
+        end
+    end)
+    p.box = box
+
+    p.status = p:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    p.status:SetPoint("BOTTOMLEFT", 12, 40)
+    p.status:SetPoint("RIGHT", p, "RIGHT", -12, 0)
+    p.status:SetJustifyH("LEFT")
+    p.status:SetText("")
+
+    local import = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
+    import:SetSize(120, 22)
+    import:SetPoint("BOTTOMLEFT", 12, 10)
+    import:SetText("Import")
+    import:SetScript("OnClick", function() U.DoPaste() end)
+    p.import = import
+    local clear = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
+    clear:SetSize(90, 22)
+    clear:SetPoint("LEFT", import, "RIGHT", 8, 0)
+    clear:SetText("Clear")
+    clear:SetScript("OnClick", function() box:SetText("") p.status:SetText("") end)
+
+    -- THE BAR (Arn, 18 Oct: "fake progress bars - to make it look like its doing something"). Beside
+    -- the buttons, the family's chunky blocks in the accent: it fills while the window says what it
+    -- is doing. Flavour: the import is already done when it starts.
+    local bar = CreateFrame("Frame", nil, p)
+    bar:SetSize(U.BAR_W, 14)
+    bar:SetPoint("BOTTOMRIGHT", -12, 14)
+    local bbg = bar:CreateTexture(nil, "BACKGROUND")
+    bbg:SetAllPoints()
+    bbg:SetColorTexture(0.08, 0.08, 0.10, 1)
+    bar.blocks = {}
+    local bw = (U.BAR_W - 2) / U.BAR_BLOCKS
+    local ar, ag, ab = 0.72, 0.5, 1
+    if T().rgb then ar, ag, ab = T().rgb("accent") end
+    for i = 1, U.BAR_BLOCKS do
+        local b = bar:CreateTexture(nil, "ARTWORK")
+        b:SetSize(bw - 2, 10)
+        b:SetPoint("LEFT", bar, "LEFT", 2 + (i - 1) * bw, 0)
+        b:SetColorTexture(ar, ag, ab, 1)
+        b:Hide()
+        bar.blocks[i] = b
     end
-    U.typeAt = math.min(#U.typeTarget, U.typeAt + (tonumber(elapsed) or 0) * U.CPS)
-    -- the cursor comes OFF on the tick that finishes it, not the one after: a trailing underscore
-    -- left on a command somebody is about to copy is a character they would paste into a shell
-    if U.typeAt >= #U.typeTarget then
-        put(f.hashLine, U.typeTarget)
-    else
-        put(f.hashLine, U.typeTarget:sub(1, math.floor(U.typeAt)) .. "_")
-    end
+    bar:Hide()
+    p.bar = bar
+    p:Hide()
+    U.paste = p
+    return p
 end
+U.BAR_W, U.BAR_BLOCKS, U.BAR_LEN = 250, 20, 1.8
 
---- Start typing a line, or clear it with nil.
-function U.TypeOut(text)
-    U.typeTarget = (type(text) == "string" and text ~= "") and text or nil
-    U.typeAt = 0
-    U.typeShown = nil                 -- a new line must be written even if it matches the last
-    if U.frame and U.frame.hashLine then U.frame.hashLine:SetText("") end
-end
-
---- Skip the animation. Nobody should wait on a flourish to copy a line.
-function U.TypeNow()
-    if U.typeTarget then
-        U.typeAt = #U.typeTarget
-        -- written through `put` so the cache agrees: a SetText behind its back would let the next
-        -- tick write the same string again and wipe the selection this call exists to allow
-        if U.frame and U.frame.hashLine and U.typeShown ~= U.typeTarget then
-            U.typeShown = U.typeTarget
-            U.frame.hashLine:SetText(U.typeTarget)
+--- How many who stood in this raid are not in the guild, of how many - or nil outside a guild (or
+--- before the client has sent the roster), where there is nothing to compare with.
+function U.Outsiders(night)
+    local K = ns.K
+    if not (K and K.Guild and K.Member and IsInGuild and IsInGuild()) then return nil end
+    K._guildDirty = true
+    if not next(K.Guild().members) then return nil end
+    local seen, total, out = {}, 0, 0
+    for _, pull in ipairs(type(night) == "table" and night.pulls or {}) do
+        for who in pairs(type(pull.r) == "table" and pull.r or {}) do
+            if not seen[who] then
+                seen[who] = true
+                total = total + 1
+                if not K.Member(who) then out = out + 1 end
+            end
         end
     end
+    return out, total
+end
+
+--- Take the box's text in. The import happens HERE, at once; then the bar plays it out and the
+--- window says what came in. A refusal is said at once - nothing to wait for.
+function U.DoPaste()
+    local p = U.BuildPaste()
+    if not p then return nil end
+    if p.run then return nil end                       -- one at a time
+    local text = p.box:GetText() or ""
+    local got, why = ns.X.ParsePaste(text)
+    if not got then
+        p.status:SetText(T().text("warn", why))
+        return nil, why
+    end
+    -- MOSTLY NOT OUR GUILD? (Arn, 18 Oct: "maybe a check that says this has more people not in your
+    -- guild") - a wrong log is usually somebody else's raid. Said, and taken only on a second press
+    -- of Import with the same text: a pug-heavy raid of ours still gets in.
+    if p.pending ~= text then
+        for _, r in ipairs(got.raids) do
+            local out, total = U.Outsiders(r[2])
+            if out and total > 0 and out * 2 > total then
+                p.pending = text
+                local zone = (r[2].zone and r[2].zone ~= "") and r[2].zone or ("raid " .. tostring(r[2].i))
+                p.status:SetText(T().text("gold", ("%s %s: %d of %d aren't in your guild - press Import again to take it anyway")
+                    :format(r[1]:sub(1, 10), zone, out, total)))
+                return nil, "outsiders"
+            end
+        end
+    end
+    p.pending = nil
+    local archived = 0
+    for _, r in ipairs(got.raids) do if ns.S.ArchivedAs(r[2]) then archived = archived + 1 end end
+    local raids, gear, bad = ns.X.ImportPaste(text)
+    if not raids then
+        p.status:SetText(T().text("warn", gear))
+        return nil, gear
+    end
+    local script = { "Reading the paste..." }
+    for key in text:gmatch("R~([^~\n]+)~") do
+        script[#script + 1] = "Raid " .. tostring(ns.S.Label(key) or key)
+    end
+    script[#script + 1] = ("Merging into the guild's record: %d new"):format(raids)
+    script[#script + 1] = ("Gear: %d raider(s)"):format(gear)
+    script[#script + 1] = "Done."
+    p.run = { t = 0, script = script, said = 0, raids = raids, gear = gear, bad = bad, archived = archived }
+    p.bar:Show()
+    for _, b in ipairs(p.bar.blocks) do b:Hide() end
+    p:SetScript("OnUpdate", function(self, elapsed) U.PasteStep(self, elapsed) end)
+    return raids, gear, bad
+end
+
+--- One frame of the bar. OnUpdate runs only while the bar plays (lean: nothing ticks otherwise).
+function U.PasteStep(p, elapsed)
+    local r = p.run
+    if not r then p:SetScript("OnUpdate", nil) return end
+    r.t = r.t + (tonumber(elapsed) or 0)
+    local frac = math.min(1, r.t / U.BAR_LEN)
+    local lit = math.floor(frac * U.BAR_BLOCKS + 0.5)
+    for i, b in ipairs(p.bar.blocks) do if i <= lit then b:Show() else b:Hide() end end
+    local n = math.min(#r.script, math.floor(frac * #r.script) + 1)
+    if n ~= r.said then
+        r.said = n
+        p.status:SetText(T().text("muted", r.script[n]))
+    end
+    if frac < 1 then return end
+    p.run = nil
+    p:SetScript("OnUpdate", nil)
+    local said = ("%d raid(s) taken in, %d raider(s)' gear"):format(r.raids, r.gear)
+    if r.raids == 0 and r.gear == 0 then said = "nothing new - this is already on record" end
+    -- an archived raid is not let back in (Core/Store.lua) - say where it is, not "already on record"
+    if (r.archived or 0) > 0 then
+        said = said .. T().text("gold", ("  (%d archived - Raids on record restores it)"):format(r.archived))
+    end
+    if r.bad > 0 then said = said .. T().text("warn", ("  (%d line(s) could not be read)"):format(r.bad)) end
+    p.status:SetText(T().text(r.bad > 0 and "gold" or "good", said))
+    if r.raids > 0 then p.box:SetText("") end
+    if ns.K and ns.K.Paint and ns.K.frame and ns.K.frame:IsShown() then pcall(ns.K.Paint) end
+    if U.PaintRaids then U.PaintRaids() end
+end
+
+--------------------------------------------------------------------
+-- RAIDS ON RECORD (18 Oct 2026). Arn: "a list to click it off where it archives it or something
+-- incase someone accidently clicks a correct log". Every raid, newest first, with an x; the archived
+-- ones below, greyed, with a restore. Nothing is ever deleted (Core/Store.lua S.Archive). An
+-- officer's click goes to the whole guild (Core/Share.lua ARCH). Opened from the paste window.
+--------------------------------------------------------------------
+U.RAID_ROWS = 13
+
+function U.BuildRaids()
+    if U.raids then return U.raids end
+    if not CreateFrame then return nil end
+    local w = CreateFrame("Frame", "BiSGuildRaids", UIParent)
+    w:SetSize(U.PW, U.PH)
+    w:SetPoint("CENTER")
+    w:SetFrameStrata("DIALOG")
+    w:EnableMouse(true)
+    w:SetMovable(true)
+    w:RegisterForDrag("LeftButton")
+    w:SetScript("OnDragStart", function(self) self:StartMoving() end)
+    w:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+    local bg = w:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(0, 0, 0, 1)
+    local head = w:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    head:SetPoint("TOPLEFT", 12, -10)
+    head:SetText(T().text("accent", "BiS> Guild") .. "  raids on record")
+    local close = CreateFrame("Button", nil, w, "UIPanelCloseButton")
+    close:SetPoint("TOPRIGHT", -4, -4)
+    close:SetScript("OnClick", function() w:Hide() end)
+    -- ESC steps back to the paste window, the way the terminal's ESC walks back
+    ns.EscKeys(w, function() U.ShowPaste() end)
+    local back = CreateFrame("Button", nil, w, "UIPanelButtonTemplate")
+    back:SetSize(130, 20)
+    back:SetPoint("TOPRIGHT", -36, -7)
+    back:SetText("Back to the paste")
+    back:SetScript("OnClick", function() U.ShowPaste() end)
+    w.back = back
+
+    w.who = w:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    w.who:SetPoint("TOPLEFT", 12, -32)
+    w.who:SetPoint("RIGHT", w, "RIGHT", -12, 0)
+    w.who:SetJustifyH("LEFT")
+
+    w.rows = {}
+    for i = 1, U.RAID_ROWS do
+        local row = CreateFrame("Frame", nil, w)
+        row:SetSize(U.PW - 24, 20)
+        row:SetPoint("TOPLEFT", 12, -52 - (i - 1) * 21)
+        local rbg = row:CreateTexture(nil, "BACKGROUND")
+        rbg:SetAllPoints()
+        rbg:SetColorTexture(1, 1, 1, i % 2 == 0 and 0.04 or 0.0)
+        row.label = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        row.label:SetPoint("LEFT", 6, 0)
+        row.label:SetWidth(240)
+        row.label:SetJustifyH("LEFT")
+        row.sizes = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        row.sizes:SetPoint("LEFT", 252, 0)
+        row.sizes:SetWidth(150)
+        row.sizes:SetJustifyH("LEFT")
+        row.btn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+        row.btn:SetSize(76, 18)
+        row.btn:SetPoint("RIGHT", -2, 0)
+        row.btn:SetScript("OnClick", function(self) U.ArchiveRow(self:GetParent()) end)
+        -- THE BAR, where the button was (Arn, 18 Oct: "when i click archive it turns to a fake progress
+        -- bar and says restore") - the paste window's blocks, small
+        row.bar = CreateFrame("Frame", nil, row)
+        row.bar:SetSize(76, 14)
+        row.bar:SetPoint("RIGHT", -2, 0)
+        local rbb = row.bar:CreateTexture(nil, "BACKGROUND")
+        rbb:SetAllPoints()
+        rbb:SetColorTexture(0.08, 0.08, 0.10, 1)
+        row.bar.blocks = {}
+        local ar, ag, ab = 0.72, 0.5, 1
+        if T().rgb then ar, ag, ab = T().rgb("accent") end
+        local bw = 74 / U.ROW_BLOCKS
+        for b = 1, U.ROW_BLOCKS do
+            local t = row.bar:CreateTexture(nil, "ARTWORK")
+            t:SetSize(bw - 2, 10)
+            t:SetPoint("LEFT", row.bar, "LEFT", 2 + (b - 1) * bw, 0)
+            t:SetColorTexture(ar, ag, ab, 1)
+            t:Hide()
+            row.bar.blocks[b] = t
+        end
+        row.bar:Hide()
+        row:Hide()
+        w.rows[i] = row
+    end
+    w.offset = 0
+    w:EnableMouseWheel(true)
+    w:SetScript("OnMouseWheel", function(self, delta)
+        self.offset = math.max(0, (self.offset or 0) - (delta > 0 and 3 or -3))
+        U.PaintRaids()
+    end)
+
+    w.foot = w:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    w.foot:SetPoint("BOTTOMLEFT", 12, 12)
+    w.foot:SetPoint("RIGHT", w, "RIGHT", -12, 0)
+    w.foot:SetJustifyH("LEFT")
+    w.foot:SetText("Archive files a raid away: nothing counts it, and Restore brings it back.")
+    -- closed mid-bar: the bars are flavour, the archives are already done - finish them, nothing ticking
+    w:SetScript("OnHide", function(self) if next(self.runs) then U.RowStep(self, U.ROW_BAR_LEN) end end)
+    w.runs = {}
+    w:Hide()
+    U.raids = w
+    return w
+end
+U.ROW_BLOCKS, U.ROW_BAR_LEN = 8, 0.9
+
+--- Archive or restore a row's raid. Done AT ONCE (Core/Share.lua X.SetArchived); the row then plays a
+--- bar where its button was. SEVERAL AT ONCE (Arn, 18 Oct: "i want to be able to click on mutiple and
+--- the progress bar work on mutiple"): each row its own bar, and the list re-sorts only when the last
+--- one ends, so no row moves under the mouse while you click down the list.
+function U.ArchiveRow(row)
+    local w = U.raids
+    local e = row and row.entry
+    if not (w and e) or w.runs[row] then return false end
+    local run = { t = 0, archived = not e.archived }
+    w.runs[row] = run                                          -- held still: PaintRaids waits for them
+    if not ns.X.SetArchived(e.key, not e.archived) then
+        w.runs[row] = nil
+        U.PaintRaids()
+        return false
+    end
+    e.archived = run.archived                  -- the row knows its new state: clickable again when done
+    row.btn:Hide()
+    for _, b in ipairs(row.bar.blocks) do b:Hide() end
+    row.bar:Show()
+    row.sizes:SetText(T().text("gold", run.archived and "archiving..." or "restoring..."))
+    w:SetScript("OnUpdate", function(self, elapsed) U.RowStep(self, elapsed) end)
+    return true
+end
+
+--- One frame of the rows' bars. OnUpdate runs only while one plays.
+function U.RowStep(w, elapsed)
+    for row, r in pairs(w.runs) do
+        r.t = r.t + (tonumber(elapsed) or 0)
+        local frac = math.min(1, r.t / U.ROW_BAR_LEN)
+        local lit = math.floor(frac * U.ROW_BLOCKS + 0.5)
+        for i, b in ipairs(row.bar.blocks) do if i <= lit then b:Show() else b:Hide() end end
+        if frac >= 1 then
+            w.runs[row] = nil
+            row.bar:Hide()
+            -- it says what it is now at once ("...and says restore"); the re-sort waits for the rest
+            row.btn:SetText(r.archived and "Restore" or "Archive")
+            row.sizes:SetText(T().text(r.archived and "muted" or "ink2", r.archived and "archived" or "restored"))
+            row.btn:Show()
+        end
+    end
+    if next(w.runs) then return end
+    w:SetScript("OnUpdate", nil)
+    U.PaintRaids()
+end
+
+local function plural(n, one) return n .. " " .. one .. (n == 1 and "" or "s") end
+
+function U.PaintRaids()
+    local w = U.raids
+    if not (w and w:IsShown()) or next(w.runs) then return end   -- bars playing: repainted when the last ends
+    local S, X = ns.S, ns.X
+    local list = S.RaidList()
+    w.offset = math.min(w.offset or 0, math.max(0, #list - U.RAID_ROWS))
+    local live = 0
+    for _, e in ipairs(list) do if not e.archived then live = live + 1 end end
+    w.who:SetText(("%d on record, %d archived.  "):format(live, #list - live)
+        .. T().text("muted", X.IsOfficer(X.Me()) and "You're an officer: archiving goes to the whole guild."
+            or "Only your copy - an officer's archive goes to the guild."))
+    for i, row in ipairs(w.rows) do
+        local e = list[i + w.offset]
+        row.entry = e
+        if e then
+            local n = type(e.night) == "table" and e.night or {}
+            local raiders = 0
+            for _ in pairs(type(n.raiders) == "table" and n.raiders or {}) do raiders = raiders + 1 end
+            local colour = e.archived and "muted" or "ink"
+            row.label:SetText(T().text(colour, S.Label(e.key) or e.key))
+            row.sizes:SetText(T().text(e.archived and "muted" or "ink2", e.archived
+                and ("archived" .. (e.by and (" by " .. e.by) or ""))
+                or (plural(tonumber(n.kills) or 0, "kill") .. ", " .. plural(raiders, "raider"))))
+            row.btn:SetText(e.archived and "Restore" or "Archive")
+            row:Show()
+        else
+            row:Hide()
+        end
+    end
+end
+
+--- ONE OF OUR SMALL WINDOWS AT A TIME (Arn, 18 Oct: "we keep running into this problem where it opens
+--- the window right on top of the otherone"). They share the screen's centre and the DIALOG strata, so
+--- two open at once interleave their pieces. Whichever opens, the others step aside; it comes in front.
+function U.Alone(keep)
+    -- by name, not ipairs: a window never built is nil, and ipairs would stop at it
+    for _, k in ipairs({ "frame", "paste", "raids" }) do
+        local w = U[k]
+        if w and w ~= keep and w:IsShown() then w:Hide() end
+    end
+    keep:Show()
+    if keep.SetToplevel then keep:SetToplevel(true) end
+    if keep.Raise then keep:Raise() end
+end
+
+function U.ShowRaids()
+    local w = U.BuildRaids()
+    if not w then return end
+    w.offset = 0
+    U.Alone(w)
+    U.PaintRaids()
+end
+
+--- IN FRONT, ALONE (Arn's first paste, 18 Oct: it opened BEHIND the script window). The script
+--- window steps aside - the paste is the other way in, not a part of it - and this one is raised.
+function U.ShowPaste()
+    local p = U.BuildPaste()
+    if not p then return end
+    U.Alone(p)
+    p.box:SetFocus()
 end
 
 --- SAY IT WORKED, AND SAY WHICH. Arn asked for "a message saying copied" - and the honest message
@@ -478,56 +754,8 @@ function U.Refresh()
     f.logs:SetText(P.Logs() or "")
 
     local cmd = P.Command()
-    -- THE WARNING STANDS DOWN ONCE, PER SESSION, and only by a press. Not remembered across a
-    -- reload on purpose: the whole point is that running a script is a decision, and a decision
-    -- made last Tuesday is not one made now.
-    if U.agreed and cmd then
-        f.warn:Hide()
-        f.cmd:SetText(cmd)
-        f.l2:Show()
-        f.back:Show()
-    elseif U.agreed then
-        f.warn:Hide()
-        f.cmd:SetText("")
-        f.l2:Show()
-        f.back:Show()
-        U.Say("tell me where your logs are first")
-    else
-        -- EMPTIED, not just covered. The warning frame sits over the box, but the text was still IN
-        -- the box - so the command existed on screen behind an overlay, one dragged window or one
-        -- failed draw away from being copied. Caught by its own test, which is the only reason this
-        -- line is here.
-        f.cmd:SetText("")
-        f.warn:Show()
-        f.back:Hide()        -- it is already showing; a button back to here would be a loop
-    end
-
-    -- The hash check types itself out INSIDE the warning. It used to be a box on the window behind,
-    -- which printed straight through the warning's own words.
-    if U.hash then
-        -- NOTHING BUT THE COMMAND goes in the box: whatever is in there is what gets pasted into a
-        -- shell, and a prompt pasted with it is an error message.
-        -- the whole addon, by a line of plain PowerShell (Core/Report.lua P.CheckCommand, 16 Oct)
-        local want = P.CheckCommand() or "..."
-        if U.typeTarget ~= want then U.TypeOut(want) end
-        f.hashLine:Show()
-        f.hashPrompt:SetText("PS>")
-        -- THREE SENTENCES, because a command with no instruction is a thing people stare at. Arn,
-        -- at exactly this line: "what do i do with this".
-        f.hashWhat:SetText(
-            T().text("accent", "Click the line below to copy it,") .. " paste it into PowerShell, and compare\n"
-            .. "the answer with the number on our CurseForge page (it has this same line). "
-            .. T().text("warn", "Not with this addon") .. " -\n"
-            .. "a faked copy would show you a faked number here too.")
-    else
-        U.TypeOut(nil)
-        f.hashLine:Hide()
-        f.hashPrompt:SetText("")
-        f.hashWhat:SetText("")
-    end
-    -- the old boxes on the window behind are gone; keep them empty so nothing can draw through
-    if f.hashLabel then f.hashLabel:SetText("") end
-    if f.hashBox then f.hashBox:SetText("") f.hashBox:Hide() end
+    f.cmd:SetText(cmd or "")
+    if not cmd then U.Say("tell me where your logs are first") end
 
     local r = P.Report()
     if not r then
@@ -558,17 +786,11 @@ function U.Refresh()
 end
 
 function U.Show()
-    if ns.TellBroken() then return false end    -- not a whole copy: Core/Copies.lua
     local f = U.Build()
     if not f then return false end
     U.Refresh()
-    f:Show()
-    -- IN FRONT, WHOLE (Arn, 16 Oct: "this windows kinda get overlapping"). The terminal opens this
-    -- from its LOG tab, and two windows on the same strata interleave their pieces - the terminal's
-    -- ticker bar drew across this one. Toplevel + Raise is the client's own answer: the window you
-    -- opened or clicked last is on top, all of it.
-    if f.SetToplevel then f:SetToplevel(true) end
-    if f.Raise then f:Raise() end
+    -- IN FRONT, WHOLE (Arn, 16 Oct: "this windows kinda get overlapping"), and alone (18 Oct, U.Alone)
+    U.Alone(f)
     return true
 end
 
@@ -581,5 +803,3 @@ function U.Toggle()
     U.Show()
     return true
 end
-
-ns.parts["Core/Window.lua"] = "0.1.1"

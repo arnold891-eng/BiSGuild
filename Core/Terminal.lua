@@ -13,7 +13,7 @@
     KUMLUST <RAIDER> GO     the raider card: armory, attendance, consumes, gear issues, loot won
     RAGNAROS <BOSS> GO      the boss ticker: kills, wipes, first kill, fastest, who has downed it
     RAIDERS  BOSSES         tabs: the two lists, every row clickable
-    LOG                     tab: the script window (Core/Window.lua), for the officer who imports
+    LOG                     tab: the notebook's link and its paste box (Core/Window.lua U.ShowPaste)
 
   The Bloomberg words are optional: a bare name works, and a start of one does when only one thing
   starts that way. Everything shown is built from the guild's record (Core/Store.lua), so a night that
@@ -290,6 +290,7 @@ K.sort = "class"
 function K.Sort(rows, mode)
     table.sort(rows, function(a, b)
         if a.pug ~= b.pug then return b.pug end                      -- pugs at the bottom, always
+        if (a.none or false) ~= (b.none or false) then return b.none end   -- then members with no raids
         if mode == "attend" and a.att ~= b.att then return a.att > b.att end
         if mode ~= "attend" then
             local ca, cb = K.CLASS_ORDER[a.class or ""] or 99, K.CLASS_ORDER[b.class or ""] or 99
@@ -303,31 +304,70 @@ end
 function K.Rows(cards)
     local nights = #S().Dates()
     local guild = K.Guild()
-    local out = {}
+    local out, matched = {}, {}
     for name, c in pairs(cards) do
         local m = K.Member(name)
-        out[#out + 1] = {
-            name = name,
-            rank = m and m.rank or (guild.complete and "pug" or "?"),
-            class = m and m.class or nil,
-            pug = (m == nil and guild.complete) or false,
-            att = nights > 0 and math.floor(100 * #c.attended / nights + 0.5) or 0,
-            last = c.last and c.last.date or "-",
-            flask = c.last and ((c.last.flask or 0) + (c.last.elixir or 0) > 0) or false,
-            deaths = c.deaths or 0,
-            issues = #(c.issues or {}),
-            -- "clean" is a claim about gear somebody saw; with none on record it is "no gear seen"
-            -- (Arn, 16 Oct: a whole night of raiders read "clean" with empty armories)
-            geared = c.gear ~= nil,
-        }
+        -- IN A RAID ON RECORD, OR NOT LISTED (Arn, 18 Oct: "if a raider only apperes in one log and we
+        -- archive that log can we hide all those people"). A card can be gear alone - every log brings
+        -- everyone's gear, and gear stays when its raid is archived - so somebody seen in no raid on
+        -- record is left off; a guild member among them shows as a member with no raids. Their gear is
+        -- kept: restore the raid and they are back.
+        local seen = c.last ~= nil or #(c.attended or {}) > 0 or (c.deaths or 0) > 0
+        if m then matched[m.key] = true end
+        if not seen then
+            if m then
+                out[#out + 1] = { name = name, rank = m.rank or "?", class = m.class, pug = false, none = true,
+                                  att = 0, last = "-", flask = false, deaths = 0, issues = 0, geared = false }
+            end
+        else
+            out[#out + 1] = {
+                name = name,
+                rank = m and m.rank or (guild.complete and "pug" or "?"),
+                class = m and m.class or nil,
+                pug = (m == nil and guild.complete) or false,
+                att = nights > 0 and math.floor(100 * #c.attended / nights + 0.5) or 0,
+                last = c.last and S().DateOf(c.last.date) or "-",          -- a column: the date alone
+                flask = c.last and ((c.last.flask or 0) + (c.last.elixir or 0) > 0) or false,
+                deaths = c.deaths or 0,
+                issues = #(c.issues or {}),
+                -- "clean" is a claim about gear somebody saw; with none on record it is "no gear seen"
+                -- (Arn, 16 Oct: a whole night of raiders read "clean" with empty armories)
+                geared = c.gear ~= nil,
+            }
+        end
+    end
+    -- EVERY GUILD MEMBER, raided or not (Arn, 18 Oct: "pull all guild memebers from blizzard guild
+    -- pane"), straight from the game's guild list - greyed and below the raiders, above the pugs
+    for key, m in pairs(guild.members) do
+        if not matched[key] then
+            out[#out + 1] = { name = m.name, rank = m.rank or "?", class = m.class, pug = false, none = true,
+                              att = 0, last = "-", flask = false, deaths = 0, issues = 0, geared = false }
+        end
     end
     return K.Sort(out, K.sort)
+end
+
+--- Everybody a raider page can open: whoever is on the record, and every guild member (a member with
+--- no raids opens a page that says so). Answers a set: name -> true.
+function K.People(cards)
+    local out, matched = {}, {}
+    for name in pairs(cards or {}) do
+        out[name] = true
+        local m = K.Member(name)
+        if m then matched[m.key] = true end
+    end
+    -- a member already on the record is found by their record name, never twice
+    for key, m in pairs(K.Guild().members) do
+        if not matched[key] then out[m.name] = true end
+    end
+    return out
 end
 
 function K.BossRows(pages)
     local out = {}
     for name, p in pairs(pages) do
-        out[#out + 1] = { name = name, kills = p.kills, wipes = p.wipes, best = p.best, first = p.first or "-" }
+        out[#out + 1] = { name = name, kills = p.kills, wipes = p.wipes, best = p.best,
+                          first = p.first and S().DateOf(p.first) or "-" }
     end
     table.sort(out, function(a, b)
         if (a.first == "-") ~= (b.first == "-") then return b.first == "-" end
@@ -343,7 +383,7 @@ function K.TickerText()
     local last = dates[#dates]
     if not last then return "NO RAID NIGHTS ON RECORD" end
     local n = S().Record().nights[last]
-    local parts = { ("LAST RAID %s  %d KILLS  %d RAIDERS"):format(last, tonumber(n.kills) or 0, select(1, S().Weight(n))) }
+    local parts = { ("LAST RAID %s  %d KILLS  %d RAIDERS"):format(S().Label(last):upper(), tonumber(n.kills) or 0, select(1, S().Weight(n))) }
     local names = {}
     for boss in pairs(n.bosses or {}) do names[#names + 1] = boss end
     table.sort(names)
@@ -663,8 +703,8 @@ function K.Build()
     -- AN EMPTY LIST SAYS WHY (Arn clicked RAIDERS on a fresh install and "nothing" happened: the
     -- tab sent him to the same blank page he was already on). Each list keeps its own page and says
     -- where the nights come from when it has none.
-    local EMPTY = "No raid nights on record yet.\n\nAfter a raid, an officer runs the log script (the LOG "
-        .. "tab) and types /reload - the night is kept here and shared with the guild.\n\nOr wait: when "
+    local EMPTY = "No raid nights on record yet.\n\nAfter a raid, open the LOG tab: its notebook reads your "
+        .. "combat log, and you paste what it prints - the night is kept here and shared with the guild.\n\nOr wait: when "
         .. "an officer who has the nights is online, they arrive by themselves."
     local function Hint(panel)
         panel.hint = Text(panel, 13, "ink2")
@@ -883,17 +923,27 @@ K.Say = Say
 local function PaintRaiders(p)
     local rows = K.Rows(S().Cards())
     local off = Scroll(p.grid, #rows)
-    local pugs = 0
-    for _, r in ipairs(rows) do if r.pug then pugs = pugs + 1 end end
-    p.panel.right:SetText(("%d raiders, %d pugs, %d nights"):format(#rows - pugs, pugs, #S().Dates()) .. Showing(p.grid))
-    if #rows == 0 then p.panel.hint:Show() else p.panel.hint:Hide() end
+    local pugs, none = 0, 0
+    for _, r in ipairs(rows) do
+        if r.pug then pugs = pugs + 1 elseif r.none then none = none + 1 end
+    end
+    p.panel.right:SetText(("%d raiders, %s%d pugs, %d nights"):format(#rows - pugs - none,
+        none > 0 and (none .. " no raids, ") or "", pugs, #S().Dates()) .. Showing(p.grid))
+    -- the hint says where nights come from while there are none, even with the guild listed
+    if #rows - none == 0 then p.panel.hint:Show() else p.panel.hint:Hide() end
     -- the sort you are on is lit
     p.grid.heads[1]:SetTextColor(rgb(K.sort ~= "attend" and "gold" or "muted"))
     p.grid.heads[3]:SetTextColor(rgb(K.sort == "attend" and "gold" or "muted"))
     local colours = _G.RAID_CLASS_COLORS
     for i, row in ipairs(p.grid.rows) do
         local r = rows[i + off]
-        if r then
+        if r and r.none then
+            -- a member with no raids: the name in its class colour, dimmed; nothing to count
+            local cc = r.class and colours and colours[r.class]
+            SetRow(row, r.name, { r.name, r.rank, "-", "-", "-", "-", "no raids yet" },
+                { cc and { cc.r * 0.6, cc.g * 0.6, cc.b * 0.6 } or "muted", "muted", "muted", "muted", "muted", "muted", "muted" })
+            row.who = r.name
+        elseif r then
             local cc = r.class and colours and colours[r.class]
             local nameColour = r.pug and "muted" or (cc and { cc.r, cc.g, cc.b } or "ink")
             SetRow(row, r.name, { r.name, r.rank, r.att .. "%", r.last, r.flask and "yes" or "no", r.deaths,
@@ -926,9 +976,18 @@ end
 
 local QUALITY = { [0] = "muted", [1] = "ink", [2] = "good", [3] = "slate", [4] = "accent", [5] = "gold" }
 
+--- A guild member's empty card, for the page that says they have no raids with us.
+local NONE = { deaths = 0, pots = 0, attended = {}, issues = {} }
+
 local function PaintRaider(p, name)
     local card = S().Cards()[name]
-    if not card then return false end
+    local none = false
+    if not card then
+        -- A GUILD MEMBER WITH NO RAIDS (Arn, 18 Oct: "just a generic message that this player has no
+        -- raids logged with us"): the same page, empty, saying so
+        if not K.Member(name) then return false end
+        card, none = NONE, true
+    end
     K.waiting = false
     local issues = {}
     for _, i in ipairs(card.issues or {}) do issues[i.slot] = i.what end
@@ -953,12 +1012,17 @@ local function PaintRaider(p, name)
     local pct = nights > 0 and math.floor(100 * #card.attended / nights + 0.5) or 0
     p.attLine:SetText(("%d of %d nights   %d%%"):format(#card.attended, nights, pct))
     p.attLine:SetTextColor(rgb(pct >= 75 and "good" or (pct >= 50 and "gold" or "warn")))
+    if none then
+        p.armory.right:SetText("no raids logged with us yet")
+        p.attLine:SetText("no raids logged with us yet")
+        p.attLine:SetTextColor(rgb("muted"))
+    end
     local strip = K.Strip(card, K.STRIP)
     for i, sq in ipairs(p.strip) do
         local s = strip[i]
         if s then Fill(sq, s.earned and "good" or "line2") sq:Show() else sq:Hide() end
     end
-    p.att.right:SetText(strip[1] and (strip[1].date .. " ->") or "")
+    p.att.right:SetText(strip[1] and (S().DateOf(strip[1].date) .. " ->") or "")
     local habit, habitC
     if ns.Login then habit, habitC = ns.Login.HabitText(name) end
     p.punct:SetText("punctual  " .. (habit or "nothing measured yet - it counts at raid time, from a pasted roster"))
@@ -978,7 +1042,7 @@ local function PaintRaider(p, name)
             { ("deaths     %d that night, %d on record"):format(l.deaths or 0, card.deaths or 0),
               (card.deaths or 0) > 0 and "warn" or "good" },
         }
-        p.cons.right:SetText(l.date)
+        p.cons.right:SetText(S().DateOf(l.date))
     else
         p.cons.right:SetText("")
         lines = { { "no pulls on record", "muted" } }
@@ -1017,7 +1081,7 @@ local function PaintBoss(p, name)
         { ("wipes        %d"):format(pg.wipes), pg.wipes > 0 and "warn" or "ink2" },
         { ("kill rate    %d%%"):format(pulls > 0 and math.floor(100 * pg.kills / pulls + 0.5) or 0), "ink" },
         { ("fastest      %s"):format(K.Clock(pg.best)), "gold" },
-        { ("first kill   %s"):format(pg.first or "not yet"), "ink" },
+        { ("first kill   %s"):format(pg.first and S().Label(pg.first) or "not yet"), "ink" },
         { ("nights dead  %d"):format(#pg.nights), "ink" },
     }
     for i, fs in ipairs(p.statLines) do
@@ -1026,7 +1090,7 @@ local function PaintBoss(p, name)
     end
     for i, fs in ipairs(p.nightLines) do
         local d = pg.nights[#pg.nights - i + 1]
-        fs:SetText(d or (i == 1 and "never killed" or ""))
+        fs:SetText(d and S().Label(d) or (i == 1 and "never killed" or ""))
         fs:SetTextColor(rgb(d and "ink" or "muted"))
     end
     local who = {}
@@ -1112,9 +1176,11 @@ function K.Go(line)
         Say("roster pasted - read from the BiS> line", "good")
         return "roster"
     end
-    local kind, key = K.Parse(line, S().Cards(), S().Bosses())
+    local kind, key = K.Parse(line, K.People(S().Cards()), S().Bosses())
     if kind == "log" then
-        if ns.U and ns.U.Show then ns.U.Show() end
+        -- THE NOTEBOOK, NOT THE SCRIPT (Arn, 18 Oct: "in the logs we give them the link to go to the
+        -- google code thing"). The PowerShell window is ours alone now: `/bisg window`, unadvertised.
+        if ns.U and ns.U.ShowPaste then ns.U.ShowPaste() end
         return "log"
     end
     if kind == "raiders" or kind == "bosses" or kind == "where" or kind == "roster" then
@@ -1148,7 +1214,6 @@ function K.Go(line)
 end
 
 function K.Show(page, key)
-    if ns.TellBroken() then return end           -- not a whole copy: Core/Copies.lua
     local f = K.Build()
     if not f then return end
     -- a window opened fresh has nothing behind it: ESC from `/bisg alice` goes to the raiders list,
@@ -1181,5 +1246,3 @@ end
 function K.Toggle()
     if K.frame and K.frame:IsShown() then K.Hide() else K.Show() end
 end
-
-ns.parts["Core/Terminal.lua"] = "0.1.1"

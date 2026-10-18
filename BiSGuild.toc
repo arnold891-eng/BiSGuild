@@ -4,7 +4,7 @@
 ## IconTexture: Interface\Icons\INV_Shirt_GuildTabard_01
 ## Notes: Raid attendance and consumables, measured instead of remembered.
 ## Author: Arn
-## Version: 0.1.1
+## Version: 0.2.0
 ## SavedVariables: BiSGuildDB
 ## OptionalDeps: BiSTheme
 ## DefaultState: enabled
@@ -18,9 +18,6 @@ Libs\LibStub\LibStub.lua
 Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
 Libs\HereBeDragons\HereBeDragons-2.0.lua
 Libs\HereBeDragons\HereBeDragons-Pins-2.0.lua
-
-# What this copy says it is - written by Tools\stamp.ps1, checked by Core\Copies.lua
-Core\Build.lua
 
 # Written by dev/logreport.py --write, never by hand and never committed: it is raid data, not
 # source. A file named here that does not exist is skipped by the client, so a fresh install and a
