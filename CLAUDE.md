@@ -52,7 +52,14 @@ Read ../_bisdev/CLAUDE.md first.
   `Libs/THIRD-PARTY.txt`. Never edit them. The suites compile HereBeDragons but never run it (it drives
   the client's map engine); `dev/tests.lua` swaps in a strict pins stand-in.
 - `Core/Store.lua`, `Core/Share.lua`: the guild's record (`BiSGuildDB.record`) and its sharing over
-  LibBiSComm GUILD ("GLOG", officers believed). `Core/Terminal.lua`, `Core/Where.lua`: the raider
+  LibBiSComm GUILD ("GLOG", officers believed). **Since 17 Oct a night is ONE RAID** (`dev/NIGHTS.md`):
+  key `"YYYY-MM-DD <instance>"` (`-2` for a second raid of it that date), holding every pull (UTC time,
+  encounter, who with which consumables as flags, deaths, potions); the totals are DERIVED
+  (`S.Derive`, the same rule as `logreport.py` `derive` and the .ps1). Two officers' copies MERGE pull
+  by pull (`S.SameRaid`, `S.Merge`); sharing is HAVE2/WANT2/NIGHT2. Whole-date nights from before stay
+  (old HAVE/WANT/NIGHT) and never sit beside raids of their date. Show a key with `S.Label` /
+  `S.DateOf`, never raw. **`dev/test_logreport.py` is NOT in check.sh** - run it by hand after any
+  reader or Store change (it was broken 16-17 Oct and nobody saw): `python dev/test_logreport.py`. `Core/Terminal.lua`, `Core/Where.lua`: the raider
   terminal and its WHERE page. `Core/Pins.lua`: guildmates' dots on the world map. Plan: `dev/TERMINAL.md`.
 - `dev/tests.lua`: headless suite on `dev/kit.lua` (Nebbinator's strict harness, verbatim). Loads the TOC's
   files in order, fails on any global not in `ALLOWED`. `dev/theme.lua`: the palette law.
