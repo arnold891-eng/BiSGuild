@@ -2668,6 +2668,23 @@ do
     H.ok(a[1] and a[1]:find(("|ARCH|261016-409|%d|%d|1|"):format(p, h), 1, true), "by key, check number and time", a[1])
     H.ok(a[1] and #a[1] <= 250, "under the client's limit")
 
+    -- SEEN ONLY IN AN ARCHIVED RAID: OFF THE RAIDERS LIST (Arn, 18 Oct: "if a raider only apperes in one
+    -- log and we archive that log can we hide all those people"). Their gear stays on record (every log
+    -- brings everyone's gear), so the card is there - the list leaves it off. Ann and Bo are in the
+    -- other raid too; Zed, gear only, is not; Kumlust, gear only, is a guild member.
+    do
+        local g = {}
+        for i = 1, 19 do g[i] = { 0, 0, 0, 0, {} } end
+        S.PutGear("Zed", "2026-10-16", g)
+        S.PutGear("Kumlust", "2026-10-16", g)
+        local names = {}
+        for _, r in ipairs(NS.K.Rows(S.Cards())) do names[r.name] = r end
+        H.ok(S.Cards().Zed ~= nil, "Zed's gear is still on record")
+        H.eq(names.Zed, nil, "but Zed, seen in no raid on record, is not listed")
+        H.ok(names.Ann and not names.Ann.none, "Ann, in a raid still on record, is")
+        H.ok(names.Kumlust and names.Kumlust.none, "a guild member seen only in gear: a member with no raids")
+    end
+
     -- the same raid again - pasted again, or another officer's copy: not let back in
     H.eq(S.Put(KEY, raid(T0), "Bigboss"), false, "the same raid again is not let back in")
     H.ok(X.HaveRaid(KEY, p, h), "and counts as held, so it is never asked for")
@@ -2779,18 +2796,24 @@ do
     local lit = 0
     for _, b in ipairs(w.rows[2].bar.blocks) do if b:IsShown() then lit = lit + 1 end end
     H.ok(lit > 0 and lit < U.ROW_BLOCKS, "half way: half lit", lit)
+    -- SEVERAL AT ONCE (Arn, 18 Oct: "i cant click on another one to start the next archive")
     w.rows[1].btn:Click()
-    H.ok(S.Record().nights[KEY] ~= nil, "one bar at a time: a second click while it plays does nothing")
+    H.eq(S.Record().nights[KEY], nil, "a second row clicked while the first plays: archived too, at once")
+    H.ok(w.rows[1].bar:IsShown() and w.rows[2].bar:IsShown(), "two bars at once")
+    w.rows[2].btn:Click()
+    H.ok(S.Record().nights["2026-10-09 409"] ~= nil, "a row mid-bar ignores another click")
     U.PaintRaids()
-    H.ok(w.rows[2].bar:IsShown(), "and nothing repaints the list from under it")
+    H.ok(w.rows[2].bar:IsShown(), "and nothing repaints the list from under them")
+    step(w, U.ROW_BAR_LEN * 0.5)                     -- row 2's bar ends; row 1's is half way
+    H.ok(w.rows[2].btn:IsShown() and not w.rows[2].bar:IsShown(), "the first bar done: its button is back")
+    H.eq(w.rows[2].btn:GetText(), "Archive", "saying what it does now")
+    H.ok(w.rows[1].bar:IsShown(), "while the other still plays")
+    H.ok(w.rows[2].label:GetText():find("2026-10-09", 1, true), "and no row has moved yet")
     step(w, U.ROW_BAR_LEN)
-    H.eq(w:GetScript("OnUpdate"), nil, "done: nothing left ticking")
-    H.ok(w.rows[2].btn:IsShown() and not w.rows[2].bar:IsShown(), "the button is back")
-    H.eq(w.rows[2].btn:GetText(), "Archive", "saying Archive now, the list re-sorted")
-    w.rows[1].btn:Click()
-    H.eq(S.Record().nights[KEY], nil, "Archive in the list files it away")
-    w:GetScript("OnUpdate")(w, U.ROW_BAR_LEN)
-    H.eq(w.rows[2].btn:GetText(), "Restore", "to the bottom, with Restore")
+    H.eq(w:GetScript("OnUpdate"), nil, "all done: nothing left ticking")
+    H.ok(w.rows[1].label:GetText():find("2026-10-09", 1, true) and w.rows[1].btn:GetText() == "Archive",
+         "then the list re-sorts: the restored raid on top")
+    H.eq(w.rows[2].btn:GetText(), "Restore", "the archived one to the bottom, with Restore")
     -- closed mid-bar: finished, nothing ticking on a hidden window
     w.rows[2].btn:Click()
     w:Hide()

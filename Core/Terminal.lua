@@ -307,21 +307,34 @@ function K.Rows(cards)
     local out, matched = {}, {}
     for name, c in pairs(cards) do
         local m = K.Member(name)
+        -- IN A RAID ON RECORD, OR NOT LISTED (Arn, 18 Oct: "if a raider only apperes in one log and we
+        -- archive that log can we hide all those people"). A card can be gear alone - every log brings
+        -- everyone's gear, and gear stays when its raid is archived - so somebody seen in no raid on
+        -- record is left off; a guild member among them shows as a member with no raids. Their gear is
+        -- kept: restore the raid and they are back.
+        local seen = c.last ~= nil or #(c.attended or {}) > 0 or (c.deaths or 0) > 0
         if m then matched[m.key] = true end
-        out[#out + 1] = {
-            name = name,
-            rank = m and m.rank or (guild.complete and "pug" or "?"),
-            class = m and m.class or nil,
-            pug = (m == nil and guild.complete) or false,
-            att = nights > 0 and math.floor(100 * #c.attended / nights + 0.5) or 0,
-            last = c.last and S().DateOf(c.last.date) or "-",          -- a column: the date alone
-            flask = c.last and ((c.last.flask or 0) + (c.last.elixir or 0) > 0) or false,
-            deaths = c.deaths or 0,
-            issues = #(c.issues or {}),
-            -- "clean" is a claim about gear somebody saw; with none on record it is "no gear seen"
-            -- (Arn, 16 Oct: a whole night of raiders read "clean" with empty armories)
-            geared = c.gear ~= nil,
-        }
+        if not seen then
+            if m then
+                out[#out + 1] = { name = name, rank = m.rank or "?", class = m.class, pug = false, none = true,
+                                  att = 0, last = "-", flask = false, deaths = 0, issues = 0, geared = false }
+            end
+        else
+            out[#out + 1] = {
+                name = name,
+                rank = m and m.rank or (guild.complete and "pug" or "?"),
+                class = m and m.class or nil,
+                pug = (m == nil and guild.complete) or false,
+                att = nights > 0 and math.floor(100 * #c.attended / nights + 0.5) or 0,
+                last = c.last and S().DateOf(c.last.date) or "-",          -- a column: the date alone
+                flask = c.last and ((c.last.flask or 0) + (c.last.elixir or 0) > 0) or false,
+                deaths = c.deaths or 0,
+                issues = #(c.issues or {}),
+                -- "clean" is a claim about gear somebody saw; with none on record it is "no gear seen"
+                -- (Arn, 16 Oct: a whole night of raiders read "clean" with empty armories)
+                geared = c.gear ~= nil,
+            }
+        end
     end
     -- EVERY GUILD MEMBER, raided or not (Arn, 18 Oct: "pull all guild memebers from blizzard guild
     -- pane"), straight from the game's guild list - greyed and below the raiders, above the pugs

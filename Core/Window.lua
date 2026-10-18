@@ -605,8 +605,9 @@ function U.BuildRaids()
     w.foot:SetPoint("RIGHT", w, "RIGHT", -12, 0)
     w.foot:SetJustifyH("LEFT")
     w.foot:SetText("Archive files a raid away: nothing counts it, and Restore brings it back.")
-    -- closed mid-bar: the bar is flavour, the archive is already done - finish it, nothing left ticking
-    w:SetScript("OnHide", function(self) if self.run then U.RowStep(self, U.ROW_BAR_LEN) end end)
+    -- closed mid-bar: the bars are flavour, the archives are already done - finish them, nothing ticking
+    w:SetScript("OnHide", function(self) if next(self.runs) then U.RowStep(self, U.ROW_BAR_LEN) end end)
+    w.runs = {}
     w:Hide()
     U.raids = w
     return w
@@ -614,39 +615,47 @@ end
 U.ROW_BLOCKS, U.ROW_BAR_LEN = 8, 0.9
 
 --- Archive or restore a row's raid. Done AT ONCE (Core/Share.lua X.SetArchived); the row then plays a
---- bar where its button was and only afterwards does the list re-sort, so the row does not jump away
---- mid-click. One at a time.
+--- bar where its button was. SEVERAL AT ONCE (Arn, 18 Oct: "i want to be able to click on mutiple and
+--- the progress bar work on mutiple"): each row its own bar, and the list re-sorts only when the last
+--- one ends, so no row moves under the mouse while you click down the list.
 function U.ArchiveRow(row)
     local w = U.raids
     local e = row and row.entry
-    if not (w and e) or w.run then return false end
-    w.run = { row = row, t = 0, archived = not e.archived }   -- held still: PaintRaids waits for it
+    if not (w and e) or w.runs[row] then return false end
+    local run = { t = 0, archived = not e.archived }
+    w.runs[row] = run                                          -- held still: PaintRaids waits for them
     if not ns.X.SetArchived(e.key, not e.archived) then
-        w.run = nil
+        w.runs[row] = nil
         U.PaintRaids()
         return false
     end
+    e.archived = run.archived                  -- the row knows its new state: clickable again when done
     row.btn:Hide()
     for _, b in ipairs(row.bar.blocks) do b:Hide() end
     row.bar:Show()
-    row.sizes:SetText(T().text("gold", w.run.archived and "archiving..." or "restoring..."))
+    row.sizes:SetText(T().text("gold", run.archived and "archiving..." or "restoring..."))
     w:SetScript("OnUpdate", function(self, elapsed) U.RowStep(self, elapsed) end)
     return true
 end
 
---- One frame of a row's bar. OnUpdate runs only while it plays.
+--- One frame of the rows' bars. OnUpdate runs only while one plays.
 function U.RowStep(w, elapsed)
-    local r = w.run
-    if not r then w:SetScript("OnUpdate", nil) return end
-    r.t = r.t + (tonumber(elapsed) or 0)
-    local frac = math.min(1, r.t / U.ROW_BAR_LEN)
-    local lit = math.floor(frac * U.ROW_BLOCKS + 0.5)
-    for i, b in ipairs(r.row.bar.blocks) do if i <= lit then b:Show() else b:Hide() end end
-    if frac < 1 then return end
-    w.run = nil
+    for row, r in pairs(w.runs) do
+        r.t = r.t + (tonumber(elapsed) or 0)
+        local frac = math.min(1, r.t / U.ROW_BAR_LEN)
+        local lit = math.floor(frac * U.ROW_BLOCKS + 0.5)
+        for i, b in ipairs(row.bar.blocks) do if i <= lit then b:Show() else b:Hide() end end
+        if frac >= 1 then
+            w.runs[row] = nil
+            row.bar:Hide()
+            -- it says what it is now at once ("...and says restore"); the re-sort waits for the rest
+            row.btn:SetText(r.archived and "Restore" or "Archive")
+            row.sizes:SetText(T().text(r.archived and "muted" or "ink2", r.archived and "archived" or "restored"))
+            row.btn:Show()
+        end
+    end
+    if next(w.runs) then return end
     w:SetScript("OnUpdate", nil)
-    r.row.bar:Hide()
-    r.row.btn:Show()
     U.PaintRaids()
 end
 
@@ -654,7 +663,7 @@ local function plural(n, one) return n .. " " .. one .. (n == 1 and "" or "s") e
 
 function U.PaintRaids()
     local w = U.raids
-    if not (w and w:IsShown()) or w.run then return end   -- a row's bar is playing: it repaints at the end
+    if not (w and w:IsShown()) or next(w.runs) then return end   -- bars playing: repainted when the last ends
     local S, X = ns.S, ns.X
     local list = S.RaidList()
     w.offset = math.min(w.offset or 0, math.max(0, #list - U.RAID_ROWS))
