@@ -147,7 +147,7 @@ function ns.Say(cmd, rest)
     -- Unless it is a name on the record (16 Oct): `/bisg kumlust` opens his card in the terminal.
     if ns.K and ns.S then
         local name = (rest ~= "" and (cmd .. " " .. rest)) or cmd
-        local kind = ns.K.Parse(name, ns.S.Cards(), ns.S.Bosses())
+        local kind = ns.K.Parse(name, ns.K.People(ns.S.Cards()), ns.S.Bosses())
         if kind == "raider" or kind == "boss" then
             ns.K.Show(name)
             return

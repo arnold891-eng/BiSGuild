@@ -297,6 +297,13 @@ function U.BuildPaste()
     close:SetPoint("TOPRIGHT", -4, -4)
     close:SetScript("OnClick", function() p:Hide() end)
     ns.EscKeys(p, function() p:Hide() end)
+    -- the raids on record, to archive a wrong one (U.ShowRaids)
+    local list = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
+    list:SetSize(130, 20)
+    list:SetPoint("TOPRIGHT", -36, -7)
+    list:SetText("Raids on record")
+    list:SetScript("OnClick", function() U.ShowRaids() end)
+    p.listBtn = list
 
     local l1 = p:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     l1:SetPoint("TOPLEFT", 12, -34)
@@ -401,6 +408,26 @@ function U.BuildPaste()
 end
 U.BAR_W, U.BAR_BLOCKS, U.BAR_LEN = 250, 20, 1.8
 
+--- How many who stood in this raid are not in the guild, of how many - or nil outside a guild (or
+--- before the client has sent the roster), where there is nothing to compare with.
+function U.Outsiders(night)
+    local K = ns.K
+    if not (K and K.Guild and K.Member and IsInGuild and IsInGuild()) then return nil end
+    K._guildDirty = true
+    if not next(K.Guild().members) then return nil end
+    local seen, total, out = {}, 0, 0
+    for _, pull in ipairs(type(night) == "table" and night.pulls or {}) do
+        for who in pairs(type(pull.r) == "table" and pull.r or {}) do
+            if not seen[who] then
+                seen[who] = true
+                total = total + 1
+                if not K.Member(who) then out = out + 1 end
+            end
+        end
+    end
+    return out, total
+end
+
 --- Take the box's text in. The import happens HERE, at once; then the bar plays it out and the
 --- window says what came in. A refusal is said at once - nothing to wait for.
 function U.DoPaste()
@@ -408,6 +435,29 @@ function U.DoPaste()
     if not p then return nil end
     if p.run then return nil end                       -- one at a time
     local text = p.box:GetText() or ""
+    local got, why = ns.X.ParsePaste(text)
+    if not got then
+        p.status:SetText(T().text("warn", why))
+        return nil, why
+    end
+    -- MOSTLY NOT OUR GUILD? (Arn, 18 Oct: "maybe a check that says this has more people not in your
+    -- guild") - a wrong log is usually somebody else's raid. Said, and taken only on a second press
+    -- of Import with the same text: a pug-heavy raid of ours still gets in.
+    if p.pending ~= text then
+        for _, r in ipairs(got.raids) do
+            local out, total = U.Outsiders(r[2])
+            if out and total > 0 and out * 2 > total then
+                p.pending = text
+                local zone = (r[2].zone and r[2].zone ~= "") and r[2].zone or ("raid " .. tostring(r[2].i))
+                p.status:SetText(T().text("gold", ("%s %s: %d of %d aren't in your guild - press Import again to take it anyway")
+                    :format(r[1]:sub(1, 10), zone, out, total)))
+                return nil, "outsiders"
+            end
+        end
+    end
+    p.pending = nil
+    local archived = 0
+    for _, r in ipairs(got.raids) do if ns.S.ArchivedAs(r[2]) then archived = archived + 1 end end
     local raids, gear, bad = ns.X.ImportPaste(text)
     if not raids then
         p.status:SetText(T().text("warn", gear))
@@ -420,7 +470,7 @@ function U.DoPaste()
     script[#script + 1] = ("Merging into the guild's record: %d new"):format(raids)
     script[#script + 1] = ("Gear: %d raider(s)"):format(gear)
     script[#script + 1] = "Done."
-    p.run = { t = 0, script = script, said = 0, raids = raids, gear = gear, bad = bad }
+    p.run = { t = 0, script = script, said = 0, raids = raids, gear = gear, bad = bad, archived = archived }
     p.bar:Show()
     for _, b in ipairs(p.bar.blocks) do b:Hide() end
     p:SetScript("OnUpdate", function(self, elapsed) U.PasteStep(self, elapsed) end)
@@ -445,10 +495,136 @@ function U.PasteStep(p, elapsed)
     p:SetScript("OnUpdate", nil)
     local said = ("%d raid(s) taken in, %d raider(s)' gear"):format(r.raids, r.gear)
     if r.raids == 0 and r.gear == 0 then said = "nothing new - this is already on record" end
+    -- an archived raid is not let back in (Core/Store.lua) - say where it is, not "already on record"
+    if (r.archived or 0) > 0 then
+        said = said .. T().text("gold", ("  (%d archived - Raids on record restores it)"):format(r.archived))
+    end
     if r.bad > 0 then said = said .. T().text("warn", ("  (%d line(s) could not be read)"):format(r.bad)) end
     p.status:SetText(T().text(r.bad > 0 and "gold" or "good", said))
     if r.raids > 0 then p.box:SetText("") end
     if ns.K and ns.K.Paint and ns.K.frame and ns.K.frame:IsShown() then pcall(ns.K.Paint) end
+    if U.PaintRaids then U.PaintRaids() end
+end
+
+--------------------------------------------------------------------
+-- RAIDS ON RECORD (18 Oct 2026). Arn: "a list to click it off where it archives it or something
+-- incase someone accidently clicks a correct log". Every raid, newest first, with an x; the archived
+-- ones below, greyed, with a restore. Nothing is ever deleted (Core/Store.lua S.Archive). An
+-- officer's click goes to the whole guild (Core/Share.lua ARCH). Opened from the paste window.
+--------------------------------------------------------------------
+U.RAID_ROWS = 13
+
+function U.BuildRaids()
+    if U.raids then return U.raids end
+    if not CreateFrame then return nil end
+    local w = CreateFrame("Frame", "BiSGuildRaids", UIParent)
+    w:SetSize(U.PW, U.PH)
+    w:SetPoint("CENTER")
+    w:SetFrameStrata("DIALOG")
+    w:EnableMouse(true)
+    w:SetMovable(true)
+    w:RegisterForDrag("LeftButton")
+    w:SetScript("OnDragStart", function(self) self:StartMoving() end)
+    w:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+    local bg = w:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(0, 0, 0, 1)
+    local head = w:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    head:SetPoint("TOPLEFT", 12, -10)
+    head:SetText(T().text("accent", "BiS> Guild") .. "  raids on record")
+    local close = CreateFrame("Button", nil, w, "UIPanelCloseButton")
+    close:SetPoint("TOPRIGHT", -4, -4)
+    close:SetScript("OnClick", function() w:Hide() end)
+    ns.EscKeys(w, function() w:Hide() end)
+
+    w.who = w:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    w.who:SetPoint("TOPLEFT", 12, -32)
+    w.who:SetPoint("RIGHT", w, "RIGHT", -12, 0)
+    w.who:SetJustifyH("LEFT")
+
+    w.rows = {}
+    for i = 1, U.RAID_ROWS do
+        local row = CreateFrame("Frame", nil, w)
+        row:SetSize(U.PW - 24, 20)
+        row:SetPoint("TOPLEFT", 12, -52 - (i - 1) * 21)
+        local rbg = row:CreateTexture(nil, "BACKGROUND")
+        rbg:SetAllPoints()
+        rbg:SetColorTexture(1, 1, 1, i % 2 == 0 and 0.04 or 0.0)
+        row.label = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        row.label:SetPoint("LEFT", 6, 0)
+        row.label:SetWidth(240)
+        row.label:SetJustifyH("LEFT")
+        row.sizes = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        row.sizes:SetPoint("LEFT", 252, 0)
+        row.sizes:SetWidth(150)
+        row.sizes:SetJustifyH("LEFT")
+        row.btn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+        row.btn:SetSize(76, 18)
+        row.btn:SetPoint("RIGHT", -2, 0)
+        row.btn:SetScript("OnClick", function(self)
+            local e = self:GetParent().entry
+            if e then ns.X.SetArchived(e.key, not e.archived) U.PaintRaids() end
+        end)
+        row:Hide()
+        w.rows[i] = row
+    end
+    w.offset = 0
+    w:EnableMouseWheel(true)
+    w:SetScript("OnMouseWheel", function(self, delta)
+        self.offset = math.max(0, (self.offset or 0) - (delta > 0 and 3 or -3))
+        U.PaintRaids()
+    end)
+
+    w.foot = w:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    w.foot:SetPoint("BOTTOMLEFT", 12, 12)
+    w.foot:SetPoint("RIGHT", w, "RIGHT", -12, 0)
+    w.foot:SetJustifyH("LEFT")
+    w.foot:SetText("Archive files a raid away: nothing counts it, and Restore brings it back.")
+    w:Hide()
+    U.raids = w
+    return w
+end
+
+local function plural(n, one) return n .. " " .. one .. (n == 1 and "" or "s") end
+
+function U.PaintRaids()
+    local w = U.raids
+    if not (w and w:IsShown()) then return end
+    local S, X = ns.S, ns.X
+    local list = S.RaidList()
+    w.offset = math.min(w.offset or 0, math.max(0, #list - U.RAID_ROWS))
+    local live = 0
+    for _, e in ipairs(list) do if not e.archived then live = live + 1 end end
+    w.who:SetText(("%d on record, %d archived.  "):format(live, #list - live)
+        .. T().text("muted", X.IsOfficer(X.Me()) and "You're an officer: archiving goes to the whole guild."
+            or "Only your copy - an officer's archive goes to the guild."))
+    for i, row in ipairs(w.rows) do
+        local e = list[i + w.offset]
+        row.entry = e
+        if e then
+            local n = type(e.night) == "table" and e.night or {}
+            local raiders = 0
+            for _ in pairs(type(n.raiders) == "table" and n.raiders or {}) do raiders = raiders + 1 end
+            local colour = e.archived and "muted" or "ink"
+            row.label:SetText(T().text(colour, S.Label(e.key) or e.key))
+            row.sizes:SetText(T().text(e.archived and "muted" or "ink2", e.archived
+                and ("archived" .. (e.by and (" by " .. e.by) or ""))
+                or (plural(tonumber(n.kills) or 0, "kill") .. ", " .. plural(raiders, "raider"))))
+            row.btn:SetText(e.archived and "Restore" or "Archive")
+            row:Show()
+        else
+            row:Hide()
+        end
+    end
+end
+
+function U.ShowRaids()
+    local w = U.BuildRaids()
+    if not w then return end
+    w.offset = 0
+    w:Show()
+    if w.Raise then w:Raise() end
+    U.PaintRaids()
 end
 
 --- IN FRONT, ALONE (Arn's first paste, 18 Oct: it opened BEHIND the script window). The script

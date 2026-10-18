@@ -42,6 +42,8 @@ function S.Record()
     if type(r) ~= "table" then r = {} d.record = r end
     if type(r.nights) ~= "table" then r.nights = {} end
     if type(r.gear) ~= "table" then r.gear = {} end
+    if type(r.archived) ~= "table" then r.archived = {} end
+    if type(r.restored) ~= "table" then r.restored = {} end
     return r
 end
 
@@ -90,7 +92,8 @@ end
 function S.Label(key)
     if type(key) ~= "string" or S.IsDate(key) then return key end
     local date, inst, nth = key:match("^(%S+) (%d+)%-?(%d*)$")
-    local night = S.Record().nights[key]
+    local rec = S.Record()
+    local night = rec.nights[key] or (type(rec.archived[key]) == "table" and rec.archived[key].night)
     local zone = night and type(night.zone) == "string" and night.zone ~= "" and night.zone or ("raid " .. tostring(inst))
     return (date or key) .. " " .. zone .. ((nth and nth ~= "") and (" (" .. nth .. ")") or "")
 end
@@ -219,6 +222,9 @@ function S.PutRaid(key, night, by)
     local rec = S.Record()
     night.v = 2
     night.kills, night.raiders, night.bosses = S.Derive(night.pulls)
+    -- an ARCHIVED raid stays archived: another officer's copy of it, or the same log pasted again, is
+    -- not let back in (only Restore brings it back)
+    if S.ArchivedAs(night) then return false end
     local hereKey
     for k, n in pairs(rec.nights) do
         if S.SameRaid(n, night) then hereKey = k break end
@@ -258,10 +264,71 @@ function S.Put(key, night, by)
     -- the same date, which would count that evening twice
     if not S.IsDate(key) or S.HasRaidsOn(key) then return false end
     local rec = S.Record()
+    if rec.archived[key] then return false end
     if not S.Fuller(night, rec.nights[key]) then return false end
     night.by = by or night.by
     rec.nights[key] = night
     return true
+end
+
+--------------------------------------------------------------------
+-- ARCHIVED RAIDS (18 Oct 2026). Arn: "someone can accidently upload a wrong log and we need a way to
+-- purge it maybe a list to click it off where it archives it or something incase someone accidently
+-- clicks a correct log". Archived, never deleted: the raid moves to record.archived[key] = { night,
+-- t, by }, where nothing counts it (cards, bosses, attendance and sharing all read record.nights), and
+-- Restore moves it back. Each carries the time it was decided (t, epoch seconds) and the later
+-- decision wins - record.restored[key] keeps a restore's time so an older archive cannot undo it.
+-- An officer's archive is the guild's (Core/Share.lua ARCH).
+--------------------------------------------------------------------
+
+--- The key of the archived raid this night is a copy of, or nil.
+function S.ArchivedAs(night)
+    for k, a in pairs(S.Record().archived) do
+        if type(a) == "table" and S.SameRaid(a.night, night) then return k end
+    end
+    return nil
+end
+
+--- File a raid away. False when it is not on record, or a later restore says otherwise.
+function S.Archive(key, by, t)
+    local rec = S.Record()
+    local night = rec.nights[key]
+    t = tonumber(t) or time()
+    if type(night) ~= "table" or (rec.restored[key] or 0) > t then return false end
+    rec.nights[key] = nil
+    rec.archived[key] = { night = night, t = t, by = by }
+    rec.restored[key] = nil
+    return true
+end
+
+--- Bring an archived raid back. False when it is not archived, or a later archive says otherwise.
+function S.Restore(key, by, t)
+    local rec = S.Record()
+    local a = rec.archived[key]
+    t = tonumber(t) or time()
+    if type(a) ~= "table" or (tonumber(a.t) or 0) > t then return false end
+    rec.archived[key] = nil
+    rec.restored[key] = t
+    if rec.nights[key] == nil then
+        rec.nights[key] = a.night
+    elseif type(a.night) == "table" and a.night.v == 2 then
+        S.PutRaid(key, a.night, a.night.by)          -- the key was taken meanwhile: filed beside it
+    end
+    return true
+end
+
+--- Every raid, newest first, for the list: { key, night, archived, t, by }.
+function S.RaidList()
+    local rec, out = S.Record(), {}
+    for k, n in pairs(rec.nights) do out[#out + 1] = { key = k, night = n } end
+    for k, a in pairs(rec.archived) do
+        if type(a) == "table" then out[#out + 1] = { key = k, night = a.night, archived = true, t = a.t, by = a.by } end
+    end
+    table.sort(out, function(a, b)
+        if a.archived ~= b.archived then return not a.archived end       -- the archived at the bottom
+        return a.key > b.key
+    end)
+    return out
 end
 
 --- Take one raider's gear in. Newer date wins; the same date keeps what is there.

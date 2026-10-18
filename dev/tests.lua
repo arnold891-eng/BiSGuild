@@ -1192,14 +1192,28 @@ do
     f.keys.raiders:Click()
     H.eq(K.page, "raiders", "the RAIDERS tab")
     H.ok(not f.pages.raiders.panel.hint:IsShown(), "with nights, no hint")
-    local row1 = f.pages.raiders.grid.rows[1]
-    H.eq(row1.key, "Alice", "Alice first")
+    -- EVERY GUILD MEMBER IS LISTED (Arn, 18 Oct): the test guild is Kumlust alone, with no raids - so
+    -- he heads the list, greyed, above Alice and Bob, who are pugs here
+    local rows = f.pages.raiders.grid.rows
+    H.eq(rows[1].key, "Kumlust", "a guild member with no raids is listed, above the pugs")
+    H.eq(rows[1].cells[7]:GetText(), "no raids yet", "and says so")
+    H.eq(rows[1].cells[3]:GetText(), "-", "with nothing to count")
+    local row1 = rows[2]
+    H.eq(row1.key, "Alice", "then Alice")
     H.eq(row1.cells[3]:GetText(), "100%", "Alice made both nights")
-    H.eq(f.pages.raiders.grid.rows[2].cells[3]:GetText(), "50%", "Bob one of two")
-    H.ok(not f.pages.raiders.grid.rows[3]:IsShown(), "and no empty rows show")
+    H.eq(rows[3].cells[3]:GetText(), "50%", "Bob one of two")
+    H.ok(not rows[4]:IsShown(), "and no empty rows show")
     H.eq(row1.cells[7]:GetText(), "1 no enchant", "Alice's gear: one flag")
-    H.eq(f.pages.raiders.grid.rows[2].cells[7]:GetText(), "no gear seen",
+    H.eq(rows[3].cells[7]:GetText(), "no gear seen",
          "Bob has no gear on record: not 'clean' - nobody saw it")
+
+    -- a member with no raids opens a page that says so (Arn: "just a generic message that this player
+    -- has no raids logged with us")
+    rows[1]:Click()
+    H.eq(K.page, "raider", "clicking a member with no raids opens their page")
+    H.eq(K.key, "Kumlust", "theirs")
+    H.eq(f.pages.raider.attLine:GetText(), "no raids logged with us yet", "and it says they have no raids with us")
+    f.keys.raiders:Click()
 
     H.wire = {}
     row1:Click()
@@ -1274,17 +1288,17 @@ do
     for i = 1, 40 do keep[("Zed%02d"):format(i)] = raider(1, 1) end
     f.keys.raiders:Click()
     local grid, panel = f.pages.raiders.grid, f.pages.raiders.panel
-    H.ok(panel.right:GetText():find("rows 1-27 of 42", 1, true), "the corner says which rows show", panel.right:GetText())
+    H.ok(panel.right:GetText():find("rows 1-27 of 43", 1, true), "the corner says which rows show", panel.right:GetText())
     panel:Fire("OnMouseWheel", -1)
     H.eq(grid.offset, 3, "the wheel moves three rows")
     for _ = 1, 20 do panel:Fire("OnMouseWheel", -1) end
-    H.eq(grid.offset, 15, "and stops at the last row")
+    H.eq(grid.offset, 16, "and stops at the last row")
     H.eq(grid.rows[27].cells[1]:GetText(), "Zed40", "the last raider is reachable")
     for _ = 1, 20 do panel:Fire("OnMouseWheel", 1) end
     H.eq(grid.offset, 0, "and back to the top")
     for i = 1, 40 do keep[("Zed%02d"):format(i)] = nil end
     K.Paint()
-    H.eq(panel.right:GetText(), "0 raiders, 2 pugs, 2 nights", "a list that fits says nothing about rows")
+    H.eq(panel.right:GetText(), "0 raiders, 1 no raids, 2 pugs, 2 nights", "a list that fits says nothing about rows")
 
     -- STILL IN THE GUILD? (Arn: "the sheet had a check ... group the people that are pugs all the
     -- way in the bottom ... by class, all shaman alphabetical")
@@ -2562,6 +2576,14 @@ do
     H.ok(p and p:IsShown(), "/bisg paste opens the paste window")
     H.ok(math.abs(U.PW / U.PH - 1.43) < 0.01, "at the family's 1.43:1")
     p.box:SetText(good)
+    -- MOSTLY NOT OUR GUILD (Arn, 18 Oct: "a check that says this has more people not in your guild"):
+    -- Ann and Bo are not in the test guild - said, nothing taken, and the same text pressed again goes in
+    H.eq(U.DoPaste(), nil, "a raid of strangers: Import stops first")
+    H.ok(p.status:GetText():find("2 of 2 aren't in your guild", 1, true), "and says how many aren't in the guild",
+         p.status:GetText())
+    H.eq(S.Record().nights["2026-10-16 409"], nil, "nothing taken in yet")
+    H.eq(p:GetScript("OnUpdate"), nil, "and no bar")
+    fitsIn(p, "the paste window: the link, and the guild warning")
     U.DoPaste()
     -- THE BAR (Arn, 18 Oct: "fake progress bars - to make it look like its doing something"): the raid
     -- is in at once; the bar plays it out, the window narrating, and only then says the result
@@ -2598,6 +2620,138 @@ do
     H.ok(p.status:GetText():find("doesn't look like", 1, true), "and when it is something else", p.status:GetText())
     p:Hide()
     NS.Books().record = keep
+end
+
+-- A WRONG RAID IS ARCHIVED, NEVER DELETED (18 Oct 2026). Arn: "someone can accidently upload a wrong log
+-- and we need a way to purge it maybe a list to click it off where it archives it or something incase
+-- soemeone accidently clicks a correct log" - and an officer's archive is everyone's.
+H.section("a wrong raid is archived, never deleted - and an officer's archive is the guild's")
+do
+    local S, X, U = NS.S, NS.X, NS.U
+    local keep = NS.Books().record
+    local ROSTER = { { "Kumlust", 1 }, { "Bigboss", 0 }, { "Anna", 4 } }
+    local realNum, realInfo = _G.GetNumGuildMembers, _G.GetGuildRosterInfo
+    _G.GetNumGuildMembers = function() return #ROSTER end
+    _G.GetGuildRosterInfo = function(i) local r = ROSTER[i] return r[1], "rank", r[2] end
+    X._ranksDirty = true
+    local function drain() for _ = 1, 20 do H.clock = H.clock + 2 H.RunTimers() end end
+    local function sent(cmd)
+        local out = {}
+        for _, w in ipairs(H.wire) do
+            if w.channel == "GUILD" and w.msg:find("|GLOG|" .. cmd .. "|", 1, true) then out[#out + 1] = w.msg end
+        end
+        return out
+    end
+    drain()
+    local T0 = 1792202400
+    local function raid(t0)
+        return { v = 2, i = 409, zone = "Molten Core", start = t0, pulls = {
+            { t = t0, e = 663, b = "Lucifron", k = 1, ms = 60000, r = { Ann = 9, Bo = 9 }, d = {}, p = {} } } }
+    end
+    local KEY = "2026-10-16 409"
+    NS.Books().record = { nights = {}, gear = {} }
+    H.ok(S.Put(KEY, raid(T0), "Kumlust"), "a raid on record")
+    S.Put("2026-10-09 409", raid(T0 - 7 * 86400), "Kumlust")
+    H.eq(#S.Dates(), 2, "two raids")
+    local p, h = X.Check(S.Record().nights[KEY])
+
+    -- archived by an officer (we are one): off the record, kept whole, and the guild told
+    H.wire = {}
+    H.ok(X.SetArchived(KEY, true), "archived")
+    H.eq(S.Record().nights[KEY], nil, "off the record - nothing counts it")
+    H.eq(#S.Dates(), 1, "one raid counted now")
+    H.ok(S.Record().archived[KEY] and S.Record().archived[KEY].night.pulls[1].b == "Lucifron", "but kept, whole")
+    H.eq(#S.Cards().Ann.attended, 1, "Ann's attendance no longer counts it")
+    drain()
+    local a = sent("ARCH")
+    H.eq(#a, 1, "an officer's archive goes to the guild, in one line")
+    H.ok(a[1] and a[1]:find(("|ARCH|261016-409|%d|%d|1|"):format(p, h), 1, true), "by key, check number and time", a[1])
+    H.ok(a[1] and #a[1] <= 250, "under the client's limit")
+
+    -- the same raid again - pasted again, or another officer's copy: not let back in
+    H.eq(S.Put(KEY, raid(T0), "Bigboss"), false, "the same raid again is not let back in")
+    H.ok(X.HaveRaid(KEY, p, h), "and counts as held, so it is never asked for")
+
+    -- restored: back, and the guild told
+    H.wire = {}
+    H.ok(X.SetArchived(KEY, false), "restored")
+    H.ok(S.Record().nights[KEY] ~= nil and S.Record().archived[KEY] == nil, "back on record")
+    H.eq(#S.Cards().Ann.attended, 2, "and counted again")
+    drain()
+    H.ok((sent("ARCH")[1] or ""):find(("|%d|%d|0|"):format(p, h), 1, true), "the restore goes to the guild too")
+
+    -- what we hear: an officer's archive files ours away; a member's is not believed; the older loses
+    X.HearArch("Anna", "261016-409", p, h, "1", time() + 5)
+    H.ok(S.Record().nights[KEY] ~= nil, "a member's archive is not believed")
+    X.HearArch("Bigboss", "261016-409", p, h, "1", 1)
+    H.ok(S.Record().nights[KEY] ~= nil, "an archive decided before our restore loses")
+    X.HearArch("Bigboss", "261016-409", p, h, "1", time() + 5)
+    H.eq(S.Record().nights[KEY], nil, "an officer's later archive files ours away")
+    X.HearArch("Bigboss", "261017-409", p, h, "0", time() + 10)
+    H.ok(S.Record().nights[KEY] ~= nil, "a restore dated a day off (another time zone) still finds our raid")
+    X.HearArch("Bigboss", "261016-409", p + 1, h, "1", time() + 20)
+    H.ok(S.Record().nights[KEY] ~= nil, "an archive of a different raid under the same key touches nothing")
+
+    -- THE OFFICER WHO WAS OFFLINE still offers a raid we archived: we say so again, once a session
+    X.HearArch("Bigboss", "261016-409", p, h, "1", time() + 30)
+    X.retold = {}
+    local offer = ("261016-409.%d.%d"):format(p, h)
+    H.wire = {}
+    X.handlers.HAVE2("Bigboss", offer)
+    drain()
+    H.eq(#sent("ARCH"), 1, "an officer still offering an archived raid hears that it is archived")
+    H.eq(#sent("WANT2"), 0, "and nobody asks for it back")
+    H.wire = {}
+    X.handlers.HAVE2("Bigboss", offer)
+    drain()
+    H.eq(#sent("ARCH"), 0, "once a session")
+
+    -- a member's own archive stays theirs
+    ROSTER[1][2] = 4
+    X._ranksDirty = true
+    NS.Books().record = { nights = {}, gear = {} }
+    S.Put(KEY, raid(T0), "Kumlust")
+    H.wire = {}
+    H.ok(X.SetArchived(KEY, true), "a member can archive in their own copy")
+    drain()
+    H.eq(#sent("ARCH"), 0, "and nothing goes to the guild")
+    ROSTER[1][2] = 1
+    X._ranksDirty = true
+
+    -- THE LIST: the raids on record newest first with Archive, the archived below with Restore
+    NS.Books().record = { nights = {}, gear = {} }
+    S.Put(KEY, raid(T0), "Kumlust")
+    S.Put("2026-10-09 409", raid(T0 - 7 * 86400), "Kumlust")
+    X.SetArchived("2026-10-09 409", true)
+    U.ShowPaste()
+    U.paste.listBtn:Click()
+    local w = U.raids
+    H.ok(w and w:IsShown(), "'Raids on record' in the paste window opens the list")
+    H.ok(w.rows[1].label:GetText():find("2026-10-16 Molten Core", 1, true), "the raids on record first",
+         w.rows[1].label:GetText())
+    H.ok(w.rows[1].sizes:GetText():find("1 kill, 2 raiders", 1, true), "with their size", w.rows[1].sizes:GetText())
+    H.eq(w.rows[1].btn:GetText(), "Archive", "and an Archive button")
+    H.ok(w.rows[2].label:GetText():find("2026-10-09 Molten Core", 1, true) and w.rows[2].btn:GetText() == "Restore",
+         "the archived below, with Restore")
+    H.ok(w.rows[2].sizes:GetText():find("archived by Kumlust", 1, true), "and who archived it", w.rows[2].sizes:GetText())
+    H.ok(not w.rows[3]:IsShown(), "and no empty rows")
+    H.ok(w.who:GetText():find("1 on record, 1 archived", 1, true), "the counts", w.who:GetText())
+    H.ok(w.who:GetText():find("whole guild", 1, true), "and an officer is told it goes to the whole guild")
+    fitsIn(w, "the raids on record")
+    w.rows[2].btn:Click()
+    H.ok(S.Record().nights["2026-10-09 409"] ~= nil, "Restore in the list brings it back")
+    H.eq(w.rows[2].btn:GetText(), "Archive", "and the list repaints")
+    w.rows[1].btn:Click()
+    H.eq(S.Record().nights[KEY], nil, "Archive in the list files it away")
+    H.eq(w.rows[2].btn:GetText(), "Restore", "to the bottom, with Restore")
+    w:Hide()
+    U.paste:Hide()
+
+    NS.Books().record = keep
+    _G.GetNumGuildMembers, _G.GetGuildRosterInfo = realNum, realInfo
+    X._ranksDirty = true
+    drain()
+    H.wire = {}
 end
 
 H.report()

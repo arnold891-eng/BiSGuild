@@ -13,6 +13,8 @@
                                           characters, so EVERY member missing it takes the same copy
     GWANT |Name|2026-10-09                the terminal opened a raider: "anything newer than this?"
     GEAR  |Name|2026-10-16|i|n|<part>     one officer answers with that raider's newest gear
+    ARCH  |261016-409|7|5123|1|<epoch>    an officer archived a raid (1) or restored it (0) - the
+                                          raid by key and check number, the time it was decided
 
   WHO IS BELIEVED: only nights and gear from an OFFICER are taken in - a guild rank at or above
   `officerRank` (0 = guild master; default 1, `/bisg officers <n>`). Anyone in the guild could
@@ -332,26 +334,114 @@ function X.HaveLine2()
     return table.concat(out, ",")
 end
 
---- Do we already hold this raid as announced? Under its key, or - an officer in another time zone
---- dates it a day apart - under the next or last date, same instance, same pulls.
-function X.HaveRaid(key, p, h)
-    local nights = ns.S.Record().nights
-    local n = nights[key]
-    if n and n.v == 2 then
+--- Which of our raids is this one, as announced? Under its key, or - an officer in another time zone
+--- dates it a day apart - under the next or last date, same instance, same pulls. Looks in the
+--- record, or with `archived` in the archived raids. Answers our key, or nil.
+function X.FindRaid(key, p, h, archived)
+    local rec = ns.S.Record()
+    local pool = rec.nights
+    if archived then
+        pool = {}
+        for k, a in pairs(rec.archived) do if type(a) == "table" then pool[k] = a.night end end
+    end
+    local n = pool[key]
+    if type(n) == "table" and n.v == 2 then
         local mp, mh = X.Check(n)
-        return mp == p and mh == h
+        return (mp == p and mh == h) and key or nil
     end
     local inst = tostring(key):match(" (%d+)")
     local day = X.Day(key)
-    for k, other in pairs(nights) do
+    for k, other in pairs(pool) do
         -- the next or last date only: next week's clear can have the very same bosses and headcount
-        if other.v == 2 and tostring(other.i) == inst and k:match(" (%d+)") == inst
+        if type(other) == "table" and other.v == 2 and tostring(other.i) == inst and k:match(" (%d+)") == inst
            and day and X.Day(k) and math.abs(X.Day(k) - day) <= 1 then
             local mp, mh = X.Check(other)
-            if mp == p and mh == h then return true end
+            if mp == p and mh == h then return k end
         end
     end
-    return false
+    return nil
+end
+
+--- Do we already hold this raid as announced - on record, or ARCHIVED (18 Oct: an archived raid is
+--- one we have and do not want back, so it is never asked for)?
+function X.HaveRaid(key, p, h)
+    return (X.FindRaid(key, p, h) or X.FindRaid(key, p, h, true)) ~= nil
+end
+
+--------------------------------------------------------------------
+-- ARCHIVING A RAID (18 Oct 2026, Core/Store.lua S.Archive). Anyone can file a raid away in their own
+-- copy; an OFFICER's archive and restore are the guild's (Arn: "everyone's"), since otherwise the
+-- other officers' copies would hand the raid straight back. A copy archives the raid it finds by key
+-- and check number, the later decision winning. An officer who hears another officer still offer a
+-- raid it archived says so again, once a session - the officer who was offline catches up.
+--------------------------------------------------------------------
+
+X.retold = {}
+
+--- The ARCH line for one of our raids: its compact key, pulls and check (a whole-date night: 0, 0).
+local function archLine(key, night, state, t)
+    local c = compactKey(key) or (ns.S.IsDate(key) and compact(key))
+    if not c then return nil end
+    local p, h = 0, 0
+    if type(night) == "table" and night.v == 2 then p, h = X.Check(night) end
+    return c, p, h, state, int(t)
+end
+
+local function repaint()
+    if ns.U and ns.U.PaintRaids then pcall(ns.U.PaintRaids) end
+    if ns.K and ns.K.Paint and ns.K.frame and ns.K.frame:IsShown() then pcall(ns.K.Paint) end
+end
+
+--- Archive (true) or restore (false) one of our raids, by its key; an officer tells the guild.
+function X.SetArchived(key, archive)
+    local S, t = ns.S, time()
+    local rec = S.Record()
+    local night = archive and rec.nights[key] or (type(rec.archived[key]) == "table" and rec.archived[key].night)
+    local done
+    if archive then done = S.Archive(key, X.Me(), t) else done = S.Restore(key, X.Me(), t) end
+    if not done then return false end
+    if X.IsOfficer(X.Me()) then
+        local c, p, h, state, tt = archLine(key, night, archive and "1" or "0", t)
+        if c then X.Send("ARCH", c, p, h, state, tt) end
+    end
+    repaint()
+    return true
+end
+
+function X.HearArch(sender, c, p, h, state, t)
+    if not X.IsOfficer(sender) then return end
+    local key = expandKey(c) or (tostring(c):match("^%d%d%d%d%d%d$") and expand(c))
+    p, h, t = tonumber(p), tonumber(h), tonumber(t)
+    if not (key and p and h and t) or (state ~= "1" and state ~= "0") then return end
+    local S = ns.S
+    local archive = state == "1"
+    local mine
+    if S.IsDate(key) then
+        mine = archive and S.Record().nights[key] and key or (not archive and S.Record().archived[key] and key)
+    else
+        mine = X.FindRaid(key, p, h, not archive)
+    end
+    if not mine then return end
+    local done
+    if archive then done = S.Archive(mine, Short(sender), t) else done = S.Restore(mine, Short(sender), t) end
+    if done then repaint() end
+end
+
+--- An officer offers raids; we are an officer and have one of them archived: say so, once a session.
+local function retell(line)
+    if not X.IsOfficer(X.Me()) then return end
+    local rec = ns.S.Record()
+    for entry in line:gmatch("[^,]+") do
+        local c, p, h = entry:match("^([%d%-]+)%.(%d+)%.(%d+)$")
+        local key = c and expandKey(c)
+        local mine = key and X.FindRaid(key, tonumber(p), tonumber(h), true)
+        if mine and not X.retold[mine] then
+            X.retold[mine] = true
+            local a = rec.archived[mine]
+            local cc, pp, hh, state, tt = archLine(mine, a.night, "1", a.t)
+            if cc then X.Send("ARCH", cc, pp, hh, state, tt) end
+        end
+    end
 end
 
 --- A raid as text. Names and bosses once each, sorted; each pull points into them:
@@ -440,8 +530,9 @@ end
 
 X.PASTE_VERSION = 2
 
---- Answers raids taken in, gear sets taken in, lines that did not decode - or nil and why.
-function X.ImportPaste(text)
+--- The paste read, nothing taken in: { raids = { {key, night} }, gear = { {name, date, gear} }, bad } -
+--- or nil and why. The paste window looks at the raids before Import (who is not in the guild).
+function X.ParsePaste(text)
     if type(text) ~= "string" or not text:find("%S") then return nil, "nothing pasted" end
     text = text:gsub("\r", ""):gsub("||", "|")
     local lines = {}
@@ -468,28 +559,34 @@ function X.ImportPaste(text)
     if tonumber(n) ~= #body or tonumber(chars) ~= total then
         return nil, "damaged - lines or letters are missing; copy it again"
     end
-    local me = X.Me() or "?"
-    local raids, gear, bad = 0, 0, 0
+    local out = { raids = {}, gear = {}, bad = 0 }
     for _, l in ipairs(body) do
         local key, payload = l:match("^R~([^~]+)~(.+)$")
         local name, date, g = l:match("^G~([^~]+)~([^~]+)~(.+)$")
         if key then
             local night = ns.S.IsKey(key) and not ns.S.IsDate(key) and X.DecodeRaid(payload)
-            if night then
-                if ns.S.Put(key, night, me) then raids = raids + 1 end
-            else
-                bad = bad + 1
-            end
+            if night then out.raids[#out.raids + 1] = { key, night } else out.bad = out.bad + 1 end
         elseif name then
             local gg = ns.S.IsDate(date) and X.DecodeGear(g)
-            if gg then
-                if ns.S.PutGear(name, date, gg) then gear = gear + 1 end
-            else
-                bad = bad + 1
-            end
+            if gg then out.gear[#out.gear + 1] = { name, date, gg } else out.bad = out.bad + 1 end
         else
-            bad = bad + 1
+            out.bad = out.bad + 1
         end
+    end
+    return out
+end
+
+--- Answers raids taken in, gear sets taken in, lines that did not decode - or nil and why.
+function X.ImportPaste(text)
+    local got, why = X.ParsePaste(text)
+    if not got then return nil, why end
+    local me = X.Me() or "?"
+    local raids, gear, bad = 0, 0, got.bad
+    for _, r in ipairs(got.raids) do
+        if ns.S.Put(r[1], r[2], me) then raids = raids + 1 end
+    end
+    for _, g in ipairs(got.gear) do
+        if ns.S.PutGear(g[1], g[2], g[3]) then gear = gear + 1 end
     end
     -- an officer's import is the guild's news, as a log read by the script is
     if raids > 0 then X.Announce() end
@@ -540,6 +637,7 @@ end
 --------------------------------------------------------------------
 
 X.handlers = {}
+X.handlers.ARCH = function(...) return X.HearArch(...) end
 
 X.handlers.HAVE = function(sender, line)
     if not X.IsOfficer(sender) or type(line) ~= "string" then return end
@@ -578,6 +676,7 @@ end
 
 X.handlers.HAVE2 = function(sender, line)
     if not X.IsOfficer(sender) or type(line) ~= "string" then return end
+    retell(line)
     local any = false
     for entry in line:gmatch("[^,]+") do
         local c, p, h = entry:match("^([%d%-]+)%.(%d+)%.(%d+)$")

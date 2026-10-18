@@ -24,7 +24,12 @@ Read ../_bisdev/CLAUDE.md first.
   so people can double check"): `U.NOTEBOOK` in `Core/Window.lua` is shown in the LOG tab's window and
   must equal the link on the page (`dev/cf-desc.md`) - the suite holds them equal.
 - **Published only on CurseForge and GitHub** (Arn, 17 Oct) - the page says any other copy isn't ours.
-- `Core/Window.lua`: two windows. The PASTE window (`U.ShowPaste`, the LOG tab, `/bisg paste`): the
+- **Archived raids (18 Oct 2026)**: never deleted - `record.archived[key] = {night, t, by}`, out of
+  every count and share; a copy of an archived raid is refused (`S.ArchivedAs`) and counts as held
+  (`X.HaveRaid`). Later decision wins (`t`; `record.restored[key]`). An officer's archive/restore goes
+  out as GLOG `ARCH` (key + check number, so a copy keyed a day off finds it); an officer who hears a
+  HAVE2 offering a raid it archived re-sends ARCH once a session. The list: `U.ShowRaids`.
+- `Core/Window.lua`: three windows. The RAIDS list (`U.ShowRaids`, from the paste window). The PASTE window (`U.ShowPaste`, the LOG tab, `/bisg paste`): the
   notebook's link, the box, Import and its progress bar. The officers' SCRIPT window (`U.Show`,
   `/bisg window`): a terminal on purpose (Arn: "the more we make it look like a powershell window the
   better") - PowerShell's own `#012456`, Arial Narrow, a `PS>` prompt, a cursor blinking at 2 Hz.

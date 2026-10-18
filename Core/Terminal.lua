@@ -290,6 +290,7 @@ K.sort = "class"
 function K.Sort(rows, mode)
     table.sort(rows, function(a, b)
         if a.pug ~= b.pug then return b.pug end                      -- pugs at the bottom, always
+        if (a.none or false) ~= (b.none or false) then return b.none end   -- then members with no raids
         if mode == "attend" and a.att ~= b.att then return a.att > b.att end
         if mode ~= "attend" then
             local ca, cb = K.CLASS_ORDER[a.class or ""] or 99, K.CLASS_ORDER[b.class or ""] or 99
@@ -303,9 +304,10 @@ end
 function K.Rows(cards)
     local nights = #S().Dates()
     local guild = K.Guild()
-    local out = {}
+    local out, matched = {}, {}
     for name, c in pairs(cards) do
         local m = K.Member(name)
+        if m then matched[m.key] = true end
         out[#out + 1] = {
             name = name,
             rank = m and m.rank or (guild.complete and "pug" or "?"),
@@ -321,7 +323,31 @@ function K.Rows(cards)
             geared = c.gear ~= nil,
         }
     end
+    -- EVERY GUILD MEMBER, raided or not (Arn, 18 Oct: "pull all guild memebers from blizzard guild
+    -- pane"), straight from the game's guild list - greyed and below the raiders, above the pugs
+    for key, m in pairs(guild.members) do
+        if not matched[key] then
+            out[#out + 1] = { name = m.name, rank = m.rank or "?", class = m.class, pug = false, none = true,
+                              att = 0, last = "-", flask = false, deaths = 0, issues = 0, geared = false }
+        end
+    end
     return K.Sort(out, K.sort)
+end
+
+--- Everybody a raider page can open: whoever is on the record, and every guild member (a member with
+--- no raids opens a page that says so). Answers a set: name -> true.
+function K.People(cards)
+    local out, matched = {}, {}
+    for name in pairs(cards or {}) do
+        out[name] = true
+        local m = K.Member(name)
+        if m then matched[m.key] = true end
+    end
+    -- a member already on the record is found by their record name, never twice
+    for key, m in pairs(K.Guild().members) do
+        if not matched[key] then out[m.name] = true end
+    end
+    return out
 end
 
 function K.BossRows(pages)
@@ -884,17 +910,27 @@ K.Say = Say
 local function PaintRaiders(p)
     local rows = K.Rows(S().Cards())
     local off = Scroll(p.grid, #rows)
-    local pugs = 0
-    for _, r in ipairs(rows) do if r.pug then pugs = pugs + 1 end end
-    p.panel.right:SetText(("%d raiders, %d pugs, %d nights"):format(#rows - pugs, pugs, #S().Dates()) .. Showing(p.grid))
-    if #rows == 0 then p.panel.hint:Show() else p.panel.hint:Hide() end
+    local pugs, none = 0, 0
+    for _, r in ipairs(rows) do
+        if r.pug then pugs = pugs + 1 elseif r.none then none = none + 1 end
+    end
+    p.panel.right:SetText(("%d raiders, %s%d pugs, %d nights"):format(#rows - pugs - none,
+        none > 0 and (none .. " no raids, ") or "", pugs, #S().Dates()) .. Showing(p.grid))
+    -- the hint says where nights come from while there are none, even with the guild listed
+    if #rows - none == 0 then p.panel.hint:Show() else p.panel.hint:Hide() end
     -- the sort you are on is lit
     p.grid.heads[1]:SetTextColor(rgb(K.sort ~= "attend" and "gold" or "muted"))
     p.grid.heads[3]:SetTextColor(rgb(K.sort == "attend" and "gold" or "muted"))
     local colours = _G.RAID_CLASS_COLORS
     for i, row in ipairs(p.grid.rows) do
         local r = rows[i + off]
-        if r then
+        if r and r.none then
+            -- a member with no raids: the name in its class colour, dimmed; nothing to count
+            local cc = r.class and colours and colours[r.class]
+            SetRow(row, r.name, { r.name, r.rank, "-", "-", "-", "-", "no raids yet" },
+                { cc and { cc.r * 0.6, cc.g * 0.6, cc.b * 0.6 } or "muted", "muted", "muted", "muted", "muted", "muted", "muted" })
+            row.who = r.name
+        elseif r then
             local cc = r.class and colours and colours[r.class]
             local nameColour = r.pug and "muted" or (cc and { cc.r, cc.g, cc.b } or "ink")
             SetRow(row, r.name, { r.name, r.rank, r.att .. "%", r.last, r.flask and "yes" or "no", r.deaths,
@@ -927,9 +963,18 @@ end
 
 local QUALITY = { [0] = "muted", [1] = "ink", [2] = "good", [3] = "slate", [4] = "accent", [5] = "gold" }
 
+--- A guild member's empty card, for the page that says they have no raids with us.
+local NONE = { deaths = 0, pots = 0, attended = {}, issues = {} }
+
 local function PaintRaider(p, name)
     local card = S().Cards()[name]
-    if not card then return false end
+    local none = false
+    if not card then
+        -- A GUILD MEMBER WITH NO RAIDS (Arn, 18 Oct: "just a generic message that this player has no
+        -- raids logged with us"): the same page, empty, saying so
+        if not K.Member(name) then return false end
+        card, none = NONE, true
+    end
     K.waiting = false
     local issues = {}
     for _, i in ipairs(card.issues or {}) do issues[i.slot] = i.what end
@@ -954,6 +999,11 @@ local function PaintRaider(p, name)
     local pct = nights > 0 and math.floor(100 * #card.attended / nights + 0.5) or 0
     p.attLine:SetText(("%d of %d nights   %d%%"):format(#card.attended, nights, pct))
     p.attLine:SetTextColor(rgb(pct >= 75 and "good" or (pct >= 50 and "gold" or "warn")))
+    if none then
+        p.armory.right:SetText("no raids logged with us yet")
+        p.attLine:SetText("no raids logged with us yet")
+        p.attLine:SetTextColor(rgb("muted"))
+    end
     local strip = K.Strip(card, K.STRIP)
     for i, sq in ipairs(p.strip) do
         local s = strip[i]
@@ -1113,7 +1163,7 @@ function K.Go(line)
         Say("roster pasted - read from the BiS> line", "good")
         return "roster"
     end
-    local kind, key = K.Parse(line, S().Cards(), S().Bosses())
+    local kind, key = K.Parse(line, K.People(S().Cards()), S().Bosses())
     if kind == "log" then
         -- THE NOTEBOOK, NOT THE SCRIPT (Arn, 18 Oct: "in the logs we give them the link to go to the
         -- google code thing"). The PowerShell window is ours alone now: `/bisg window`, unadvertised.

@@ -25,7 +25,7 @@ Loot night. Two raiders want the same trinket. One has been to every raid this m
 
 `/bisg` opens the raider terminal. Five tabs.
 
-- **RAIDERS** — everyone who has raided with you: attendance, last raid, flask or elixirs, deaths, and gear issues in red, like a slot that should be enchanted and isn't. Sorted by class the way a raid sheet reads, pugs at the bottom. Click a name for their whole card.
+- **RAIDERS** — your whole guild, and everyone who has raided with you: attendance, last raid, flask or elixirs, deaths, and gear issues in red, like a slot that should be enchanted and isn't. Sorted by class the way a raid sheet reads, pugs at the bottom. Click a name for their whole card.
 - **BOSSES** — every boss you've killed: kills, wipes, your best time, the night it first died, and who was there.
 - **WHERE** — your guildmates on a map, right now. Click one and the map opens on their zone. With OpenMap installed, one button opens it there.
 - **ROSTER** — paste the Raid-Helper sign-up and see who's online, who's absent, who isn't in the guild. One button invites everyone online.
@@ -54,6 +54,8 @@ An addon isn't allowed to read files off your disk, and that's a good rule. So a
 2. In game: the terminal's **LOG** tab (or `/bisg paste`), Ctrl+V, **Import**.
 
 It runs on Google's computer under your own Google account, so nothing runs on yours. Google will say it "was not authored by Google" - that's every notebook Google didn't write; press Run anyway.
+
+**Pasted the wrong log?** BiS Guild warns you when most of a raid isn't in your guild, before it takes it in. And **Raids on record** lists every raid with an Archive button: an archived raid stops counting, nothing is ever deleted, and Restore brings it back. When an officer archives one, it's archived for the whole guild.
 
 **Double-check the link.** The LOG tab shows the same link. This is the one that counts: it should start `colab.research.google.com/github/blankfer/BiSGuild`. If a link you were given goes anywhere else, it isn't ours. We publish BiS Guild in two places only: **this CurseForge page** and **its GitHub page** (github.com/blankfer/BiSGuild).
 
