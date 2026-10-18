@@ -68,6 +68,18 @@ times), WANT2, NIGHT2 (raider names once, then each pull compactly). A night som
 or DIFFERENT pulls of is asked for and merged; merging both ways converges. v1 HAVE/WANT/NIGHT: no
 longer sent; a v1 NIGHT is still taken under the rule above.
 
+## The paste and the notebook (17 Oct 2026)
+
+Arn: a notebook "so people can just drag and drop their log ... hit run ... something to paste".
+`dev/BiSGuild.ipynb` (Colab; link on the CurseForge page) fetches `logreport.py` + its two lists from
+the NEWEST RELEASE TAG on GitHub (never main), reads the uploaded logs (zip or txt) and prints
+`logreport.paste_text`: `BiSGuild paste 2` / `R~key~<EncodeRaid>` / `G~name~date~<EncodeGear>` /
+`END~lines~bytes` - "~" because a WoW edit box doubles "|", BYTES because Lua's # counts bytes (a
+name with an accent broke the first real paste). In game `/bisg paste` (Core/Window.lua U.ShowPaste)
+-> `X.ImportPaste` -> `S.Put` per raid. Held together by `dev/paste_matches.lua` (run from
+`dev/test_logreport.py`). The notebook needs no account of ours; each officer runs it under their own
+Google account. Change the notebook only when its own steps change - releases reach it by themselves.
+
 ## Readers
 
 Keys sort as strings and still begin with the date, so the order holds. Anywhere a key is SHOWN it

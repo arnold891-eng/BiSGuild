@@ -21,7 +21,7 @@ So both numbers come out of one pass over one file, with no website, no upload a
 
     python dev/logreport.py <WoWCombatLog.txt> [--kills-only] [--paste]
 
---paste prints the one line to hand the addon.
+--paste prints every raid on record as text for BiS Guild's import box (the Colab notebook uses it).
 """
 
 import re
@@ -94,7 +94,9 @@ def gear_of(body):
     weapon check, read from the same line. Returns [[id, ilvl, enchant, temp, gems], ...] or None."""
     import json
     b = brackets(body)
-    if len(b) < 3:
+    # gear is always the next-to-last group: Forever writes talents, gear, auras; TBC (2.5.6) only gear,
+    # auras - "< 3" read no TBC gear at all (found on Arn's Black Temple log, 17 Oct)
+    if len(b) < 2:
         return None
     try:
         raw = json.loads(b[-2].replace("(", "[").replace(")", "]"))
@@ -426,8 +428,12 @@ def main(path, kills_only=True, paste=False, review=False, write=False, include_
         print("%-16s %7d%% %8d%%" % (who, att, con))
 
     if paste:
+        # THE PASTE (17 Oct 2026, the Colab notebook): every raid on record as text the game's import
+        # box takes - the same layout officers share in game (Core/Share.lua EncodeRaid)
         print()
-        print("BISGUILD1|" + "|".join("%s,%d,%d" % r for r in rows))
+        print(PASTE_START)
+        print(paste_text(nightly, gear))
+        print(PASTE_END)
 
     if write:
         wrote = write_data(rows, total, zones, path, raided, cards, days, bosscards, nightly)
@@ -439,6 +445,101 @@ def main(path, kills_only=True, paste=False, review=False, write=False, include_
         else:
             print("no BiSGuild addon folder found to write into - is it deployed?")
     return 0
+
+
+# ------------------------------------------------------------------ the paste
+# Arn, 17 Oct 2026: a notebook "so people can just drag and drop their log ... hit run ... something to
+# paste". The text a person pastes into BiS Guild's import box (Core/Share.lua X.ImportPaste):
+#
+#   BiSGuild paste 2
+#   R~<key>~<raid, as Core/Share.lua X.EncodeRaid writes it>      one line per raid
+#   G~<name>~<date>~<gear, as X.EncodeGear writes it>              one line per raider's newest gear
+#   END~<lines>~<characters>                                       so a cut-off paste is caught
+#
+# "~", NOT "|": a WoW edit box doubles every "|" it is given (it is the client's escape character),
+# and nothing in a raid or a gear line ever uses "~".
+#
+# The "2" is the paste's layout: a copy of BiS Guild that knows an older layout refuses a newer one
+# ("update BiS Guild") rather than guessing. These encoders are the game's, rule for rule - the suite
+# decodes this file's output in the game's own Lua (dev/test_logreport.py).
+PASTE_VERSION = 2
+PASTE_START = "----- copy everything from the next line to the END line -----"
+PASTE_END = "----- end -----"
+_SEPS = set(":;#,.|/~")
+
+
+def _clean(s):
+    return isinstance(s, str) and s != "" and not (set(s) & _SEPS)
+
+
+def _int(v):
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return 0
+
+
+def encode_raid(night):
+    """Core/Share.lua X.EncodeRaid, character for character."""
+    pulls = night.get("pulls") or []
+    names, bosses = set(), set()
+    for p in pulls:
+        for t in (p.get("r"), p.get("d"), p.get("p")):
+            for who in (t or {}):
+                if _clean(who):
+                    names.add(who)
+        b = str(p.get("b") or "")
+        if _clean(b):
+            bosses.add(b)
+    names, bosses = sorted(names), sorted(bosses)
+    index = {w: i + 1 for i, w in enumerate(names)}
+    bindex = {b: i + 1 for i, b in enumerate(bosses)}
+
+    def lst(t):
+        return ",".join(sorted("%d.%d" % (index[w], _int(v)) for w, v in (t or {}).items() if w in index))
+
+    out = []
+    for p in pulls:
+        bi = bindex.get(str(p.get("b") or ""))
+        if bi:
+            out.append("%d.%d.%d.%d.%d:%s:%s:%s" % (_int(p.get("t")), _int(p.get("e")), _int(p.get("k")),
+                                                    _int(p.get("ms")), bi, lst(p.get("r")), lst(p.get("d")),
+                                                    lst(p.get("p"))))
+    zone = str(night.get("zone") or "").replace("#", "")
+    return "2#%d#%d#%s#%s#%s#%s" % (_int(night.get("i")), _int(night.get("start")), ";".join(names),
+                                    ";".join(bosses), ";".join(out), zone)
+
+
+def encode_gear(gear):
+    """Core/Share.lua X.EncodeGear: id.ilvl.enchant.temp.gem/gem per slot, "0" for an empty one."""
+    out = []
+    for i in range(19):
+        g = gear[i] if i < len(gear) else None
+        if g and _int(g[0]) != 0:
+            gems = "/".join(str(_int(x)) for x in (g[4] if len(g) > 4 and g[4] else []))
+            out.append("%d.%d.%d.%d.%s" % (_int(g[0]), _int(g[1]), _int(g[2]), _int(g[3]), gems))
+        else:
+            out.append("0")
+    return ";".join(out)
+
+
+def paste_text(nightly, gear):
+    """Every raid on record (whole-date nights from before 17 Oct are not pasted) and every raider's
+    newest gear, as the import box takes them."""
+    lines = ["BiSGuild paste %d" % PASTE_VERSION]
+    for key in sorted(nightly):
+        night = nightly[key]
+        if night.get("v") == 2:
+            lines.append("R~%s~%s" % (key, encode_raid(night)))
+    for who in sorted(gear):
+        date, g = gear[who]
+        if _clean(who) and g:
+            lines.append("G~%s~%s~%s" % (who, date, encode_gear(g)))
+    body = lines[1:]
+    # BYTES, not characters: the game counts with Lua's #, and "Slapchôp" is eight letters but nine
+    # bytes (Arn's Black Temple log, 17 Oct - the first real paste came out "damaged")
+    lines.append("END~%d~%d" % (len(body), sum(len(l.encode("utf-8")) for l in body)))
+    return "\n".join(lines)
 
 
 NIGHT_FIELDS = ("present", "ready", "pulls", "flask", "elixir", "food", "weapon", "weaponSeen", "pots", "deaths")

@@ -8,7 +8,7 @@ fingerprint as its first line - on CurseForge's own site, under our account, whe
 So the page never needs editing at release time; it tells people to look there. The line below is a
 record only, never pasted: `.\Tools\stamp.ps1` still rewrites it (step 4), and the suite checks it.
 
-    Fingerprint   982061FAD6E42011F090BA3C54B6AF15E9572AC72CFAB28321629839967FB8D3
+    Fingerprint   BCB57C64062DE4C39D736D7FCF4A7870CB8AF19BF5AA5C8AC8735FA90E2A18B3
 
 In the house voice (`_bisdev/docs/voice.md`): the opener and the script section talk; lists stay flat.
 
@@ -50,7 +50,12 @@ Your alts keep their own books. A character in another guild sees that guild's r
 
 ## The numbers come from your combat log
 
-An addon isn't allowed to read files off your disk, and that's a good rule. So BiS Guild ships a small PowerShell script that reads the log for you. `/bisg logs <your Logs folder>` once. After a raid, `/bisg script` gives you the line to run. `/reload` and the night is in. Nothing to paste, nothing uploaded anywhere.
+An addon isn't allowed to read files off your disk, and that's a good rule. So there are two ways to read a log - pick one:
+
+- **The notebook - no PowerShell.** [Open the BiS Guild notebook](https://colab.research.google.com/github/blankfer/BiSGuild/blob/main/dev/BiSGuild.ipynb), press Run, drop your combat log in (zipped is faster), and copy the text it prints. In game: `/bisg paste`, Ctrl+V, Import. It runs on Google's computer under your own Google account, so nothing runs on yours. Google will say it "was not authored by Google" - that's every notebook Google didn't write; press Run anyway.
+- **The PowerShell script.** `/bisg logs (your Logs folder)` once. After a raid, `/bisg script` gives you the line to run. `/reload` and the night is in. Nothing is uploaded anywhere.
+
+Two officers who read the same raid end up with the same night: BiS Guild lines their logs up to the second and keeps every boss either of them saw.
 
 - **Attendance**: a raid night counts if you were there for at least half its boss kills. Leaving at nine for a sick kid doesn't cost you the night.
 - **Consumables**: at each pull, a flask (or a battle and a guardian elixir) and food.
@@ -93,8 +98,9 @@ Neither is needed. BiS Guild works alone.
 | | |
 |---|---|
 | `/bisg` | open the terminal |
-| `/bisg logs <path>` | tell it where your Logs folder is, once |
+| `/bisg logs (path)` | tell it where your Logs folder is, once |
 | `/bisg script` | the line to run after a raid |
+| `/bisg paste` | take in the notebook's text - no PowerShell |
 | `/bisg copy` | is this copy whole, and does it match your guild's |
 | `/bisg logins on` / `off` | the pop-up when a sign-up logs in |
 | `/bisg dots on` / `off` | guildmates on the world map |

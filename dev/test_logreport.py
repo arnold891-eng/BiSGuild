@@ -160,6 +160,29 @@ def main():
                                capture_output=True, text=True)
             ok(r.returncode == 0, "the game's cards and boss pages match the reader's", (r.stdout + r.stderr)[-600:])
 
+        # THE PASTE (the Colab notebook, 17 Oct): what the reader prints, the game takes in - through
+        # its own Store.lua and Share.lua, compared raid by raid with the report
+        import io, contextlib
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            logreport.main(path, paste=True)
+        printed = buf.getvalue()
+        ok(logreport.PASTE_START in printed and logreport.PASTE_END in printed, "--paste prints the text between two markers")
+        body = printed.split(logreport.PASTE_START, 1)[1].split(logreport.PASTE_END, 1)[0].strip()
+        ok(body.startswith("BiSGuild paste 2") and "R~2026-10-16 409~2#409#" in body and "|" not in body,
+           "the paste: its layout, one raid line, and not one '|' (a WoW edit box doubles them)", body[:120])
+        pfile = os.path.join(root, "paste.txt")
+        with open(pfile, "w", encoding="utf-8") as fh:
+            fh.write(printed)                    # all of it, markers and table too: the game finds its part
+        luaexe1 = r"C:\Program Files (x86)\Lua\5.1\lua.exe"
+        if os.path.exists(luaexe1):
+            repo = os.path.dirname(HERE)
+            r = subprocess.run([luaexe1, os.path.join(HERE, "paste_matches.lua"), pfile, report,
+                                os.path.join(repo, "Core", "Store.lua"), os.path.join(repo, "Core", "Share.lua")],
+                               capture_output=True, text=True)
+            ok(r.returncode == 0, "the game takes the paste in: every raid and gear set as the reader wrote them",
+               (r.stdout + r.stderr)[-600:])
+
         # a re-run of the same log replaces its night, never doubles it
         logreport.main(path, write=True)
         ok(len(logreport.read_history(path)) == 1, "the same log twice is still one night")

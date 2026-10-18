@@ -109,7 +109,8 @@ function X.Me() return Short(UnitName and UnitName("player") or nil) end
 
 -- Names and boss names may not carry the separators. A name that does is left out, not mangled:
 -- a raider whose name came out wrong is a different raider.
-local function clean(s) return type(s) == "string" and s ~= "" and not s:find("[:;#,%.|/]") end
+-- "~" too since 17 Oct: it separates the paste's fields (dev/logreport.py _clean, the same rule)
+local function clean(s) return type(s) == "string" and s ~= "" and not s:find("[:;#,%.|/~]") end
 local function int(v) return math.floor(tonumber(v) or 0) end
 
 --- kills # Name:present.ready.pulls...deaths;... # Boss:pulls.kills.best:i,j,k;...
@@ -421,6 +422,80 @@ function X.DecodeRaid(s)
                               r = rm, d = dm, p = pm }
     end
     return { v = 2, i = tonumber(inst), start = tonumber(start), zone = zone, pulls = pulls }
+end
+
+--------------------------------------------------------------------
+-- THE PASTE (17 Oct 2026). Arn: a notebook "so people can just drag and drop their log ... hit run
+-- ... something to paste". The notebook runs dev/logreport.py --paste; this takes its text in:
+--
+--   BiSGuild paste 2
+--   R~<key>~<raid, as EncodeRaid writes it>
+--   G~<name>~<date>~<gear, as EncodeGear writes it>
+--   END~<lines>~<characters>
+--
+-- Strict, because it is text a person carried from a website: a layout newer than this copy knows is
+-- refused ("update BiS Guild"), a cut or damaged paste is refused whole, every line decodes or is
+-- counted bad. A raid goes through S.Put - merged into the same raid if it is here, exactly like an
+-- officer's copy. A WoW edit box doubles every "|" it is handed, so the layout uses none, and "||" is
+-- folded back in case a copy came through chat.
+--------------------------------------------------------------------
+
+X.PASTE_VERSION = 2
+
+--- Answers raids taken in, gear sets taken in, lines that did not decode - or nil and why.
+function X.ImportPaste(text)
+    if type(text) ~= "string" or not text:find("%S") then return nil, "nothing pasted" end
+    text = text:gsub("\r", ""):gsub("||", "|")
+    local lines = {}
+    for l in text:gmatch("[^\n]+") do
+        l = l:match("^%s*(.-)%s*$")
+        if l ~= "" then lines[#lines + 1] = l end
+    end
+    local start, version
+    for i, l in ipairs(lines) do
+        version = tonumber(l:match("^BiSGuild paste (%d+)$"))
+        if version then start = i break end
+    end
+    if not start then return nil, "not a BiS Guild paste - copy the notebook's text from 'BiSGuild paste' down to the END line" end
+    if version > X.PASTE_VERSION then return nil, "made by a newer reader than this copy - update BiS Guild" end
+    local body, last = {}, nil
+    for i = start + 1, #lines do
+        if lines[i]:match("^END~") then last = lines[i] break end
+        body[#body + 1] = lines[i]
+    end
+    if not last then return nil, "cut off - the END line is missing; copy all of it" end
+    local n, chars = last:match("^END~(%d+)~(%d+)$")
+    local total = 0
+    for _, l in ipairs(body) do total = total + #l end
+    if tonumber(n) ~= #body or tonumber(chars) ~= total then
+        return nil, "damaged - lines or letters are missing; copy it again"
+    end
+    local me = X.Me() or "?"
+    local raids, gear, bad = 0, 0, 0
+    for _, l in ipairs(body) do
+        local key, payload = l:match("^R~([^~]+)~(.+)$")
+        local name, date, g = l:match("^G~([^~]+)~([^~]+)~(.+)$")
+        if key then
+            local night = ns.S.IsKey(key) and not ns.S.IsDate(key) and X.DecodeRaid(payload)
+            if night then
+                if ns.S.Put(key, night, me) then raids = raids + 1 end
+            else
+                bad = bad + 1
+            end
+        elseif name then
+            local gg = ns.S.IsDate(date) and X.DecodeGear(g)
+            if gg then
+                if ns.S.PutGear(name, date, gg) then gear = gear + 1 end
+            else
+                bad = bad + 1
+            end
+        else
+            bad = bad + 1
+        end
+    end
+    -- an officer's import is the guild's news, as a log read by the script is
+    if raids > 0 then X.Announce() end
+    return raids, gear, bad
 end
 
 --- Officers say what they hold. Members never do: nobody would believe them anyway.

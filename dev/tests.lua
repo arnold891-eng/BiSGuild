@@ -2847,4 +2847,65 @@ do
     NS.X._ranksDirty = true
 end
 
+-- THE PASTE (17 Oct: the Colab notebook - "drag and drop their log ... hit run ... something to
+-- paste"). dev/test_logreport.py proves the reader's text decodes here; this proves the box and every
+-- refusal a person can meet.
+do
+    H.section("the paste: the notebook's text in, no PowerShell")
+    local S, X, U = NS.S, NS.X, NS.U
+    local keep = NS.Books().record
+    NS.Books().record = { nights = {}, gear = {} }
+    local T0 = 1792202400
+    local raid = { v = 2, i = 409, zone = "Molten Core", start = T0, pulls = {
+        { t = T0, e = 663, b = "Lucifron", k = 1, ms = 60000, r = { Ann = 9, Bo = 9 }, d = {}, p = {} },
+        { t = T0 + 900, e = 664, b = "Magmadar", k = 1, ms = 70000, r = { Ann = 9, Bo = 9 }, d = { Bo = 1 }, p = {} } } }
+    local gear = {}
+    for i = 1, 19 do gear[i] = { i == 18 and 0 or 1000 + i, i == 18 and 0 or 30, 0, 0, {} } end
+    local function paste(lines)
+        local body, n = {}, 0
+        for _, l in ipairs(lines) do body[#body + 1] = l n = n + #l end
+        return "BiSGuild paste 2\n" .. table.concat(body, "\n") .. ("\nEND~%d~%d\n"):format(#body, n)
+    end
+    local good = paste({ "R~2026-10-16 409~" .. X.EncodeRaid(raid), "G~Ann~2026-10-16~" .. X.EncodeGear(gear) })
+
+    local r, g, bad = X.ImportPaste("----- copy everything -----\n" .. good .. "----- end -----")
+    H.ok(r == 1 and g == 1 and bad == 0, "the notebook's text, markers and all: one raid, one gear set", tostring(g))
+    H.eq(S.Record().nights["2026-10-16 409"].kills, 2, "the raid is on record, two kills")
+    H.eq(S.Record().nights["2026-10-16 409"].raiders.Bo.deaths, 1, "with each raider's numbers")
+    H.eq(select(1, X.ImportPaste(good)), 0, "the same paste again: nothing new")
+    NS.Books().record = { nights = {}, gear = {} }
+    H.eq(select(1, X.ImportPaste((good:gsub("\n", "\r\n")))), 1, "copied on Windows (CR LF line ends): still read")
+    H.eq(select(2, X.ImportPaste("")), "nothing pasted", "an empty box says so")
+    H.ok(select(2, X.ImportPaste("hello there")):find("not a BiS Guild paste", 1, true), "text from somewhere else is refused")
+    H.ok(select(2, X.ImportPaste(good:gsub("paste 2", "paste 9"))):find("update BiS Guild", 1, true),
+         "a newer layout: update BiS Guild")
+    H.ok(select(2, X.ImportPaste(good:gsub("END~[^\n]*", ""))):find("cut off", 1, true), "no END line: cut off")
+    H.ok(select(2, X.ImportPaste(good:gsub("Lucifron", "Lucifro"))):find("damaged", 1, true),
+         "a letter missing: damaged, refused whole")
+    local junk = paste({ "R~2026-10-16 409~2#garbage", "Q~what" })
+    local r2, g2, bad2 = X.ImportPaste(junk)
+    H.ok(r2 == 0 and bad2 == 2, "lines that do not decode are counted, never guessed at")
+
+    -- the window: Import says what happened, in the window
+    NS.Books().record = { nights = {}, gear = {} }
+    SlashCmdList.BISGUILD("paste")
+    local p = U.paste
+    H.ok(p and p:IsShown(), "/bisg paste opens the paste window")
+    H.ok(math.abs(U.PW / U.PH - 1.43) < 0.01, "at the family's 1.43:1")
+    p.box:SetText(good)
+    U.DoPaste()
+    H.ok(p.status:GetText():find("1 raid", 1, true), "Import: '1 raid(s) taken in' in the window", p.status:GetText())
+    H.eq(p.box:GetText(), "", "and the box empties")
+    p.box:SetText("nonsense")
+    U.DoPaste()
+    H.ok(p.status:GetText():find("not a BiS Guild paste", 1, true), "a refusal is said in the window too", p.status:GetText())
+    -- the script window's button opens it, above the PowerShell warning
+    U.Build()
+    p:Hide()
+    U.frame.pasteBtn:GetScript("OnClick")()
+    H.ok(p:IsShown(), "'Paste from the notebook' on the script window opens it")
+    p:Hide()
+    NS.Books().record = keep
+end
+
 H.report()

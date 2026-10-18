@@ -157,7 +157,7 @@ function Get-Brackets([string]$s) {
 # @(id, ilvl, enchant, temp, @(gems)); the temporary enchant is the weapon's oil or stone
 function Get-Gear([string]$body) {
     $b = Get-Brackets $body
-    if ($b.Count -lt 3) { return $null }
+    if ($b.Count -lt 2) { return $null }      # gear is the next-to-last group: Forever has 3, TBC 2 (dev/logreport.py)
     try { $raw = ($b[$b.Count - 2] -replace '\(', '[' -replace '\)', ']') | ConvertFrom-Json } catch { return $null }
     $out = New-Object System.Collections.ArrayList
     foreach ($t in @($raw)) {

@@ -49,6 +49,11 @@ function ns.Say(cmd, rest)
             w.base, tostring(w.call), w.records, w.explored, w.hidden and ", HIDDEN by the client" or "")
         return
     end
+    -- `/bisg paste`: the notebook's text in, no PowerShell (Core/Window.lua U.ShowPaste, 17 Oct)
+    if cmd == "paste" or cmd == "import" then
+        if ns.U and ns.U.ShowPaste then ns.U.ShowPaste() end
+        return
+    end
     if cmd == "terminal" or cmd == "t" then
         if ns.K then ns.K.Show(rest ~= "" and rest or nil) end
         return
@@ -161,6 +166,7 @@ function ns.Say(cmd, rest)
         ns.Print("  %s  the raider terminal: type a raider or a boss", ns.T.text("accent", "/bisg"))
         ns.Print("  %s  straight to one raider or boss", ns.T.text("accent", "/bisg <name>"))
         ns.Print("  %s  the log window: paste a path, copy a command", ns.T.text("accent", "/bisg window"))
+        ns.Print("  %s  the notebook's text in - no PowerShell", ns.T.text("accent", "/bisg paste"))
         ns.Print("  %s  guildmates' dots on the world map", ns.T.text("accent", "/bisg dots on | off"))
         ns.Print("  %s  'X just logged in - invite?' for the pasted roster", ns.T.text("accent", "/bisg logins on | off"))
         ns.Print("  %s  attendance and consumes from the combat log", ns.T.text("accent", "/bisg report"))

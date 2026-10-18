@@ -381,9 +381,126 @@ function U.Build()
     f.lastHit:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
     f.lastHit:Hide()
 
+    -- THE OTHER WAY IN: no PowerShell at all (17 Oct 2026, the notebook). Over the warning, because
+    -- nothing about it runs on this computer - there is nothing to warn about.
+    f.pasteBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    f.pasteBtn:SetSize(190, 20)
+    f.pasteBtn:SetPoint("BOTTOMRIGHT", -12, 10)
+    f.pasteBtn:SetText("Paste from the notebook")
+    if f.pasteBtn.SetFrameLevel and f.GetFrameLevel then
+        local lvl = f:GetFrameLevel()
+        if type(lvl) == "number" then f.pasteBtn:SetFrameLevel(lvl + 12) end
+    end
+    f.pasteBtn:SetScript("OnClick", function() U.ShowPaste() end)
+
     f:Hide()
     U.frame = f
     return f
+end
+
+--------------------------------------------------------------------
+-- THE PASTE WINDOW (17 Oct 2026). Arn: a notebook "so people can just drag and drop their log ...
+-- hit run ... something to paste". The notebook (BiSGuild/notebook) reads the log on Google's
+-- computer and prints text; this takes it in through Core/Share.lua X.ImportPaste - each raid merged
+-- like an officer's copy. Its own window at the family's 1.43:1, so it never shares space with the
+-- PowerShell warning.
+--------------------------------------------------------------------
+U.PW, U.PH = 520, 364
+
+function U.BuildPaste()
+    if U.paste then return U.paste end
+    if not CreateFrame then return nil end
+    local p = CreateFrame("Frame", "BiSGuildPaste", UIParent)
+    p:SetSize(U.PW, U.PH)
+    p:SetPoint("CENTER")
+    p:SetFrameStrata("DIALOG")
+    p:EnableMouse(true)
+    p:SetMovable(true)
+    p:RegisterForDrag("LeftButton")
+    p:SetScript("OnDragStart", function(self) self:StartMoving() end)
+    p:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+    local bg = p:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(0, 0, 0, 0.96)
+    local head = p:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    head:SetPoint("TOPLEFT", 12, -10)
+    head:SetText(T().text("accent", "BiS> Guild") .. "  paste from the notebook")
+    local close = CreateFrame("Button", nil, p, "UIPanelCloseButton")
+    close:SetPoint("TOPRIGHT", -4, -4)
+    close:SetScript("OnClick", function() p:Hide() end)
+    ns.EscKeys(p, function() p:Hide() end)
+
+    local how = p:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    how:SetPoint("TOPLEFT", 12, -34)
+    how:SetPoint("RIGHT", p, "RIGHT", -12, 0)
+    how:SetJustifyH("LEFT")
+    how:SetText("1. Open the BiS Guild notebook - its link is on our CurseForge page.\n"
+        .. "2. Press Run, drop your combat log in, and copy the text it prints.\n"
+        .. "3. Paste it below " .. T().text("accent", "(Ctrl+V)") .. " and press Import. Nothing runs on this computer.")
+
+    local wrap = CreateFrame("Frame", nil, p)
+    wrap:SetPoint("TOPLEFT", 12, -84)
+    wrap:SetPoint("BOTTOMRIGHT", -12, 64)
+    local wbg = wrap:CreateTexture(nil, "BACKGROUND")
+    wbg:SetAllPoints()
+    wbg:SetColorTexture(PS_BLUE[1], PS_BLUE[2], PS_BLUE[3], PS_BLUE[4])
+
+    local box = CreateFrame("EditBox", nil, wrap)
+    box:SetPoint("TOPLEFT", 6, -6)
+    box:SetPoint("BOTTOMRIGHT", -6, 6)
+    box:SetMultiLine(true)
+    box:SetAutoFocus(false)
+    if box.SetMaxLetters then box:SetMaxLetters(0) end       -- a raid is thousands of letters
+    if box.SetFont then pcall(box.SetFont, box, PS_FONT, 10, "") end
+    box:SetTextColor(0.88, 0.92, 1, 1)
+    box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    p.box = box
+
+    p.status = p:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    p.status:SetPoint("BOTTOMLEFT", 12, 40)
+    p.status:SetPoint("RIGHT", p, "RIGHT", -12, 0)
+    p.status:SetJustifyH("LEFT")
+    p.status:SetText("")
+
+    local import = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
+    import:SetSize(120, 22)
+    import:SetPoint("BOTTOMLEFT", 12, 10)
+    import:SetText("Import")
+    import:SetScript("OnClick", function() U.DoPaste() end)
+    p.import = import
+    local clear = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
+    clear:SetSize(90, 22)
+    clear:SetPoint("LEFT", import, "RIGHT", 8, 0)
+    clear:SetText("Clear")
+    clear:SetScript("OnClick", function() box:SetText("") p.status:SetText("") end)
+    p:Hide()
+    U.paste = p
+    return p
+end
+
+--- Take the box's text in and say what happened, in the window.
+function U.DoPaste()
+    local p = U.BuildPaste()
+    if not p then return nil end
+    local raids, gear, bad = ns.X.ImportPaste(p.box:GetText())
+    if not raids then
+        p.status:SetText(T().text("warn", gear))
+        return nil, gear
+    end
+    local said = ("%d raid(s) taken in, %d raider(s)' gear"):format(raids, gear)
+    if raids == 0 and gear == 0 then said = "nothing new - this is already on record" end
+    if bad > 0 then said = said .. T().text("warn", ("  (%d line(s) could not be read)"):format(bad)) end
+    p.status:SetText(T().text(bad > 0 and "gold" or "good", said))
+    if raids > 0 then p.box:SetText("") end
+    if ns.K and ns.K.Paint and ns.K.frame and ns.K.frame:IsShown() then pcall(ns.K.Paint) end
+    return raids, gear, bad
+end
+
+function U.ShowPaste()
+    local p = U.BuildPaste()
+    if not p then return end
+    p:Show()
+    p.box:SetFocus()
 end
 
 --- TYPED OUT, A CHARACTER AT A TIME. Arn: "make it type it out like powershell".
