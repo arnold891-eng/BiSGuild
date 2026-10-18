@@ -2769,12 +2769,34 @@ do
     H.ok(w.who:GetText():find("whole guild", 1, true), "and an officer is told it goes to the whole guild")
     fitsIn(w, "the raids on record")
     w.rows[2].btn:Click()
-    H.ok(S.Record().nights["2026-10-09 409"] ~= nil, "Restore in the list brings it back")
-    H.eq(w.rows[2].btn:GetText(), "Archive", "and the list repaints")
+    H.ok(S.Record().nights["2026-10-09 409"] ~= nil, "Restore in the list brings it back, at once")
+    -- THE ROW'S BAR (Arn, 18 Oct: "when i click archive it turns to a fake progress bar and says restore")
+    H.ok(w.rows[2].bar:IsShown() and not w.rows[2].btn:IsShown(), "the button turns into a bar")
+    H.ok(w.rows[2].sizes:GetText():find("restoring...", 1, true), "and the row says what it is doing", w.rows[2].sizes:GetText())
+    local step = w:GetScript("OnUpdate")
+    H.ok(step ~= nil, "the bar ticks")
+    step(w, U.ROW_BAR_LEN * 0.5)
+    local lit = 0
+    for _, b in ipairs(w.rows[2].bar.blocks) do if b:IsShown() then lit = lit + 1 end end
+    H.ok(lit > 0 and lit < U.ROW_BLOCKS, "half way: half lit", lit)
+    w.rows[1].btn:Click()
+    H.ok(S.Record().nights[KEY] ~= nil, "one bar at a time: a second click while it plays does nothing")
+    U.PaintRaids()
+    H.ok(w.rows[2].bar:IsShown(), "and nothing repaints the list from under it")
+    step(w, U.ROW_BAR_LEN)
+    H.eq(w:GetScript("OnUpdate"), nil, "done: nothing left ticking")
+    H.ok(w.rows[2].btn:IsShown() and not w.rows[2].bar:IsShown(), "the button is back")
+    H.eq(w.rows[2].btn:GetText(), "Archive", "saying Archive now, the list re-sorted")
     w.rows[1].btn:Click()
     H.eq(S.Record().nights[KEY], nil, "Archive in the list files it away")
+    w:GetScript("OnUpdate")(w, U.ROW_BAR_LEN)
     H.eq(w.rows[2].btn:GetText(), "Restore", "to the bottom, with Restore")
+    -- closed mid-bar: finished, nothing ticking on a hidden window
+    w.rows[2].btn:Click()
     w:Hide()
+    w:Fire("OnHide")             -- the client fires it on Hide; the kit (Nebbinator's, verbatim) does not
+    H.eq(w:GetScript("OnUpdate"), nil, "closing the list mid-bar finishes it - nothing ticks on")
+    H.ok(S.Record().nights[KEY] ~= nil, "and the restore stands")
     U.paste:Hide()
 
     NS.Books().record = keep

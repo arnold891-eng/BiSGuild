@@ -568,10 +568,28 @@ function U.BuildRaids()
         row.btn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
         row.btn:SetSize(76, 18)
         row.btn:SetPoint("RIGHT", -2, 0)
-        row.btn:SetScript("OnClick", function(self)
-            local e = self:GetParent().entry
-            if e then ns.X.SetArchived(e.key, not e.archived) U.PaintRaids() end
-        end)
+        row.btn:SetScript("OnClick", function(self) U.ArchiveRow(self:GetParent()) end)
+        -- THE BAR, where the button was (Arn, 18 Oct: "when i click archive it turns to a fake progress
+        -- bar and says restore") - the paste window's blocks, small
+        row.bar = CreateFrame("Frame", nil, row)
+        row.bar:SetSize(76, 14)
+        row.bar:SetPoint("RIGHT", -2, 0)
+        local rbb = row.bar:CreateTexture(nil, "BACKGROUND")
+        rbb:SetAllPoints()
+        rbb:SetColorTexture(0.08, 0.08, 0.10, 1)
+        row.bar.blocks = {}
+        local ar, ag, ab = 0.72, 0.5, 1
+        if T().rgb then ar, ag, ab = T().rgb("accent") end
+        local bw = 74 / U.ROW_BLOCKS
+        for b = 1, U.ROW_BLOCKS do
+            local t = row.bar:CreateTexture(nil, "ARTWORK")
+            t:SetSize(bw - 2, 10)
+            t:SetPoint("LEFT", row.bar, "LEFT", 2 + (b - 1) * bw, 0)
+            t:SetColorTexture(ar, ag, ab, 1)
+            t:Hide()
+            row.bar.blocks[b] = t
+        end
+        row.bar:Hide()
         row:Hide()
         w.rows[i] = row
     end
@@ -587,16 +605,56 @@ function U.BuildRaids()
     w.foot:SetPoint("RIGHT", w, "RIGHT", -12, 0)
     w.foot:SetJustifyH("LEFT")
     w.foot:SetText("Archive files a raid away: nothing counts it, and Restore brings it back.")
+    -- closed mid-bar: the bar is flavour, the archive is already done - finish it, nothing left ticking
+    w:SetScript("OnHide", function(self) if self.run then U.RowStep(self, U.ROW_BAR_LEN) end end)
     w:Hide()
     U.raids = w
     return w
+end
+U.ROW_BLOCKS, U.ROW_BAR_LEN = 8, 0.9
+
+--- Archive or restore a row's raid. Done AT ONCE (Core/Share.lua X.SetArchived); the row then plays a
+--- bar where its button was and only afterwards does the list re-sort, so the row does not jump away
+--- mid-click. One at a time.
+function U.ArchiveRow(row)
+    local w = U.raids
+    local e = row and row.entry
+    if not (w and e) or w.run then return false end
+    w.run = { row = row, t = 0, archived = not e.archived }   -- held still: PaintRaids waits for it
+    if not ns.X.SetArchived(e.key, not e.archived) then
+        w.run = nil
+        U.PaintRaids()
+        return false
+    end
+    row.btn:Hide()
+    for _, b in ipairs(row.bar.blocks) do b:Hide() end
+    row.bar:Show()
+    row.sizes:SetText(T().text("gold", w.run.archived and "archiving..." or "restoring..."))
+    w:SetScript("OnUpdate", function(self, elapsed) U.RowStep(self, elapsed) end)
+    return true
+end
+
+--- One frame of a row's bar. OnUpdate runs only while it plays.
+function U.RowStep(w, elapsed)
+    local r = w.run
+    if not r then w:SetScript("OnUpdate", nil) return end
+    r.t = r.t + (tonumber(elapsed) or 0)
+    local frac = math.min(1, r.t / U.ROW_BAR_LEN)
+    local lit = math.floor(frac * U.ROW_BLOCKS + 0.5)
+    for i, b in ipairs(r.row.bar.blocks) do if i <= lit then b:Show() else b:Hide() end end
+    if frac < 1 then return end
+    w.run = nil
+    w:SetScript("OnUpdate", nil)
+    r.row.bar:Hide()
+    r.row.btn:Show()
+    U.PaintRaids()
 end
 
 local function plural(n, one) return n .. " " .. one .. (n == 1 and "" or "s") end
 
 function U.PaintRaids()
     local w = U.raids
-    if not (w and w:IsShown()) then return end
+    if not (w and w:IsShown()) or w.run then return end   -- a row's bar is playing: it repaints at the end
     local S, X = ns.S, ns.X
     local list = S.RaidList()
     w.offset = math.min(w.offset or 0, math.max(0, #list - U.RAID_ROWS))
