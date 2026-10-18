@@ -1,5 +1,9 @@
 # BiSGuild
 
+## Unreleased
+
+- **A night is one raid now, and officers' copies are merged kill by kill.** Two raids on one evening (two teams, or Molten Core then Onyxia) are two nights, so someone at one of them no longer loses the night for missing the other's kills. When two officers read the same raid, BiS Guild lines their logs up by the second - in any time zone - and keeps every boss either of them saw, instead of whichever copy was fuller. Nights already on record stay as they were.
+
 ## 0.1.1
 
 Fingerprint (SHA-256 of the whole addon, check it with the command on the CurseForge page): `93B8570923F7CCE40F422614E08BFBD59C527287E992460939285076C5EF67AC`

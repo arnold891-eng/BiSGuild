@@ -8,7 +8,7 @@ fingerprint as its first line - on CurseForge's own site, under our account, whe
 So the page never needs editing at release time; it tells people to look there. The line below is a
 record only, never pasted: `.\Tools\stamp.ps1` still rewrites it (step 4), and the suite checks it.
 
-    Fingerprint   93B8570923F7CCE40F422614E08BFBD59C527287E992460939285076C5EF67AC
+    Fingerprint   458931B4E6DBFB9FA9AE095AF0A82D34CEADC265DFCEBFD316622BAB28DE05C5
 
 In the house voice (`_bisdev/docs/voice.md`): the opener and the script section talk; lists stay flat.
 

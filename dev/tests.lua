@@ -1011,6 +1011,82 @@ do
     H.eq(#S.Dates(), 2, "a reload keeps the record")
 end
 
+-- A NIGHT IS ONE RAID, MERGED KILL BY KILL (dev/NIGHTS.md; Arn, 17 Oct: "all the officers run the power
+-- shell and their logs are slightly different ... will BiS Guild be able to determine all these
+-- happened at the same time and even though they're slightly different, reconcile")
+H.section("a night is one raid; two officers' copies merge kill by kill")
+do
+    local keepRecord = NS.Books().record          -- the sharing tests below read the nights above
+    NS.Books().record = nil
+    local F = S.F
+    local function pull(t, e, b, k, who, extra)
+        local r = {}
+        for _, w in ipairs(who or {}) do r[w] = F.READY + F.FLASK + F.FOOD + F.SEEN end
+        local p = { t = t, e = e, b = b, k = k, ms = 60000 + e, r = k == 1 and r or {}, d = {}, p = {} }
+        for key, v in pairs(extra or {}) do p[key] = v end
+        return p
+    end
+    local function raid(pulls, zone)
+        local n = { v = 2, i = 409, zone = zone or "Molten Core", start = pulls[1].t, pulls = pulls }
+        n.kills, n.raiders, n.bosses = S.Derive(pulls)
+        return n
+    end
+    local T0 = 1792202400
+    -- officer A logged from the start but missed Magmadar (disconnected); officer B logged late
+    local A = raid({ pull(T0, 663, "Lucifron", 1, { "Ann", "Bo", "Cid" }),
+                     pull(T0 + 3600, 665, "Gehennas", 1, { "Ann", "Bo" }) })
+    local B = raid({ pull(T0 + 1800 + 40, 664, "Magmadar", 1, { "Ann", "Bo", "Cid" }),
+                     -- the same Gehennas kill, B's PC clock 25 s off, and B saw Cid there too
+                     pull(T0 + 3600 + 25, 665, "Gehennas", 1, { "Ann", "Bo", "Cid" }, { d = { Bo = 1 } }) })
+    H.ok(S.Put("2026-10-16 409", A, "Officer A"), "officer A's raid filed")
+    H.ok(S.SameRaid(A, B), "B's copy is the same raid: same instance, a pull in common within 3 minutes")
+    H.ok(S.Put("2026-10-16 409", B, "Officer B"), "officer B's copy merges in")
+    local n = S.Record().nights["2026-10-16 409"]
+    H.eq(#n.pulls, 3, "three bosses: Lucifron (A), Magmadar (B only), Gehennas (both, once)")
+    H.eq(n.kills, 3, "three kills")
+    H.eq(n.raiders.Cid.present, 3, "Cid at all three - B saw him at Gehennas where A did not")
+    H.eq(n.raiders.Bo.deaths, 1, "Bo's death at Gehennas, from B's copy of it")
+    H.eq(n.by, "Officer A", "the raid keeps who filed it first")
+    H.ok(not S.Put("2026-10-16 409", B, "Officer B"), "the same copy again changes nothing")
+    H.ok(not S.Put("2026-10-16 409", A, "Officer A"), "nor does A's own again")
+    H.eq(#S.Dates(), 1, "still one night")
+
+    -- ANOTHER TIME ZONE: officer C is in New York; her log dated the raid the next day. Same UTC
+    -- seconds, so it is the same raid, filed under the key already there
+    local C = raid({ pull(T0 + 10, 663, "Lucifron", 1, { "Ann", "Bo", "Cid", "Dee" }) })
+    S.Put("2026-10-17 409", C, "Officer C")
+    H.eq(#S.Dates(), 1, "a key from another time zone joins the raid already on record")
+    H.eq(S.Record().nights["2026-10-16 409"].raiders.Dee.present, 1, "and Dee, seen only by C, is in it")
+
+    -- TWO RAIDS THE SAME EVENING: Onyxia after MC, one instance each - two nights; Dee came to Onyxia
+    -- only and keeps her night (the bug: the two were added, and she lost it)
+    local ony = { v = 2, i = 249, zone = "Onyxia's Lair", start = T0 + 9000,
+                  pulls = { pull(T0 + 9000, 1084, "Onyxia", 1, { "Ann", "Dee" }) } }
+    H.ok(S.Put("2026-10-16 249", ony, "Officer A"), "Onyxia the same evening is its own night")
+    H.eq(#S.Dates(), 2, "two nights that date")
+    local cards = S.Cards()
+    H.ok(deq(cards.Dee.attended, { "2026-10-16 249" }), "Dee keeps the Onyxia night")
+    H.eq(S.Label("2026-10-16 249"), "2026-10-16 Onyxia's Lair", "a raid is shown by its date and name")
+
+    -- ANOTHER TEAM, SAME INSTANCE, SAME DATE, no pull in common: a second raid, not a merge
+    local other = raid({ pull(T0 + 20000, 663, "Lucifron", 1, { "Zed", "Yan" }) })
+    H.ok(S.Put("2026-10-16 409", other, "Team Two"), "another team's MC that evening is filed")
+    H.ok(S.Record().nights["2026-10-16 409-2"] ~= nil, "under its own key, -2")
+    H.eq(S.Label("2026-10-16 409-2"), "2026-10-16 Molten Core (2)", "and shown as the second")
+
+    -- A WHOLE-DATE NIGHT (before 17 Oct, or from a copy not yet updated) never sits beside raids
+    H.ok(not S.Put("2026-10-16", { kills = 9, raiders = { Ann = raider(9, 9) }, bosses = {} }, "Old copy"),
+         "a whole-date night for a date with raids is refused - it would count the evening twice")
+    NS.Books().record = nil
+    S.Put("2026-10-20", { kills = 2, raiders = { Ann = raider(2, 2) }, bosses = {} }, "Old")
+    H.ok(S.Record().nights["2026-10-20"] ~= nil, "on a date without raids it is kept, as before")
+    S.Put("2026-10-20 409", raid({ pull(T0 + 4 * 86400, 663, "Lucifron", 1, { "Ann" }) }), "New")
+    H.ok(S.Record().nights["2026-10-20"] == nil and S.Record().nights["2026-10-20 409"] ~= nil,
+         "and a raid of that date replaces it: the whole-date night was every raid of it added")
+    H.ok(not S.Put("2026-10-20 409x", raid({ pull(T0, 1, "X", 1, { "A" }) })), "a key that is not a key is refused")
+    NS.Books().record = keepRecord
+end
+
 H.section("each guild its own books (Arn, 16 Oct: 'some people have alts in other guilds')")
 do
     local main = NS.Books()

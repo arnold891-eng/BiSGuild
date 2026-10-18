@@ -95,37 +95,48 @@ def main():
         ok(rc == 0, "a 25-man kill reads", rc)
         report = os.path.join(addon, "Data", "Report.lua")
         text = open(report, encoding="utf-8").read()
-        ok("cards = {" in text and 'days = { "2026-10-16" }' in text, "the report carries the raid days and the cards")
+        # A NIGHT IS ONE RAID (dev/NIGHTS.md, 17 Oct): its key is the date and the instance
+        ok("cards = {" in text and 'days = { "2026-10-16 409" }' in text, "the report carries the raids and the cards",
+           re.search(r"days = [^\n]*", text) and re.search(r"days = [^\n]*", text).group(0))
 
+        # EACH PULL IS KEPT: who stood in it and what they brought, as flags
         hist = logreport.read_history(path)
-        night = hist[os.path.basename(path)]
-        a, b = night["detail"]["Alice"], night["detail"]["Bob"]
-        ok(a["flask"] == 1 and a["food"] == 1 and a["weapon"] == 1 and a["pots"] == 1,
-           "Alice: flask, food, oil, one potion in the pull", a)
-        ok(b["flask"] == 0 and b["food"] == 1 and b["weapon"] == 0 and b["deaths"] == 1,
-           "Bob: food only, a bare weapon, one death", b)
+        entry = hist[os.path.basename(path)]
+        kill = [p for p in entry["pulls"] if p["k"]][0]
+        wipe = [p for p in entry["pulls"] if not p["k"]][0]
+        fa, fb = kill["r"]["Alice"], kill["r"]["Bob"]
+        ok(fa & logreport.F_FLASK and fa & logreport.F_FOOD and fa & logreport.F_WEAPON and fa & logreport.F_READY,
+           "Alice at the kill: flask, food, oil - ready", fa)
+        ok(fb == logreport.F_FOOD | logreport.F_SEEN, "Bob: food only, a bare main hand", fb)
+        ok(kill["p"] == {"Alice": 1} and kill["d"] == {"Bob": 1}, "a potion and a death inside the pull", (kill["p"], kill["d"]))
+        ok(wipe["r"] == {} and kill["e"] == 1 and kill["i"] == 409 and kill["ms"] == 245000,
+           "the wipe counts nobody; the kill knows its boss, raid and length")
+        ok(kill["t"] == 1792202400, "and its moment, in UTC (19:00 at -7 is 02:00 UTC next day)", kill["t"])
 
-        cards = logreport.build_cards(hist, {"Alice": ["2026-10-16"]}, logreport.load_gearcheck())
+        nightly, gear_rec = logreport.build_record(hist)
+        cards = logreport.build_cards(nightly, gear_rec, logreport.load_gearcheck())
         issues = [i["slot"] for i in cards["Alice"]["issues"]]
         ok(issues == ["chest"], "Alice's unenchanted chest is the one red flag", issues)
         ok(cards["Bob"]["issues"] == [], "Bob's gear is clean")
-        ok(cards["Alice"]["attended"] == ["2026-10-16"] and cards["Alice"]["last"]["date"] == "2026-10-16",
-           "the night she attended, and her latest night's numbers")
+        ok(cards["Alice"]["attended"] == ["2026-10-16 409"] and cards["Alice"]["last"]["date"] == "2026-10-16 409",
+           "the raid she attended, and her latest raid's numbers")
 
         # THE BOSS AS A TICKER (Arn, 16 Oct): kills, wipes, the fastest kill, who was there
-        pages = logreport.build_bosses(hist)
+        pages = logreport.build_bosses(nightly)
         b1 = pages.get("Boss One", {})
         ok(b1.get("kills") == 1 and b1.get("wipes") == 1 and b1.get("best") == 245000,
            "Boss One: one kill, one wipe, best 4:05", b1)
-        ok(b1.get("killers") == {"Alice": 1, "Bob": 1} and b1.get("first") == "2026-10-16",
-           "who was there for the kill, and the first-kill date", b1.get("killers"))
+        ok(b1.get("killers") == {"Alice": 1, "Bob": 1} and b1.get("first") == "2026-10-16 409",
+           "who was there for the kill, and the first-kill raid", b1.get("killers"))
         ok("bosses = {" in text, "the report carries the boss pages")
 
         # THE NIGHT AS ONE RECORD - what the addon keeps and shares (Arn, 16 Oct: "if I miss one raid
         # night what stops the addon from updating")
-        nl = logreport.build_nightly(hist).get("2026-10-16", {})
+        nl = nightly.get("2026-10-16 409", {})
         ok(nl.get("kills") == 1 and set(nl.get("raiders", {})) == {"Alice", "Bob"},
            "the night: one kill, both raiders", nl.get("kills"))
+        ok(nl.get("v") == 2 and nl.get("i") == 409 and len(nl.get("pulls", [])) == 2,
+           "and it carries its pulls, so another officer's copy can be merged into it")
         ra, rb = nl["raiders"]["Alice"], nl["raiders"]["Bob"]
         ok(ra["present"] == 1 and ra["flask"] == 1 and ra["pots"] == 1 and rb["deaths"] == 1,
            "each raider's numbers ride in it", (ra, rb))
@@ -153,6 +164,49 @@ def main():
         logreport.main(path, write=True)
         ok(len(logreport.read_history(path)) == 1, "the same log twice is still one night")
 
+        # TIME ZONES LINE UP (dev/NIGHTS.md): the same moment written at -7 and at +1
+        t1, d1 = logreport.when("10/16/2026 19:00:00.000-7")
+        t2, d2 = logreport.when("10/17/2026 03:00:00.000+1")
+        ok(t1 == t2 and d1 == "2026-10-16" and d2 == "2026-10-17",
+           "one moment, two officers' clocks: the same UTC second; each keeps its own date", (t1, t2))
+        t3, _ = logreport.when("10/16 19:00:00.000", 2026)
+        ok(t3 is not None, "an older line without year or offset still reads")
+
+        # TWO RAIDS ON ONE DATE ARE TWO NIGHTS (the bug: they were added together, and someone at
+        # one of them could miss "half the kills" and lose the night)
+        def pull(t, e, b, inst, k, who):
+            return {"t": t, "date": "2026-10-20", "e": e, "b": b, "i": inst, "k": k, "ms": 1000,
+                    "r": {w: logreport.F_FOOD for w in who} if k else {}, "d": {}, "p": {}}
+        h2 = {"x.txt": {"log": "x.txt", "date": "2026-10-20", "v": 2, "zonenames": {"409": "Molten Core", "249": "Onyxia's Lair"},
+                        "gear": {}, "pulls": [pull(100, 1, "Lucifron", 409, 1, ["Ann", "Cid"]),
+                                              pull(900, 2, "Magmadar", 409, 1, ["Ann", "Cid"]),
+                                              pull(9000, 9, "Onyxia", 249, 1, ["Ann", "Dee"])]}}
+        n2, _ = logreport.build_record(h2)
+        ok(sorted(n2) == ["2026-10-20 249", "2026-10-20 409"], "MC and Onyxia the same evening: two nights", sorted(n2))
+        ok(n2["2026-10-20 409"]["zone"] == "Molten Core" and n2["2026-10-20 249"]["kills"] == 1,
+           "each named, each with its own kills")
+        c2 = logreport.build_cards(n2, {}, [])
+        ok(c2["Dee"]["attended"] == ["2026-10-20 249"] and c2["Cid"]["attended"] == ["2026-10-20 409"],
+           "Dee came to Onyxia only and keeps that night; Cid to MC only and keeps his",
+           (c2["Dee"]["attended"], c2["Cid"]["attended"]))
+        # and the same instance twice: a boss that dies again is a second raid (a new lockout / team)
+        h3 = {"y.txt": dict(h2["x.txt"], pulls=[pull(100, 1, "Lucifron", 409, 1, ["Ann"]),
+                                                 pull(2000, 1, "Lucifron", 409, 1, ["Bo"])])}
+        n3, _ = logreport.build_record(h3)
+        ok(sorted(n3) == ["2026-10-20 409", "2026-10-20 409-2"], "a boss killed twice: two raids", sorted(n3))
+        # a pull in two logs of the same PC (the client restarted mid-raid) counts once
+        h4 = {"a.txt": dict(h2["x.txt"], log="a.txt", pulls=[pull(100, 1, "Lucifron", 409, 1, ["Ann"])]),
+              "b.txt": dict(h2["x.txt"], log="b.txt", pulls=[pull(100, 1, "Lucifron", 409, 1, ["Ann"]),
+                                                              pull(900, 2, "Magmadar", 409, 1, ["Ann"])])}
+        n4, _ = logreport.build_record(h4)
+        ok(list(n4) == ["2026-10-20 409"] and n4["2026-10-20 409"]["kills"] == 2,
+           "the same pull in two logs: once; the raid has both bosses", n4.get("2026-10-20 409", {}).get("kills"))
+        # a history entry from before 17 Oct (no pulls) stays a night of its date
+        old = {"log": "o.txt", "date": "2026-10-01", "zones": "X", "kills": 1, "present": {"Ann": 1},
+               "ready": {"Ann": 1}, "detail": {"Ann": {"pulls": 1}}, "bosses": {"X": {"pulls": 1, "kills": 1, "best": 0, "killers": ["Ann"]}}}
+        n5, _ = logreport.build_record(dict(h2, **{"o.txt": old}))
+        ok("2026-10-01" in n5 and n5["2026-10-01"]["kills"] == 1, "an old date-keyed night is kept as it was")
+
         # THE POWERSHELL ONE SAYS THE SAME (raiders run that one): the same log in a second scratch
         # client, both reports compared value by value
         ps = shutil.which("powershell") or shutil.which("pwsh")
@@ -165,7 +219,18 @@ def main():
                 os.makedirs(logs2)
                 os.makedirs(addon2)
                 shutil.copy(path, logs2)
-                script = os.path.join(os.path.dirname(HERE), "Tools", "logreport.ps1")
+                # A WHOLE COPY, AS A RAIDER HAS IT. Since 16 Oct the script checks its own folder
+                # against Tools/manifest.txt and stops on anything extra - and the repo has dev/ in
+                # it. So the shipped files are copied into the scratch client and the script runs
+                # from THERE (the repo must be stamped: Tools\stamp.ps1).
+                repo = os.path.dirname(HERE)
+                with open(os.path.join(repo, "Tools", "manifest.txt"), encoding="utf-8") as mf:
+                    shipped = [ln.split(" ", 1)[1].strip() for ln in mf if " " in ln.strip()]
+                for rel in shipped + ["Tools/manifest.txt", "Core/Build.lua"]:
+                    dst = os.path.join(addon2, *rel.split("/"))
+                    os.makedirs(os.path.dirname(dst), exist_ok=True)
+                    shutil.copyfile(os.path.join(repo, *rel.split("/")), dst)
+                script = os.path.join(addon2, "Tools", "logreport.ps1")
                 r = subprocess.run([ps, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script,
                                     "-Logs", logs2], capture_output=True, text=True)
                 ok(r.returncode == 0, "the PowerShell reader runs", (r.stdout + r.stderr)[-400:])
@@ -178,14 +243,17 @@ def main():
                 subprocess.run([ps, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, "-Logs", logs2],
                                capture_output=True, text=True)
                 h2 = open(os.path.join(root2, "WTF", "BiSGuild", "history.json"), encoding="utf-8").read()
-                ok('"detail"' in h2 and '"bosses"' in h2 and "2623" in h2,
-                   "the PowerShell reader carries the per-raider detail through the history")
+                ok('"pulls"' in h2 and '"zonenames"' in h2 and "2623" in h2,
+                   "the PowerShell reader carries the pulls and the gear through the history")
 
                 # EVERY LOG NOT READ YET (Arn, 16 Oct: "there are 4 logs tho" - it read only the
                 # newest). A second night's log, plus one with no kills at all, in the same folder:
-                # one run reads both new ones, and a run after that reads nothing new.
+                # one run reads both new ones, and a run after that reads nothing new. The second
+                # night is a week earlier IN ITS LINES too - since 17 Oct the time inside the log, not
+                # its file name, says which raid a pull belongs to.
                 older = os.path.join(logs2, "WoWCombatLog-100926_190000.txt")
-                shutil.copy(path, older)
+                with open(path, encoding="utf-8") as src, open(older, "w", encoding="utf-8") as dst:
+                    dst.write(src.read().replace("10/16/2026 ", "10/9/2026 "))
                 os.utime(older, (1, 1))                      # older than the first by its clock
                 with open(os.path.join(logs2, "WoWCombatLog-101726_190000.txt"), "w", encoding="utf-8") as fh:
                     fh.write(T + 'SPELL_AURA_APPLIED,Player-1-A,"Alice",0x511,0x0,Player-1-A,"Alice",0x511,0x0,1,"x",0x1,BUFF\n')
@@ -195,7 +263,7 @@ def main():
                 ok("2 logs not read yet" in r.stdout and "WoWCombatLog-100926_190000.txt" in h3,
                    "one run reads every log it has not read, oldest first", r.stdout[-400:])
                 rep = open(os.path.join(addon2, "Data", "Report.lua"), encoding="utf-8").read()
-                ok('days = { "2026-10-09", "2026-10-16" }' in rep, "and the report has both nights",
+                ok('days = { "2026-10-09 409", "2026-10-16 409" }' in rep, "and the report has both nights",
                    re.search(r"days = [^\n]*", rep) and re.search(r"days = [^\n]*", rep).group(0))
                 r = subprocess.run([ps, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, "-Logs", logs2],
                                    capture_output=True, text=True)
