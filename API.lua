@@ -12,10 +12,18 @@
 -- addon has loaded, nil, "not ready".
 --
 --   BiSGuildAPI.Ready()            -> true | nil, "not ready"                                  (v1)
---   BiSGuildAPI.Nights()           -> { "YYYY-MM-DD", ... } oldest first                       (v1)
---   BiSGuildAPI.Night(date)        -> { kills, by, raiders = { [name] = { present, pulls, flask,
+--   BiSGuildAPI.Nights()           -> { key, ... } oldest first. A key is a night: a date from
+--                                      before 17 Oct 2026 ("YYYY-MM-DD", every raid of it added) or,
+--                                      since v2, ONE RAID ("YYYY-MM-DD <instance id>", "-2" after
+--                                      it for a second raid of that instance that date). Every key
+--                                      starts with its date, so they still sort oldest first.     (v1)
+--   BiSGuildAPI.Night(key)         -> { kills, by, raiders = { [name] = { present, pulls, flask,
 --                                      elixir, food, weapon, pots, deaths } }, bosses = { [boss] =
 --                                      { pulls, kills, best (ms), killers = { names } } } }     (v1)
+--                                      a raid also: v = 2, i (instance id), zone (its name),
+--                                      start (UTC seconds), pulls = { { t, e, b, k, ms, r =
+--                                      { [name] = flags }, d, p } } - see BiSGuild/dev/NIGHTS.md (v2)
+--   BiSGuildAPI.Label(key)         -> "2026-10-16 Molten Core" - a key as people read it       (v2)
 --   BiSGuildAPI.Raiders()          -> { { name, attend (0-100), nights, last (date), deaths,
 --                                      issues (count), geared (bool) }, ... } by name          (v1)
 --   BiSGuildAPI.Raider(name)       -> { name, attended = { dates }, attend (0-100), nights,
@@ -39,7 +47,7 @@
 --------------------------------------------------------------------------------
 local _, ns = ...
 
-local API = { major = 1, version = 1 }
+local API = { major = 1, version = 2 }
 BiSGuildAPI = API
 
 local function deep(v)
@@ -65,6 +73,8 @@ local function guard(fn)
 end
 
 API.Nights = guard(function() return deep(ns.S.Dates()) end)
+
+API.Label = guard(function(key) return ns.S.Label(key) end)
 
 API.Night = guard(function(date)
     local n = ns.S.Record().nights[date]

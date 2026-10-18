@@ -256,9 +256,10 @@ local function expand(c)
     return y and ("20%s-%s-%s"):format(y, m, d) or nil
 end
 
---- The HAVE line: newest dates first, each as yymmdd.raiders.kills.
+--- The HAVE line: newest WHOLE-DATE nights first (before 17 Oct), each as yymmdd.raiders.kills.
 function X.HaveLine()
-    local dates, out = ns.S.Dates(), {}
+    local dates, out = {}, {}
+    for _, key in ipairs(ns.S.Dates()) do if ns.S.IsDate(key) then dates[#dates + 1] = key end end
     local nights = ns.S.Record().nights
     for i = #dates, math.max(1, #dates - X.HAVE_DATES + 1), -1 do
         local r, k = ns.S.Weight(nights[dates[i]])
@@ -267,26 +268,183 @@ function X.HaveLine()
     return table.concat(out, ",")
 end
 
+--------------------------------------------------------------------
+-- RAIDS (dev/NIGHTS.md, 17 Oct 2026): one raid per night, every pull on the wire, merged on arrival
+--
+--   HAVE2 |261016-409.12.4410,261016-249.3.871,...   an officer: the newest raids it holds, each with
+--                                                   its pull count and a check number
+--   WANT2 |2026-10-16 409                            anyone whose copy is missing or different
+--   NIGHT2|2026-10-16 409|i|n|<part>                 one officer answers with every pull
+--
+-- THE CHECK NUMBER IS NOT MADE OF TIMES. Two officers' PC clocks differ by seconds, so the same pull
+-- has two times; a check over times would never agree and the two would ask each other forever.
+-- Boss, outcome and how many stood in it are what a merge settles on, so that is what is summed.
+-- 0.1.x copies do not know these commands and ignore them, as LibBiSComm does with any unknown one.
+--------------------------------------------------------------------
+
+X.HAVE_RAIDS = 8       -- newest raids in one HAVE2 line (~21 characters each: under the 250 limit)
+
+local function compactKey(key)
+    local d, rest = tostring(key):match("^(%d%d%d%d%-%d%d%-%d%d) (%d+%-?%d*)$")
+    return d and (compact(d) .. "-" .. rest) or nil
+end
+local function expandKey(c)
+    local d, rest = tostring(c):match("^(%d%d%d%d%d%d)%-(%d+%-?%d*)$")
+    local date = d and expand(d)
+    return date and (date .. " " .. rest) or nil
+end
+
+--- A key's date as a day number (days since 1970), or nil. Pure arithmetic: no client clock needed.
+function X.Day(key)
+    local y, m, d = tostring(key):match("^(%d%d%d%d)%-(%d%d)%-(%d%d)")
+    if not y then return nil end
+    y, m, d = tonumber(y), tonumber(m), tonumber(d)
+    if m <= 2 then y, m = y - 1, m + 12 end            -- the civil-from-days algorithm, March-based
+    local era = math.floor(y / 400)
+    local yoe = y - era * 400
+    local doy = math.floor((153 * (m - 3) + 2) / 5) + d - 1
+    local doe = yoe * 365 + math.floor(yoe / 4) - math.floor(yoe / 100) + doy
+    return era * 146097 + doe - 719468
+end
+
+--- A raid's pull count and check number (see above).
+function X.Check(night)
+    local h, pulls = 0, (night and night.pulls) or {}
+    for _, p in ipairs(pulls) do
+        local n = 0
+        for _ in pairs(type(p.r) == "table" and p.r or {}) do n = n + 1 end
+        h = (h + int(p.e) * 7 + int(p.k) * 3 + n) % 65536
+    end
+    return #pulls, h
+end
+
+function X.HaveLine2()
+    local keys, out = ns.S.Dates(), {}
+    local nights = ns.S.Record().nights
+    for i = #keys, 1, -1 do
+        local n = nights[keys[i]]
+        local c = n and n.v == 2 and compactKey(keys[i])
+        if c then
+            local p, h = X.Check(n)
+            out[#out + 1] = ("%s.%d.%d"):format(c, p, h)
+            if #out >= X.HAVE_RAIDS then break end
+        end
+    end
+    return table.concat(out, ",")
+end
+
+--- Do we already hold this raid as announced? Under its key, or - an officer in another time zone
+--- dates it a day apart - under the next or last date, same instance, same pulls.
+function X.HaveRaid(key, p, h)
+    local nights = ns.S.Record().nights
+    local n = nights[key]
+    if n and n.v == 2 then
+        local mp, mh = X.Check(n)
+        return mp == p and mh == h
+    end
+    local inst = tostring(key):match(" (%d+)")
+    local day = X.Day(key)
+    for k, other in pairs(nights) do
+        -- the next or last date only: next week's clear can have the very same bosses and headcount
+        if other.v == 2 and tostring(other.i) == inst and k:match(" (%d+)") == inst
+           and day and X.Day(k) and math.abs(X.Day(k) - day) <= 1 then
+            local mp, mh = X.Check(other)
+            if mp == p and mh == h then return true end
+        end
+    end
+    return false
+end
+
+--- A raid as text. Names and bosses once each, sorted; each pull points into them:
+---   2#<inst>#<start>#Ann;Bo;Cid#Lucifron;Magmadar#<t>.<e>.<k>.<ms>.<boss>:<who.flags,...>:<who.deaths>:<who.potions>;...#<zone>
+--- A name or boss carrying a separator is left out, not mangled (as in a whole-date night).
+function X.EncodeRaid(night)
+    local names, index, bosses, bindex = {}, {}, {}, {}
+    for _, p in ipairs(night.pulls or {}) do
+        for _, t in ipairs({ p.r, p.d, p.p }) do
+            for who in pairs(type(t) == "table" and t or {}) do
+                if clean(who) and not index[who] then index[who] = true names[#names + 1] = who end
+            end
+        end
+        local b = tostring(p.b or "")
+        if clean(b) and not bindex[b] then bindex[b] = true bosses[#bosses + 1] = b end
+    end
+    table.sort(names)
+    table.sort(bosses)
+    for i, who in ipairs(names) do index[who] = i end
+    for i, b in ipairs(bosses) do bindex[b] = i end
+    local function list(t)
+        local out = {}
+        for who, v in pairs(type(t) == "table" and t or {}) do
+            if index[who] then out[#out + 1] = index[who] .. "." .. int(v) end
+        end
+        table.sort(out)
+        return table.concat(out, ",")
+    end
+    local pulls = {}
+    for _, p in ipairs(night.pulls or {}) do
+        local bi = bindex[tostring(p.b or "")]
+        if bi then
+            pulls[#pulls + 1] = ("%d.%d.%d.%d.%d:%s:%s:%s"):format(int(p.t), int(p.e), int(p.k), int(p.ms), bi,
+                list(p.r), list(p.d), list(p.p))
+        end
+    end
+    local zone = tostring(night.zone or ""):gsub("#", "")
+    return ("2#%d#%d#%s#%s#%s#%s"):format(int(night.i), int(night.start), table.concat(names, ";"),
+        table.concat(bosses, ";"), table.concat(pulls, ";"), zone)
+end
+
+function X.DecodeRaid(s)
+    if type(s) ~= "string" then return nil end
+    local inst, start, ns_, bs, ps, zone = s:match("^2#(%d+)#(%d+)#([^#]*)#([^#]*)#([^#]*)#([^#]*)$")
+    if not inst then return nil end
+    local names, bosses = split(ns_, ";"), split(bs, ";")
+    for _, n in ipairs(names) do if not clean(n) then return nil end end
+    local function map(text)
+        local m = {}
+        for _, x in ipairs(split(text, ",")) do
+            local i, v = x:match("^(%d+)%.(%d+)$")
+            local who = i and names[tonumber(i)]
+            if not who then return nil end
+            m[who] = tonumber(v)
+        end
+        return m
+    end
+    local pulls = {}
+    for _, e in ipairs(split(ps, ";")) do
+        local t, en, k, ms, bi, r, d, p = e:match("^(%d+)%.(%d+)%.([01])%.(%d+)%.(%d+):([%d%.,]*):([%d%.,]*):([%d%.,]*)$")
+        local boss = bi and bosses[tonumber(bi)]
+        if not boss then return nil end
+        local rm, dm, pm = map(r), map(d), map(p)
+        if not (rm and dm and pm) then return nil end
+        pulls[#pulls + 1] = { t = tonumber(t), e = tonumber(en), k = tonumber(k), ms = tonumber(ms), b = boss,
+                              r = rm, d = dm, p = pm }
+    end
+    return { v = 2, i = tonumber(inst), start = tonumber(start), zone = zone, pulls = pulls }
+end
+
 --- Officers say what they hold. Members never do: nobody would believe them anyway.
 function X.Announce()
     if not X.IsOfficer(X.Me()) then return false end
-    local line, punct = X.HaveLine(), X.PunctHaveLine()
+    local line, raids, punct = X.HaveLine(), X.HaveLine2(), X.PunctHaveLine()
     if line ~= "" then X.Send("HAVE", line) end
+    if raids ~= "" then X.Send("HAVE2", raids) end
     if punct ~= "" then X.Send("PHAVE", punct) end
-    return line ~= "" or punct ~= ""
+    return line ~= "" or raids ~= "" or punct ~= ""
 end
 
 
---- Ask for the newest date we are missing that nobody has asked for in the last 90 s.
+--- Ask for the newest night we are missing that nobody has asked for in the last 90 s. A whole-date
+--- night is asked with WANT, a raid with WANT2 (X.wanted[key] = true / 2).
 function X.AskNext()
     local best
-    for date in pairs(X.wanted) do
-        local asked = X.asked[date]
-        if not (asked and Now() - asked < 90) and (not best or date > best) then best = date end
+    for key in pairs(X.wanted) do
+        local asked = X.asked[key]
+        if not (asked and Now() - asked < 90) and (not best or key > best) then best = key end
     end
     if not best then return false end
     X.asked[best] = Now()
-    X.Send("WANT", best)
+    X.Send(X.wanted[best] == 2 and "WANT2" or "WANT", best)
     return true
 end
 
@@ -345,6 +503,36 @@ X.handlers.WANT = function(sender, date)
     end)
 end
 
+X.handlers.HAVE2 = function(sender, line)
+    if not X.IsOfficer(sender) or type(line) ~= "string" then return end
+    local any = false
+    for entry in line:gmatch("[^,]+") do
+        local c, p, h = entry:match("^([%d%-]+)%.(%d+)%.(%d+)$")
+        local key = c and expandKey(c)
+        if key and ns.S.IsKey(key) and not X.HaveRaid(key, tonumber(p), tonumber(h)) then
+            X.wanted[key] = 2
+            any = true
+        end
+    end
+    if any then X.AskSoon() end
+end
+
+X.handlers.WANT2 = function(sender, key)
+    if not ns.S.IsKey(key) or ns.S.IsDate(key) then return end
+    X.asked[key] = Now()                               -- somebody asked: we need not
+    local night = ns.S.Record().nights[key]
+    if not (night and night.v == 2) or not X.IsOfficer(X.Me()) then return end
+    local id = "NIGHT2|" .. key
+    if X.answering[id] then return end
+    X.answering[id] = true
+    local asked = Now()
+    After(1 + math.random() * 3, function()
+        X.answering[id] = nil
+        if (X.started[id] or -1) >= asked then return end      -- another officer is already on it
+        X.SendParts("NIGHT2", { key }, X.EncodeRaid(night), X.MAX_PARTS)
+    end)
+end
+
 X.handlers.GWANT = function(sender, name, since)
     if type(name) ~= "string" then return end
     local g = ns.S.Record().gear[name]
@@ -393,6 +581,18 @@ X.handlers.NIGHT = function(sender, date, i, n, part)
     ns.S.Put(date, night, sender)
     X.wanted[date] = nil
     if X.asked[date] then X.asked[date] = nil end
+    if next(X.wanted) then X.AskSoon() end
+end
+
+X.handlers.NIGHT2 = function(sender, key, i, n, part)
+    if not ns.S.IsKey(key) or ns.S.IsDate(key) then return end
+    local text = collect(sender, "NIGHT2", key, i, n, part, X.MAX_PARTS)
+    if not text or not X.IsOfficer(sender) then return end
+    local night = X.DecodeRaid(text)
+    if not night then return end
+    ns.S.Put(key, night, sender)                       -- merged into the same raid if it is here
+    X.wanted[key] = nil
+    if X.asked[key] then X.asked[key] = nil end
     if next(X.wanted) then X.AskSoon() end
 end
 

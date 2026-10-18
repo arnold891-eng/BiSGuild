@@ -312,7 +312,7 @@ function K.Rows(cards)
             class = m and m.class or nil,
             pug = (m == nil and guild.complete) or false,
             att = nights > 0 and math.floor(100 * #c.attended / nights + 0.5) or 0,
-            last = c.last and c.last.date or "-",
+            last = c.last and S().DateOf(c.last.date) or "-",          -- a column: the date alone
             flask = c.last and ((c.last.flask or 0) + (c.last.elixir or 0) > 0) or false,
             deaths = c.deaths or 0,
             issues = #(c.issues or {}),
@@ -327,7 +327,8 @@ end
 function K.BossRows(pages)
     local out = {}
     for name, p in pairs(pages) do
-        out[#out + 1] = { name = name, kills = p.kills, wipes = p.wipes, best = p.best, first = p.first or "-" }
+        out[#out + 1] = { name = name, kills = p.kills, wipes = p.wipes, best = p.best,
+                          first = p.first and S().DateOf(p.first) or "-" }
     end
     table.sort(out, function(a, b)
         if (a.first == "-") ~= (b.first == "-") then return b.first == "-" end
@@ -343,7 +344,7 @@ function K.TickerText()
     local last = dates[#dates]
     if not last then return "NO RAID NIGHTS ON RECORD" end
     local n = S().Record().nights[last]
-    local parts = { ("LAST RAID %s  %d KILLS  %d RAIDERS"):format(last, tonumber(n.kills) or 0, select(1, S().Weight(n))) }
+    local parts = { ("LAST RAID %s  %d KILLS  %d RAIDERS"):format(S().Label(last):upper(), tonumber(n.kills) or 0, select(1, S().Weight(n))) }
     local names = {}
     for boss in pairs(n.bosses or {}) do names[#names + 1] = boss end
     table.sort(names)
@@ -958,7 +959,7 @@ local function PaintRaider(p, name)
         local s = strip[i]
         if s then Fill(sq, s.earned and "good" or "line2") sq:Show() else sq:Hide() end
     end
-    p.att.right:SetText(strip[1] and (strip[1].date .. " ->") or "")
+    p.att.right:SetText(strip[1] and (S().DateOf(strip[1].date) .. " ->") or "")
     local habit, habitC
     if ns.Login then habit, habitC = ns.Login.HabitText(name) end
     p.punct:SetText("punctual  " .. (habit or "nothing measured yet - it counts at raid time, from a pasted roster"))
@@ -978,7 +979,7 @@ local function PaintRaider(p, name)
             { ("deaths     %d that night, %d on record"):format(l.deaths or 0, card.deaths or 0),
               (card.deaths or 0) > 0 and "warn" or "good" },
         }
-        p.cons.right:SetText(l.date)
+        p.cons.right:SetText(S().DateOf(l.date))
     else
         p.cons.right:SetText("")
         lines = { { "no pulls on record", "muted" } }
@@ -1017,7 +1018,7 @@ local function PaintBoss(p, name)
         { ("wipes        %d"):format(pg.wipes), pg.wipes > 0 and "warn" or "ink2" },
         { ("kill rate    %d%%"):format(pulls > 0 and math.floor(100 * pg.kills / pulls + 0.5) or 0), "ink" },
         { ("fastest      %s"):format(K.Clock(pg.best)), "gold" },
-        { ("first kill   %s"):format(pg.first or "not yet"), "ink" },
+        { ("first kill   %s"):format(pg.first and S().Label(pg.first) or "not yet"), "ink" },
         { ("nights dead  %d"):format(#pg.nights), "ink" },
     }
     for i, fs in ipairs(p.statLines) do
@@ -1026,7 +1027,7 @@ local function PaintBoss(p, name)
     end
     for i, fs in ipairs(p.nightLines) do
         local d = pg.nights[#pg.nights - i + 1]
-        fs:SetText(d or (i == 1 and "never killed" or ""))
+        fs:SetText(d and S().Label(d) or (i == 1 and "never killed" or ""))
         fs:SetTextColor(rgb(d and "ink" or "muted"))
     end
     local who = {}

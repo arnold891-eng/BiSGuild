@@ -95,6 +95,11 @@ function S.Label(key)
     return (date or key) .. " " .. zone .. ((nth and nth ~= "") and (" (" .. nth .. ")") or "")
 end
 
+--- Just the date of a key, for a column too narrow for the raid's name.
+function S.DateOf(key)
+    return type(key) == "string" and key:sub(1, 10) or key
+end
+
 -- WHAT A RAIDER BROUGHT TO ONE PULL, as one number (dev/NIGHTS.md; dev/logreport.py F_*)
 S.F = { READY = 1, FLASK = 2, ELIXIR = 4, FOOD = 8, WEAPON = 16, SEEN = 32 }
 local function has(flags, bit) return math.floor((tonumber(flags) or 0) / bit) % 2 == 1 end

@@ -1246,6 +1246,98 @@ do
     ROSTER[1][2] = 1
     X._ranksDirty = true
 
+    -- RAIDS ON THE WIRE (dev/NIGHTS.md, 17 Oct): HAVE2 / WANT2 / NIGHT2, every pull, merged on arrival
+    do
+        local F, T0 = S.F, 1792202400
+        local function pull(t, e, b, k, who, deaths)
+            local r = {}
+            for _, w in ipairs(who) do r[w] = F.READY + F.FLASK + F.FOOD end
+            return { t = t, e = e, b = b, k = k, ms = 90000, r = k == 1 and r or {}, d = deaths or {}, p = { Ann = 1 } }
+        end
+        local names25 = {}
+        for i = 1, 25 do names25[i] = ("Raider%02d"):format(i) end
+        local pulls = {}
+        for b = 1, 10 do
+            pulls[#pulls + 1] = pull(T0 + b * 900 - 300, 600 + b, "Boss " .. b, 0, {}, { Raider03 = 1 })      -- a wipe
+            pulls[#pulls + 1] = pull(T0 + b * 900, 600 + b, "Boss " .. b, 1, names25)
+        end
+        local big = { v = 2, i = 409, zone = "Molten Core", start = T0, pulls = pulls }
+        local text = X.EncodeRaid(big)
+        local nparts = math.ceil(#text / X.CHUNK)
+        H.say(("   a 25-raider raid, 10 kills and 10 wipes: %d characters, %d parts"):format(#text, nparts))
+        H.ok(nparts <= X.MAX_PARTS, "a big raid fits the parts limit: " .. nparts)
+        local back = X.DecodeRaid(text)
+        H.ok(back and #back.pulls == 20 and back.pulls[2].r.Raider25 == F.READY + F.FLASK + F.FOOD
+             and back.pulls[1].d.Raider03 == 1 and back.zone == "Molten Core",
+             "and decodes to the same pulls, flags, deaths and raid name")
+        H.eq(X.DecodeRaid("2#409#1#Ann#X#1.1.1.1.9:::#Z"), nil, "a pull pointing at a boss that is not there is refused")
+        H.eq(X.DecodeRaid("garbage"), nil, "garbage decodes to nothing")
+        -- the check number ignores times: two officers' clocks never agree to the second
+        local shifted = { v = 2, i = 409, pulls = {} }
+        for i, p in ipairs(pulls) do local q = {} for k2, v2 in pairs(p) do q[k2] = v2 end q.t = p.t + 40 shifted.pulls[i] = q end
+        H.ok(select(2, X.Check(big)) == select(2, X.Check(shifted)), "the same raid on a clock 40 s off: the same check number")
+        H.eq(X.Day("2026-10-17 409"), 20743, "a key's date as a day number")
+
+        local mine = NS.Books().record
+        NS.Books().record = { nights = {}, gear = {} }
+        S.Put("2026-10-16 409", big, "Kumlust")
+        local raidRecord = NS.Books().record
+        H.wire = {}
+        X.Announce()
+        drain()
+        local have2 = ours("HAVE2")
+        H.ok(have2[1] and have2[1].msg:find("261016-409.20.", 1, true) and #have2[1].msg <= 250,
+             "an officer announces its raids: key, pulls, check", have2[1] and have2[1].msg)
+        -- a member with nothing hears it and asks with WANT2
+        NS.Books().record = { nights = {}, gear = {} }
+        X.wanted = {}
+        H.wire = {}
+        hear("Bigboss", have2[1])
+        drain()
+        local want2 = ours("WANT2")
+        H.ok(want2[1] and want2[1].msg:find("2026-10-16 409", 1, true), "the missing raid is asked for by its key")
+        -- the officer answers with NIGHT2; the member takes it in whole
+        NS.Books().record = raidRecord
+        H.wire = {}
+        X.handlers.WANT2("Memberguy", "2026-10-16 409")
+        drain()
+        local p2 = ours("NIGHT2")
+        H.ok(#p2 >= 1 and #p2 <= X.MAX_PARTS, "the officer answers in parts: " .. #p2)
+        local longest = 0
+        for _, w in ipairs(p2) do longest = math.max(longest, #w.msg) end
+        H.ok(longest <= 250, "every part fits: " .. longest)
+        -- the member's own copy came from another officer whose log missed the first two bosses: the
+        -- answer MERGES into it, it does not replace it
+        local partial = { v = 2, i = 409, zone = "Molten Core", start = T0 + 2400, pulls = {} }
+        for i = 5, #pulls do partial.pulls[#partial.pulls + 1] = pulls[i] end
+        NS.Books().record = { nights = {}, gear = {} }
+        S.Put("2026-10-16 409", partial, "Otherofficer")
+        for _, w in ipairs(p2) do hear("Bigboss", w) end
+        local got = S.Record().nights["2026-10-16 409"]
+        H.ok(got and #got.pulls == 20 and got.kills == 10, "merged: all 20 pulls, all 10 kills", got and #got.pulls)
+        H.eq(got and got.by, "Otherofficer", "under the copy that was already there")
+        -- and now it holds the same raid: the next HAVE2 asks for nothing
+        X.wanted = {}
+        H.wire = {}
+        hear("Bigboss", have2[1])
+        drain()
+        H.eq(#ours("WANT2"), 0, "holding the same raid: nothing asked")
+        -- an officer in another time zone filed it a day later: still the same raid, not asked for
+        NS.Books().record = { nights = {}, gear = {} }
+        S.Put("2026-10-17 409", big, "Eastcoast")
+        X.wanted = {}
+        H.wire = {}
+        hear("Bigboss", have2[1])
+        drain()
+        H.eq(#ours("WANT2"), 0, "the same raid under the next date: recognised, nothing asked")
+        -- a member's NIGHT2 is not taken in
+        NS.Books().record = { nights = {}, gear = {} }
+        for _, w in ipairs(p2) do hear("Memberguy", w) end
+        H.eq(S.Record().nights["2026-10-16 409"], nil, "a member's raid is not believed")
+        NS.Books().record = mine
+        X.wanted = {}
+    end
+
     -- PUNCTUALITY, SHARED (Arn, 16 Oct: "share the punctuality with the other officers too")
     local Lg = NS.Login
     local S0 = 1793840400
@@ -2382,6 +2474,10 @@ do
     local n = A.Night("2026-10-09")
     H.ok(n and n.raiders.Bob.deaths == 2 and n.bosses["Boss One"].best == 250000, "Night(date): the whole night")
     H.eq(select(2, A.Night("1999-01-01")), "no such night", "an unknown night: nil and why")
+    -- v2: a key as people read it (dev/NIGHTS.md)
+    H.eq(A.version, 2, "the API's version went up with raids as nights")
+    H.eq(A.Label("2026-10-09"), "2026-10-09", "a whole-date night's label is its date")
+    H.eq(A.Label("2026-10-24 409"), "2026-10-24 raid 409", "a raid not on record: its instance number")
     local rs = A.Raiders()
     H.ok(rs[1].name == "Alice" and rs[1].attend == 100 and rs[2].name == "Bob", "Raiders: everyone, attendance %")
     local alice = A.Raider("alice")
