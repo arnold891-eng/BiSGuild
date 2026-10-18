@@ -60,7 +60,7 @@ A 110 MB log takes seconds. It reads one line at a time, and only the logs it ha
 
 ## ⚠️ Before you run the script
 
-**A PowerShell script can do anything you can do on your computer.** We publish BiS Guild in two places only: **this CurseForge page** and **its GitHub page** (github.com/arnold891-eng/BiSGuild). Anywhere else (another website, a file in Discord, a "fixed" copy somebody sends you) isn't us, however official it looks, so don't run it. Where you got it is the check that matters. Everything below is the second line.
+**A PowerShell script can do anything you can do on your computer.** We publish BiS Guild in two places only: **this CurseForge page** and **its GitHub page** (github.com/blankfer/BiSGuild). Anywhere else (another website, a file in Discord, a "fixed" copy somebody sends you) isn't us, however official it looks, so don't run it. Where you got it is the check that matters. Everything below is the second line.
 
 ### Check your copy
 

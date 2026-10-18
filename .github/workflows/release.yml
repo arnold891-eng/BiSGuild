@@ -5,7 +5,7 @@
 #   this file, the TOC or CHANGELOG.md            -> dry run: checks + zip, nothing uploaded
 #   Actions tab -> release -> Run workflow        -> dry run
 #
-# The work is in the reusable workflow in arnold891-eng/bis-ci - public, and holding only the
+# The work is in the reusable workflow in blankfer/bis-ci - public, and holding only the
 # two workflows, because a public repo cannot call a private one's. See ci/caller.yml.
 name: release
 on:
@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
 jobs:
   release:
-    uses: arnold891-eng/bis-ci/.github/workflows/release.yml@main
+    uses: blankfer/bis-ci/.github/workflows/release.yml@main
     with:
       addon: BiSGuild
       dry_run: ${{ github.event_name != 'push' }}
