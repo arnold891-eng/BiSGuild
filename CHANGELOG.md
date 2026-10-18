@@ -1,6 +1,6 @@
 # BiSGuild
 
-## Unreleased
+## 0.2.0
 
 - **No PowerShell: the BiS Guild notebook.** The terminal's LOG tab has its link - click it, Ctrl+C, paste it in your browser. Press Run all, drop your combat log in, and copy the text it prints; back in game, paste it in the LOG tab and press Import. It runs on Google's computer, under your own Google account - nothing runs on yours. The raid goes in exactly as if an officer had shared it. Our CurseForge page carries the same link, so you can check it.
 - **A wrong raid can be archived.** The paste window's "Raids on record" lists every raid with an Archive button; archived raids drop out of every count and sit at the bottom with Restore - nothing is ever deleted. An officer's archive or restore goes to the whole guild, so the raid doesn't come back from another officer's copy.
