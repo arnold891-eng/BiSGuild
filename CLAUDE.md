@@ -23,6 +23,14 @@ Read ../_bisdev/CLAUDE.md first.
   guildmates (GLOG `BUILD`, `/bisg copy`). `.gitattributes` says `* -text`: the hash is of exact
   bytes, so git must never touch line endings. None of it proves a wholly fake addon is fake - only
   the CurseForge page's own line and number can, and the addon says so.
+- **The number lives in the release notes (17 Oct 2026, Arn: "we change to release note").** Each
+  release's CHANGELOG entry - fingerprint as its first line - goes up as that file's notes on
+  CurseForge; the page's check block sends people to the Files tab and carries no number, so a
+  release never needs a page edit. `dev/cf-desc.md` keeps a record line above `---` (never pasted)
+  that stamp step 4 still rewrites. **Owed with the next shipped change:** stamp.ps1's closing line
+  still says "Paste ... onto the CurseForge page" - make it "the number rides the release notes", and
+  every new release's top CHANGELOG entry must keep its `Fingerprint (SHA-256` line.
+- **Published only on CurseForge and GitHub** (Arn, 17 Oct) - the page says any other copy isn't ours.
 - `Core/Window.lua`: the window. A terminal, on purpose (Arn: "the more we make it look like a
   powershell window the better"): PowerShell's own `#012456`, Arial Narrow, a `PS>` prompt, a cursor
   blinking at 2 Hz. **The command does not exist until the warning is answered** - the box is empty
