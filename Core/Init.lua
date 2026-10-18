@@ -11,9 +11,6 @@
 ]]
 local ADDON, ns = ...
 
--- every file of ours ends by writing its version in here; Core/Copies.lua checks the list at login
-ns.parts = {}
-
 local HEX = {
   ink = "ece8f6", muted = "968ead", accent = "b980ff", good = "4fd0cf", warn = "f08cb0", gold = "e5c04a",
   edge = "3a3260",   -- BiSTheme/Options.lua's window edge: fixed, never the borrowed accent
@@ -169,26 +166,12 @@ f:SetScript("OnEvent", function(_, event, name)
     -- are in it (16 Oct: an alt in another guild must not take in the main's raids) - Store.lua
     if ns.S then ns.S.ImportWhenReady() end
     if ns.X then ns.X.Boot() end
-    if not ns.Copy then ns.broken = { "Core/Copies.lua did not load" } end
   elseif event == "PLAYER_GUILD_UPDATE" or event == "GUILD_ROSTER_UPDATE" then
     if ns.S then ns.S.ImportWhenReady() end
   elseif event == "PLAYER_LOGOUT" then
     ns.Comm.Save()
   end
 end)
-
---- A COPY THAT IS NOT WHOLE SAYS SO, AND DOES NOTHING ELSE (16 Oct 2026, Core/Copies.lua). Here and not
---- there, so it still works when Copies.lua is the file that failed to load.
-function ns.TellBroken()
-  if not ns.broken then return false end
-  ns.Print("%s", T.text("warn", "this copy is not whole, so its windows and sharing are switched off:"))
-  for i, p in ipairs(ns.broken) do
-    if i <= 4 then ns.Print("  %s", T.text("warn", p)) end
-  end
-  if #ns.broken > 4 then ns.Print("  %s", T.text("muted", ("and %d more"):format(#ns.broken - 4))) end
-  ns.Print("  %s", T.text("muted", "Delete the BiSGuild folder, install it again from CurseForge, and restart the game."))
-  return true
-end
 
 SLASH_BISGUILD1 = "/bisg"
 SlashCmdList.BISGUILD = function(input)
@@ -197,12 +180,8 @@ SlashCmdList.BISGUILD = function(input)
   local raw = tostring(input or "")
   local cmd, rest = raw:match("^%s*(%S*)%s*(.-)%s*$")
   cmd = cmd:lower()
-  if cmd == "copy" and ns.Copy then ns.Copy.Report() return end
-  if ns.TellBroken() then return end
   if ns.Say then return ns.Say(cmd, rest) end
   local lib = _G.LibBiSComm
   ns.Print("hello - version %s, BiS comm %s, %d peer(s)", ns.VERSION,
     (lib and lib:Enabled()) and T.text("good", "on") or T.text("warn", "off"), lib and lib:Count() or 0)
 end
-
-ns.parts["Core/Init.lua"] = "0.1.1"

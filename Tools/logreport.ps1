@@ -29,36 +29,14 @@ param(
     # Count five-man bosses too. Useful for proving the whole chain works on a client that has no
     # raids yet; wrong for a record, because a Tuesday heroic is not a raid night.
     [switch] $Dungeons,
-    # Set only when this script reads one of several logs for itself. The copy is still checked -
-    # it only stops saying so a second time (16 Oct: Arn saw the line four times for four logs).
+    # Set only when this script reads one of several logs for itself.
     [switch] $Nested
 )
 
 $ErrorActionPreference = "Stop"
 
-# ------------------------------------------------------------ the copy first --
-# NOTHING RUNS ON A COPY THAT IS NOT WHOLE (Arn, 16 Oct 2026: "we can do it like face fusion ... really
-# lock it down since its a powershell its running"). Every file of the addon is checked against
-# Tools\manifest.txt before a single log line is read: one changed, added or missing file and the
-# script stops and says which. Tools\fingerprint.ps1 says what is counted and why.
-#
-# THIS CANNOT PROVE THE SCRIPT ITSELF IS GENUINE. A doctored script could simply skip these lines. That
-# is what the CurseForge page's own one-line check is for - it is typed from the page, not from here.
-$here = Split-Path $PSScriptRoot -Parent
-. (Join-Path $PSScriptRoot "fingerprint.ps1")
-$copy = Test-BiSGuildCopy -Root $here
-if (-not $copy.ok) {
-    Write-Host "STOPPED - this copy of BiS Guild is not the one that was released:" -ForegroundColor Red
-    $copy.problems | ForEach-Object { Write-Host "   $_" -ForegroundColor Red }
-    Write-Host ""
-    Write-Host "Nothing was read and nothing was written. Get a fresh copy from CurseForge (delete the"
-    Write-Host "BiSGuild folder first, then install it again), or ask an officer."
-    exit 1
-}
-if (-not $Nested) {
-    Write-Host ("copy checked: every file matches - fingerprint {0}" -f $copy.fingerprint)
-    Write-Host "  (compare it with the CurseForge page, not with anything the addon shows you)"
-}
+# The copy check that stood here (16-18 Oct 2026) is gone: this script is the
+# officers' own now - raiders read their logs in the notebook (Core/Report.lua says why).
 
 # ---------------------------------------------------------------- the log ----
 if (-not (Test-Path -LiteralPath $Logs)) { throw "no such folder: $Logs" }

@@ -13,7 +13,7 @@
     KUMLUST <RAIDER> GO     the raider card: armory, attendance, consumes, gear issues, loot won
     RAGNAROS <BOSS> GO      the boss ticker: kills, wipes, first kill, fastest, who has downed it
     RAIDERS  BOSSES         tabs: the two lists, every row clickable
-    LOG                     tab: the script window (Core/Window.lua), for the officer who imports
+    LOG                     tab: the notebook's link and its paste box (Core/Window.lua U.ShowPaste)
 
   The Bloomberg words are optional: a bare name works, and a start of one does when only one thing
   starts that way. Everything shown is built from the guild's record (Core/Store.lua), so a night that
@@ -664,8 +664,8 @@ function K.Build()
     -- AN EMPTY LIST SAYS WHY (Arn clicked RAIDERS on a fresh install and "nothing" happened: the
     -- tab sent him to the same blank page he was already on). Each list keeps its own page and says
     -- where the nights come from when it has none.
-    local EMPTY = "No raid nights on record yet.\n\nAfter a raid, an officer runs the log script (the LOG "
-        .. "tab) and types /reload - the night is kept here and shared with the guild.\n\nOr wait: when "
+    local EMPTY = "No raid nights on record yet.\n\nAfter a raid, open the LOG tab: its notebook reads your "
+        .. "combat log, and you paste what it prints - the night is kept here and shared with the guild.\n\nOr wait: when "
         .. "an officer who has the nights is online, they arrive by themselves."
     local function Hint(panel)
         panel.hint = Text(panel, 13, "ink2")
@@ -1115,7 +1115,9 @@ function K.Go(line)
     end
     local kind, key = K.Parse(line, S().Cards(), S().Bosses())
     if kind == "log" then
-        if ns.U and ns.U.Show then ns.U.Show() end
+        -- THE NOTEBOOK, NOT THE SCRIPT (Arn, 18 Oct: "in the logs we give them the link to go to the
+        -- google code thing"). The PowerShell window is ours alone now: `/bisg window`, unadvertised.
+        if ns.U and ns.U.ShowPaste then ns.U.ShowPaste() end
         return "log"
     end
     if kind == "raiders" or kind == "bosses" or kind == "where" or kind == "roster" then
@@ -1149,7 +1151,6 @@ function K.Go(line)
 end
 
 function K.Show(page, key)
-    if ns.TellBroken() then return end           -- not a whole copy: Core/Copies.lua
     local f = K.Build()
     if not f then return end
     -- a window opened fresh has nothing behind it: ESC from `/bisg alice` goes to the raiders list,
@@ -1182,5 +1183,3 @@ end
 function K.Toggle()
     if K.frame and K.frame:IsShown() then K.Hide() else K.Show() end
 end
-
-ns.parts["Core/Terminal.lua"] = "0.1.1"

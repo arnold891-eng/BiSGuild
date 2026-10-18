@@ -2,13 +2,11 @@
 
 Paste everything below the line into the project description, in the Markdown editor.
 
-**THE NUMBER LIVES IN EACH RELEASE'S NOTES, NOT ON THE PAGE (Arn, 17 Oct 2026: "we change to release
-note").** Every release uploads its CHANGELOG entry as that file's notes on CurseForge, with the
-fingerprint as its first line - on CurseForge's own site, under our account, where no copy can reach.
-So the page never needs editing at release time; it tells people to look there. The line below is a
-record only, never pasted: `.\Tools\stamp.ps1` still rewrites it (step 4), and the suite checks it.
-
-    Fingerprint   4AF5A03775190A349BB5C99C5C74731C356A0B7A3FA1C38C85D31B137830C6D6
+**NO FINGERPRINT SINCE 18 OCT 2026** (Arn: "can we get rid of the fingerprint thing and just do a
+secret powershell feature just for us"). Raiders read their logs in the notebook; the PowerShell
+script is the officers' own and is not on this page. **The notebook link below is the check** (Arn:
+"the link should also go into the curseforge description so people can double check"): it must be
+exactly `U.NOTEBOOK` in `Core/Window.lua`, the link the game shows - the suite holds the two equal.
 
 In the house voice (`_bisdev/docs/voice.md`): the opener and the script section talk; lists stay flat.
 
@@ -31,7 +29,7 @@ Loot night. Two raiders want the same trinket. One has been to every raid this m
 - **BOSSES** — every boss you've killed: kills, wipes, your best time, the night it first died, and who was there.
 - **WHERE** — your guildmates on a map, right now. Click one and the map opens on their zone. With OpenMap installed, one button opens it there.
 - **ROSTER** — paste the Raid-Helper sign-up and see who's online, who's absent, who isn't in the guild. One button invites everyone online.
-- **LOG** — where the numbers come from (below).
+- **LOG** — read a raid: the notebook's link and the box to paste its text into (below).
 
 Hover any item for its tooltip, enchant included. Right-click any name for the game's own player menu. Esc steps back a page; keep pressing and it closes.
 
@@ -50,10 +48,14 @@ Your alts keep their own books. A character in another guild sees that guild's r
 
 ## The numbers come from your combat log
 
-An addon isn't allowed to read files off your disk, and that's a good rule. So there are two ways to read a log - pick one:
+An addon isn't allowed to read files off your disk, and that's a good rule. So a notebook reads it for you:
 
-- **The notebook - no PowerShell.** [Open the BiS Guild notebook](https://colab.research.google.com/github/blankfer/BiSGuild/blob/main/dev/BiSGuild.ipynb), press Run, drop your combat log in (zipped is faster), and copy the text it prints. In game: `/bisg paste`, Ctrl+V, Import. It runs on Google's computer under your own Google account, so nothing runs on yours. Google will say it "was not authored by Google" - that's every notebook Google didn't write; press Run anyway.
-- **The PowerShell script.** `/bisg logs (your Logs folder)` once. After a raid, `/bisg script` gives you the line to run. `/reload` and the night is in. Nothing is uploaded anywhere.
+1. [Open the BiS Guild notebook](https://colab.research.google.com/github/blankfer/BiSGuild/blob/main/dev/BiSGuild.ipynb), press **Run all**, drop your combat log in (zipped is faster), and copy the text it prints.
+2. In game: the terminal's **LOG** tab (or `/bisg paste`), Ctrl+V, **Import**.
+
+It runs on Google's computer under your own Google account, so nothing runs on yours. Google will say it "was not authored by Google" - that's every notebook Google didn't write; press Run anyway.
+
+**Double-check the link.** The LOG tab shows the same link. This is the one that counts: it should start `colab.research.google.com/github/blankfer/BiSGuild`. If a link you were given goes anywhere else, it isn't ours. We publish BiS Guild in two places only: **this CurseForge page** and **its GitHub page** (github.com/blankfer/BiSGuild).
 
 Two officers who read the same raid end up with the same night: BiS Guild lines their logs up to the second and keeps every boss either of them saw.
 
@@ -61,29 +63,7 @@ Two officers who read the same raid end up with the same night: BiS Guild lines 
 - **Consumables**: at each pull, a flask (or a battle and a guardian elixir) and food.
 - **Gear**: what each raider wore at the pull, straight from the log. No inspecting.
 
-A 110 MB log takes seconds. It reads one line at a time, and only the logs it hasn't read yet.
-
-## ⚠️ Before you run the script
-
-**A PowerShell script can do anything you can do on your computer.** We publish BiS Guild in two places only: **this CurseForge page** and **its GitHub page** (github.com/blankfer/BiSGuild). Anywhere else (another website, a file in Discord, a "fixed" copy somebody sends you) isn't us, however official it looks, so don't run it. Where you got it is the check that matters. Everything below is the second line.
-
-### Check your copy
-
-One number covers every file of the addon. Change one letter anywhere, add a file or take one away, and it changes. Copy this line, put your WoW folder where it says, and paste it into PowerShell. It only reads; it changes nothing.
-
-    $a='<your WoW folder>\Interface\AddOns\BiSGuild';$l=[string[]](ls -LiteralPath $a -Recurse -File|%{$r=$_.FullName.Substring($a.Length+1).Replace('\','/');if($r -notmatch '(^|/)\.|\.md$|^(Data/Report\.lua|Core/Build\.lua|Tools/manifest\.txt)$'){(Get-FileHash -A SHA256 -LiteralPath $_.FullName).Hash+' '+$r}});[Array]::Sort($l,[StringComparer]::Ordinal);[BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes(($l -join "`n")+"`n"))).Replace('-','')
-
-The answer must match the **fingerprint in your version's release notes**: open the **Files** tab on this page, click the version you have, and it's the first line under **What's new**. Every release puts it there, here on CurseForge, where no copy can change it.
-
-The addon shows you a number too. **Compare with the release notes here, not with that.** Whoever doctors a copy can change what the addon shows just as easily. If your answer differs, stop and ask an officer.
-
-The addon checks itself as well:
-
-- **The script won't run** on a copy whose files don't match the list it shipped with. It names the file that's wrong.
-- **In game**, a file that's missing, broke while loading, or is left over from an older version switches BiS Guild off and says which.
-- **Your guild checks too.** Each copy tells your guildmates its version and fingerprint at login. Yours tells you if it differs from everyone else's or is out of date. `/bisg copy` shows how yours compares; officers see who runs what.
-
-What none of this can catch is a completely fake BiS Guild. A fake controls everything it shows you, its checks included. Nothing inside a file can prove the file is genuine. That's why this section starts with where you got it.
+A 110 MB log takes seconds. Your copy also tells you when a guildmate runs a newer BiS Guild, so nobody stays behind.
 
 ## Works with
 
@@ -98,10 +78,7 @@ Neither is needed. BiS Guild works alone.
 | | |
 |---|---|
 | `/bisg` | open the terminal |
-| `/bisg logs (path)` | tell it where your Logs folder is, once |
-| `/bisg script` | the line to run after a raid |
-| `/bisg paste` | take in the notebook's text - no PowerShell |
-| `/bisg copy` | is this copy whole, and does it match your guild's |
+| `/bisg paste` | read a raid: the notebook's link, and its text in |
 | `/bisg logins on` / `off` | the pop-up when a sign-up logs in |
 | `/bisg dots on` / `off` | guildmates on the world map |
 | `/bisl` | the loot ledger |

@@ -188,5 +188,3 @@ if ns.S and ns.S.Put then
         return changed
     end
 end
-
-ns.parts["API.lua"] = "0.1.1"

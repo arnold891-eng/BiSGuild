@@ -101,37 +101,10 @@ function ns.Say(cmd, rest)
             end
             return
         end
-        -- THE WARNING COMES FIRST AND IS NOT POLITE ABOUT IT (Arn, 4 Oct). "Paste this into
-        -- PowerShell" is how people get robbed. A script can do anything the person running it can
-        -- do, and nothing in this addon can tell a good one from a bad one - so the only honest
-        -- thing is to say where the risk is and let them decide, loudly, every time.
-        ns.Print("%s", T.text("warn", "READ THIS BEFORE YOU RUN IT"))
-        ns.Print("  %s", T.text("warn", "This runs a PowerShell script. A script can do anything"
-            .. " you can do on this computer - read your files, change them, send them away."))
-        ns.Print("  %s", T.text("muted", "Only run it if you got BiSGuild from CurseForge or from"
-            .. " your own officers. If somebody sent you a copy, do not run this - not even if they"
-            .. " seem helpful. That is the one check that actually matters."))
-        -- ARN FOUND THE HOLE, 4 Oct: "won't someone that steals the zip can just write code to put
-        -- up whatever hash is the most correct tho?" Yes. Whoever changes the script changes this
-        -- number with it, and then both sides of the check agree and the player feels safe.
-        --
-        -- A check an attacker controls both ends of is WORSE than no check, because it manufactures
-        -- confidence. So the number below is not presented as proof of anything: the comparison
-        -- that counts is against the CurseForge page, which is the one thing they cannot edit.
-        -- THE WHOLE ADDON, CHECKED BY A LINE THAT IS NOT OURS (16 Oct 2026, Core/Copies.lua): the
-        -- check is plain PowerShell hashing the folder itself, and the CurseForge page carries the
-        -- same line - which is the copy to take it from.
-        ns.Print("  %s", T.text("muted", "To check this copy, take the check line from our CurseForge page"
-            .. " (this is the same line), run it, and compare the answer with the number on that page -"
-            .. " NOT with the number below:"))
-        ns.Print("%s", P.CheckCommand() or "...")
-        ns.Print("  %s %s", T.text("muted", "this copy says"), T.text("accent", P.Fingerprint() or "no fingerprint"))
-        ns.Print("  %s", T.text("warn", "A faked addon would show you a faked number here too, so"
-            .. " these two agreeing proves nothing on its own. Only the CurseForge page does."))
-        ns.Print("  %s", T.text("muted", "The script also checks every file itself and will not run on a"
-            .. " copy that does not match. /bisg copy: how your copy compares with your guild's."))
-        ns.Print(" ")
-        ns.Print("then, after a raid, this - and /reload:")
+        -- OURS ALONE since 18 Oct (Core/Report.lua): one line of caution, no fingerprint
+        ns.Print("%s", T.text("warn", "This runs a PowerShell script - only from a copy you got from CurseForge"
+            .. " or GitHub yourself. Raiders: use the notebook instead (/bisg paste)."))
+        ns.Print("after a raid, this - and /reload:")
         ns.Print("%s", line)
         ns.Print("  %s", T.text("muted", "It reads only the NEWEST log, not all of them, and writes"
             .. " the numbers straight into the addon. Nothing is pasted back in here."))
@@ -143,13 +116,8 @@ function ns.Say(cmd, rest)
         local r = P.Report()
         if not r then
             ns.Print("no log report loaded.")
-            if P.Command() then
-                ns.Print("  %s", T.text("muted", "Run |cffb980ff/bisg script|r for the line to"
-                    .. " paste into PowerShell, then /reload."))
-            else
-                ns.Print("  %s", T.text("muted", "Tell me where your logs are once with"
-                    .. " |cffb980ff/bisg logs <path>|r, then |cffb980ff/bisg script|r."))
-            end
+            ns.Print("  %s", T.text("muted", "To read a raid: |cffb980ff/bisg paste|r - the notebook's link"
+                .. " is in there. |cffb980ff/bisg help|r for the rest."))
             return
         end
         ns.Print("from the combat log: %s (%d kill(s))", r.zones or "?", r.kills or 0)
@@ -165,13 +133,11 @@ function ns.Say(cmd, rest)
         ns.Print("version %s", ns.VERSION)
         ns.Print("  %s  the raider terminal: type a raider or a boss", ns.T.text("accent", "/bisg"))
         ns.Print("  %s  straight to one raider or boss", ns.T.text("accent", "/bisg <name>"))
-        ns.Print("  %s  the log window: paste a path, copy a command", ns.T.text("accent", "/bisg window"))
-        ns.Print("  %s  the notebook's text in - no PowerShell", ns.T.text("accent", "/bisg paste"))
+        -- the PowerShell road (window, logs, script, report) still works and is not listed: it is
+        -- the officers' own since 18 Oct (Core/Report.lua)
+        ns.Print("  %s  read a raid: the notebook's link, and its text in", ns.T.text("accent", "/bisg paste"))
         ns.Print("  %s  guildmates' dots on the world map", ns.T.text("accent", "/bisg dots on | off"))
         ns.Print("  %s  'X just logged in - invite?' for the pasted roster", ns.T.text("accent", "/bisg logins on | off"))
-        ns.Print("  %s  attendance and consumes from the combat log", ns.T.text("accent", "/bisg report"))
-        ns.Print("  %s  where your logs are (once)", ns.T.text("accent", "/bisg logs <path>"))
-        ns.Print("  %s  the line to run after a raid", ns.T.text("accent", "/bisg script"))
         return
     end
     -- ANYTHING ELSE IS THE REPORT. There used to be an `all()` here reading the addon's own
@@ -189,5 +155,3 @@ function ns.Say(cmd, rest)
     end
     return ns.Say("report")
 end
-
-ns.parts["Core/Say.lua"] = "0.1.1"

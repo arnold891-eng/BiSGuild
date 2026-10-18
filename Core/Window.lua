@@ -5,13 +5,11 @@
   to write out commands, also the warning can get lost easy in the chat, better to make them a pop
   up in the window where they can confirm with a button".
 
-  Both halves of that are right, and the second one is the important one.
-
-  THE WARNING WAS IN THE WRONG PLACE. A caution printed into the chat frame competes with loot
-  rolls, zone changes and somebody saying "haha" - it scrolls away while you are reading it. A
-  warning you must press a button to get past cannot scroll away, and the press is a deliberate act
-  rather than a thing that happened above the thing you copied. So the command is not shown AT ALL
-  until the warning has been answered.
+  THE OFFICERS' WINDOW SINCE 18 OCT 2026. Arn: "can we get rid of the fingerprint thing and just do
+  a secret powershell feature just for us". Raiders read their logs in the notebook (the paste window
+  below, which the terminal's LOG tab opens); this one is `/bisg window`, unadvertised. Its warning
+  screen and the typed-out hash check (5-17 Oct) went with the fingerprint: the people who open it
+  know where their copy came from.
 
   Nothing here is secure and nothing here casts: it is a text box and some labels. The command is
   an EditBox because a FontString cannot be selected - the same trick every export string in every
@@ -148,18 +146,6 @@ function U.Build()
     -- (16 Oct, ADDON_ACTION_BLOCKED in a fight): Init.lua's ns.EscKeys.
     ns.EscKeys(f, function() U.Hide() end)
 
-    -- A WAY BACK. Arn: "no way to go back from this screen". Pressing "I understand" was one-way,
-    -- so the warning and the hash check - the only safety on the page - could be read exactly once
-    -- per session and never again.
-    f.back = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-    f.back:SetSize(150, 20)
-    f.back:SetPoint("BOTTOMLEFT", 12, 10)
-    f.back:SetText("Check this copy again")
-    f.back:SetScript("OnClick", function()
-        U.agreed, U.hash = nil, true     -- straight back to the warning, hash check already open
-        U.Refresh()
-    end)
-
     -- 1. where the logs are
     local l1 = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     l1:SetPoint("TOPLEFT", 12, -40)
@@ -174,7 +160,7 @@ function U.Build()
         self:ClearFocus()
     end)
 
-    -- 2. the command, hidden behind the warning
+    -- 2. the command
     local l2 = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     l2:SetPoint("TOPLEFT", 12, -92)
     l2:SetText("2. After a raid, run this, then " .. T().text("accent", "/reload") .. ":")
@@ -209,8 +195,7 @@ function U.Build()
     f.caret:SetTextColor(0.88, 0.92, 1, 1)
     f.caret:SetText("_")
 
-    -- ON TOP OF EVERYTHING, including the warning: a "copied" that appears behind the thing you
-    -- just clicked is the hash box printing through the warning all over again.
+    -- "selected - press Ctrl+C", over the top of the window
     f.flash = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     f.flash:SetPoint("TOP", f, "TOP", 0, -32)
     f.flash:Hide()
@@ -231,127 +216,7 @@ function U.Build()
         -- blink against each other
         if f.caret then f.caret:SetAlpha(((self.t % 1) < 0.5) and 1 or 0) end
         if f.con and f.con.Paint then f.con:Paint() end
-        U.Type(elapsed)
     end)
-
-    -- THE WARNING, over the top of the command and not beside it. It is a child of the window so
-    -- it moves with it, and it covers the command box so the words cannot be copied before the
-    -- warning has been answered. A caution you can ignore by looking slightly to the left is a
-    -- caution that does not work.
-    local warn = CreateFrame("Frame", nil, f)
-    warn:SetPoint("TOPLEFT", 8, -86)
-    warn:SetPoint("BOTTOMRIGHT", -8, 8)
-    warn:EnableMouse(true)                      -- swallows clicks aimed at what is underneath
-    -- AND NOTHING DRAWS THROUGH IT. Children of the window made after this one were drawing on top
-    -- - the hash box printed straight through the warning's words (Arn's screenshot, 5 Oct). A
-    -- warning anything can print over is not covering anything.
-    if warn.SetFrameLevel and f.GetFrameLevel then
-        local lvl = f:GetFrameLevel()
-        if type(lvl) == "number" then warn:SetFrameLevel(lvl + 10) end
-    end
-    local wbg = warn:CreateTexture(nil, "BACKGROUND")
-    wbg:SetAllPoints()
-    wbg:SetColorTexture(0.12, 0.02, 0.05, 0.97)
-
-    local wt = warn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    wt:SetPoint("TOPLEFT", 14, -12)
-    wt:SetText(T().text("warn", "This runs a PowerShell script on your computer"))
-
-    local wb = warn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    wb:SetPoint("TOPLEFT", 14, -34)
-    wb:SetPoint("RIGHT", warn, "RIGHT", -14, 0)
-    wb:SetJustifyH("LEFT")
-    wb:SetJustifyV("TOP")
-    wb:SetText(
-        "A script can do anything you can do on this computer - read your files, change them, send\n"
-        .. "them away.\n\n"
-        .. T().text("accent", "Only run it if you got BiSGuild from CurseForge or from your own officers.")
-        .. "\nIf somebody sent you a copy, do not run it - not even if they seem helpful. Where you\n"
-        .. "got it is the check that actually matters.\n\n"
-        .. "You can also compare this copy against the fingerprint on our CurseForge page. A faked\n"
-        .. "addon would show you a faked one here too, so that check only means something against the\n"
-        .. "page - never against the number this window shows you.")
-
-    local okb = CreateFrame("Button", nil, warn, "UIPanelButtonTemplate")
-    okb:SetSize(190, 22)
-    okb:SetPoint("BOTTOMLEFT", 14, 14)
-    okb:SetText("I understand - show the command")
-    okb:SetScript("OnClick", function()
-        U.agreed = true
-        U.Refresh()
-    end)
-
-    local hashb = CreateFrame("Button", nil, warn, "UIPanelButtonTemplate")
-    hashb:SetSize(150, 22)
-    hashb:SetPoint("LEFT", okb, "RIGHT", 8, 0)
-    hashb:SetText("Show me the hash check")
-    hashb:SetScript("OnClick", function() U.hash = not U.hash U.Refresh() end)
-    f.warn = warn
-
-    -- THE HASH CHECK LIVES INSIDE THE WARNING. It was a box on the window behind, so pressing the
-    -- button printed it through the warning's own words. It belongs here anyway: it is part of
-    -- this conversation, not part of the window underneath.
-    --
-    -- AND IT TYPES ITSELF OUT. Arn: "make it type it out like powershell". A line that simply
-    -- appears is a line the eye skips; one that arrives a character at a time is one you watch -
-    -- which is the right behaviour for the only instruction on this page that is a real check.
-    -- WHAT TO DO WITH IT. Arn, looking at the typed line: "what do i do with this". It said nothing
-    -- about itself and - worse - it was a FontString, which cannot be selected. A line of shell you
-    -- can read and cannot copy is a dead end dressed as an instruction.
-    f.hashWhat = warn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    f.hashWhat:SetPoint("BOTTOMLEFT", 14, 122)   -- over the check line, which is five lines of shell now (16 Oct)
-    f.hashWhat:SetPoint("RIGHT", warn, "RIGHT", -14, 0)
-    f.hashWhat:SetJustifyH("LEFT")
-    f.hashWhat:SetText("")
-
-    -- AN EDITBOX, so it can be taken. Clicking it finishes the typing at once and selects the whole
-    -- line: nobody should wait on a flourish, and nobody should drag across a path to copy it.
-    -- THE PROMPT IS A LABEL, NOT PART OF THE TEXT (5 Oct 2026). It was inside the copied string, so
-    -- the player pasted `PS> Get-FileHash ...` into PowerShell and got:
-    --
-    --     PS> : The term 'PS>' is not recognized as the name of a cmdlet
-    --
-    -- The command box got this right from the start - a FontString beside the box - and the hash
-    -- line baked it in. A decoration that travels with the thing being copied is not a decoration.
-    f.hashPrompt = warn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    if f.hashPrompt.SetFont then pcall(f.hashPrompt.SetFont, f.hashPrompt, PS_FONT, 12, "") end
-    f.hashPrompt:SetTextColor(0.98, 0.98, 0.55, 1)
-    f.hashPrompt:SetText("")
-
-    f.hashLine = CreateFrame("EditBox", nil, warn)
-    f.hashLine:SetPoint("BOTTOMLEFT", 14, 44)
-    f.hashLine:SetPoint("RIGHT", warn, "RIGHT", -14, 0)
-    f.hashLine:SetHeight(74)
-    f.hashLine:SetMultiLine(true)
-    f.hashLine:SetAutoFocus(false)
-    f.hashLine:SetTextInsets(34, 6, 2, 2)   -- room for the PS> label beside it
-    if f.hashLine.SetFont then pcall(f.hashLine.SetFont, f.hashLine, PS_FONT, 12, "") end
-    f.hashLine:SetTextColor(0.88, 0.92, 1, 1)
-    local hbg = f.hashLine:CreateTexture(nil, "BACKGROUND")
-    hbg:SetAllPoints()
-    hbg:SetColorTexture(PS_BLUE[1], PS_BLUE[2], PS_BLUE[3], PS_BLUE[4])
-    f.hashLine:SetScript("OnMouseUp", function(self)
-        U.TypeNow()
-        self:HighlightText()
-        self:SetFocus()
-        U.Flash(U.Copy())
-    end)
-    f.hashLine:SetScript("OnEditFocusGained", function(self) self:HighlightText() end)
-    f.hashLine:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-    f.hashLine:SetText("")
-    f.hashLine:Hide()
-
-    -- ANCHORED TO THE BOX, not to the warning with a guessed offset. Arn: "ps> in the window get a
-    -- little cut off" - it was placed by a number I worked out from the bottom of the frame, which
-    -- stops being right the moment anything above it changes height. Hung off the box's own top-left
-    -- it lines up with the first line of text and cannot drift again.
-    f.hashPrompt:SetPoint("TOPLEFT", f.hashLine, "TOPLEFT", 6, -3)
-
-    -- the hash line, shown under the command once asked for
-    f.hashLabel = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    f.hashLabel:SetPoint("TOPLEFT", 12, -160)
-    f.hashBox = copyBox(f, W - 24, true)
-    f.hashBox:SetPoint("TOPLEFT", 12, -176)
 
     -- the report
     f.report = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -381,8 +246,7 @@ function U.Build()
     f.lastHit:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
     f.lastHit:Hide()
 
-    -- THE OTHER WAY IN: no PowerShell at all (17 Oct 2026, the notebook). Over the warning, because
-    -- nothing about it runs on this computer - there is nothing to warn about.
+    -- THE OTHER WAY IN: no PowerShell at all (17 Oct 2026, the notebook)
     f.pasteBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
     f.pasteBtn:SetSize(190, 20)
     f.pasteBtn:SetPoint("BOTTOMRIGHT", -12, 10)
@@ -402,10 +266,14 @@ end
 -- THE PASTE WINDOW (17 Oct 2026). Arn: a notebook "so people can just drag and drop their log ...
 -- hit run ... something to paste". The notebook (BiSGuild/notebook) reads the log on Google's
 -- computer and prints text; this takes it in through Core/Share.lua X.ImportPaste - each raid merged
--- like an officer's copy. Its own window at the family's 1.43:1, so it never shares space with the
--- PowerShell warning.
+-- like an officer's copy. Its own window at the family's 1.43:1. The terminal's LOG tab opens it.
 --------------------------------------------------------------------
 U.PW, U.PH = 520, 364
+
+-- THE LINK, IN THE WINDOW (Arn, 18 Oct: "in the logs we give them the link to go to the google code
+-- thing"). An addon cannot open a browser, so it is a box: click, Ctrl+C, paste in the browser. The
+-- CurseForge page carries the same link "so people can double check" - the suite holds the two equal.
+U.NOTEBOOK = "https://colab.research.google.com/github/blankfer/BiSGuild/blob/main/dev/BiSGuild.ipynb"
 
 function U.BuildPaste()
     if U.paste then return U.paste end
@@ -430,16 +298,29 @@ function U.BuildPaste()
     close:SetScript("OnClick", function() p:Hide() end)
     ns.EscKeys(p, function() p:Hide() end)
 
+    local l1 = p:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    l1:SetPoint("TOPLEFT", 12, -34)
+    l1:SetText("1. Click the link, press " .. T().text("accent", "Ctrl+C") .. ", and paste it into your browser:")
+
+    -- selects itself on a click; typing into it changes nothing (the link put back at once)
+    local link = copyBox(p, U.PW - 24)
+    link:SetPoint("TOPLEFT", 12, -50)
+    link:SetTextColor(0.72, 0.5, 1, 1)
+    link:SetText(U.NOTEBOOK)
+    link:SetScript("OnTextChanged", function(self, userInput)
+        if userInput and self:GetText() ~= U.NOTEBOOK then self:SetText(U.NOTEBOOK) self:HighlightText() end
+    end)
+    p.link = link
+
     local how = p:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    how:SetPoint("TOPLEFT", 12, -34)
+    how:SetPoint("TOPLEFT", 12, -78)
     how:SetPoint("RIGHT", p, "RIGHT", -12, 0)
     how:SetJustifyH("LEFT")
-    how:SetText("1. Open the BiS Guild notebook - its link is on our CurseForge page.\n"
-        .. "2. Press Run, drop your combat log in, and copy the text it prints.\n"
+    how:SetText("2. Press Run all, drop your combat log in, and copy the text it prints.\n"
         .. "3. Paste it below " .. T().text("accent", "(Ctrl+V)") .. " and press Import. Nothing runs on this computer.")
 
     local wrap = CreateFrame("Frame", nil, p)
-    wrap:SetPoint("TOPLEFT", 12, -84)
+    wrap:SetPoint("TOPLEFT", 12, -108)
     wrap:SetPoint("BOTTOMRIGHT", -12, 64)
     -- CLIPPED (Arn's first paste, 18 Oct: 14 KB of text ran down over the whole screen and over the
     -- buttons). The text is not for reading anyway - the line under the box says what was pasted.
@@ -581,67 +462,6 @@ function U.ShowPaste()
     p.box:SetFocus()
 end
 
---- TYPED OUT, A CHARACTER AT A TIME. Arn: "make it type it out like powershell".
----
---- CPS is deliberately brisk: this is a flourish, not a cutscene. A sixty-character line lands in
---- about a second, which is long enough to be watched and short enough that nobody waits for it.
---- Clicking the line at any point finishes it instantly - a person who wants to copy it should
---- never have to wait for an animation.
-U.CPS = 55
-
---- SETTEXT CLEARS THE SELECTION, so it is called only when the text actually CHANGES (5 Oct 2026).
----
---- Arn: "i cant select it it shows selected for a split second and then unselects. maybe our
---- blinking _". Right about the cause, and it was the typewriter rather than the caret: this ran on
---- every frame and re-set the same finished string forever, wiping the highlight a frame after the
---- click put it there.
----
---- An animation that keeps running after it has finished is not idle - it is holding the thing it
---- drew.
-local function put(fs, text)
-    if U.typeShown == text then return end
-    U.typeShown = text
-    fs:SetText(text)
-end
-
-function U.Type(elapsed)
-    local f = U.frame
-    if not (f and f.hashLine and U.typeTarget) then return end
-    if U.typeAt >= #U.typeTarget then
-        put(f.hashLine, U.typeTarget)
-        return
-    end
-    U.typeAt = math.min(#U.typeTarget, U.typeAt + (tonumber(elapsed) or 0) * U.CPS)
-    -- the cursor comes OFF on the tick that finishes it, not the one after: a trailing underscore
-    -- left on a command somebody is about to copy is a character they would paste into a shell
-    if U.typeAt >= #U.typeTarget then
-        put(f.hashLine, U.typeTarget)
-    else
-        put(f.hashLine, U.typeTarget:sub(1, math.floor(U.typeAt)) .. "_")
-    end
-end
-
---- Start typing a line, or clear it with nil.
-function U.TypeOut(text)
-    U.typeTarget = (type(text) == "string" and text ~= "") and text or nil
-    U.typeAt = 0
-    U.typeShown = nil                 -- a new line must be written even if it matches the last
-    if U.frame and U.frame.hashLine then U.frame.hashLine:SetText("") end
-end
-
---- Skip the animation. Nobody should wait on a flourish to copy a line.
-function U.TypeNow()
-    if U.typeTarget then
-        U.typeAt = #U.typeTarget
-        -- written through `put` so the cache agrees: a SetText behind its back would let the next
-        -- tick write the same string again and wipe the selection this call exists to allow
-        if U.frame and U.frame.hashLine and U.typeShown ~= U.typeTarget then
-            U.typeShown = U.typeTarget
-            U.frame.hashLine:SetText(U.typeTarget)
-        end
-    end
-end
-
 --- SAY IT WORKED, AND SAY WHICH. Arn asked for "a message saying copied" - and the honest message
 --- depends on whether the client actually has the call, because "copied" when nothing was copied is
 --- worse than silence. It fades on its own: a notice that needs dismissing is a second job.
@@ -673,56 +493,8 @@ function U.Refresh()
     f.logs:SetText(P.Logs() or "")
 
     local cmd = P.Command()
-    -- THE WARNING STANDS DOWN ONCE, PER SESSION, and only by a press. Not remembered across a
-    -- reload on purpose: the whole point is that running a script is a decision, and a decision
-    -- made last Tuesday is not one made now.
-    if U.agreed and cmd then
-        f.warn:Hide()
-        f.cmd:SetText(cmd)
-        f.l2:Show()
-        f.back:Show()
-    elseif U.agreed then
-        f.warn:Hide()
-        f.cmd:SetText("")
-        f.l2:Show()
-        f.back:Show()
-        U.Say("tell me where your logs are first")
-    else
-        -- EMPTIED, not just covered. The warning frame sits over the box, but the text was still IN
-        -- the box - so the command existed on screen behind an overlay, one dragged window or one
-        -- failed draw away from being copied. Caught by its own test, which is the only reason this
-        -- line is here.
-        f.cmd:SetText("")
-        f.warn:Show()
-        f.back:Hide()        -- it is already showing; a button back to here would be a loop
-    end
-
-    -- The hash check types itself out INSIDE the warning. It used to be a box on the window behind,
-    -- which printed straight through the warning's own words.
-    if U.hash then
-        -- NOTHING BUT THE COMMAND goes in the box: whatever is in there is what gets pasted into a
-        -- shell, and a prompt pasted with it is an error message.
-        -- the whole addon, by a line of plain PowerShell (Core/Report.lua P.CheckCommand, 16 Oct)
-        local want = P.CheckCommand() or "..."
-        if U.typeTarget ~= want then U.TypeOut(want) end
-        f.hashLine:Show()
-        f.hashPrompt:SetText("PS>")
-        -- THREE SENTENCES, because a command with no instruction is a thing people stare at. Arn,
-        -- at exactly this line: "what do i do with this".
-        f.hashWhat:SetText(
-            T().text("accent", "Click the line below to copy it,") .. " paste it into PowerShell, and compare\n"
-            .. "the answer with the number on our CurseForge page (it has this same line). "
-            .. T().text("warn", "Not with this addon") .. " -\n"
-            .. "a faked copy would show you a faked number here too.")
-    else
-        U.TypeOut(nil)
-        f.hashLine:Hide()
-        f.hashPrompt:SetText("")
-        f.hashWhat:SetText("")
-    end
-    -- the old boxes on the window behind are gone; keep them empty so nothing can draw through
-    if f.hashLabel then f.hashLabel:SetText("") end
-    if f.hashBox then f.hashBox:SetText("") f.hashBox:Hide() end
+    f.cmd:SetText(cmd or "")
+    if not cmd then U.Say("tell me where your logs are first") end
 
     local r = P.Report()
     if not r then
@@ -753,7 +525,6 @@ function U.Refresh()
 end
 
 function U.Show()
-    if ns.TellBroken() then return false end    -- not a whole copy: Core/Copies.lua
     local f = U.Build()
     if not f then return false end
     U.Refresh()
@@ -776,5 +547,3 @@ function U.Toggle()
     U.Show()
     return true
 end
-
-ns.parts["Core/Window.lua"] = "0.1.1"

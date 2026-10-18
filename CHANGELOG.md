@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-- **No PowerShell needed: the BiS Guild notebook.** Open it from our CurseForge page, press Run, drop your combat log in, and copy the text it prints; in game, `/bisg paste`, Ctrl+V, Import. It runs on Google's computer, under your own Google account - nothing runs on yours. The raid goes in exactly as if an officer had shared it. The PowerShell script still works as before.
+- **No PowerShell: the BiS Guild notebook.** The terminal's LOG tab has its link - click it, Ctrl+C, paste it in your browser. Press Run all, drop your combat log in, and copy the text it prints; back in game, paste it in the LOG tab and press Import. It runs on Google's computer, under your own Google account - nothing runs on yours. The raid goes in exactly as if an officer had shared it. Our CurseForge page carries the same link, so you can check it.
+- **The fingerprint is gone**, with the PowerShell warning and `/bisg copy`: nobody runs our script on their own computer any more. Your copy still tells you when a guildmate runs a newer BiS Guild.
 - **Gear from TBC logs** is read now (it never was - their lines have one group fewer than Forever's).
 - **A night is one raid now, and officers' copies are merged kill by kill.** Two raids on one evening (two teams, or Molten Core then Onyxia) are two nights, so someone at one of them no longer loses the night for missing the other's kills. When two officers read the same raid, BiS Guild lines their logs up by the second - in any time zone - and keeps every boss either of them saw, instead of whichever copy was fuller. Nights already on record stay as they were.
 

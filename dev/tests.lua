@@ -180,21 +180,18 @@ do
 
     -- THE FILE IS NAMED IN THE TOC AND IS NOT IN GIT. A fresh install has none, and deploy.sh
     -- wipes the game folder before copying, so a deploy removes it too. Looking broken at that
-    -- moment is the easy mistake; saying what to run is the fix.
-    _G.BiSGuildDB.logs = nil
-    local before = #said
-    _G.SlashCmdList.BISGUILD("report")
-    local said1 = table.concat(said, "\n", before + 1, #said)
-    H.ok(said1:find("/bisg logs", 1, true) ~= nil,
-         "with no report AND no logs folder it asks for the folder", said1)
-
-    -- once it knows where the logs are, the next step is the script and it says so
-    P.SetLogs("C:\\Program Files (x86)\\World of Warcraft\\_anniversary_\\Logs")
-    before = #said
-    _G.SlashCmdList.BISGUILD("report")
-    local said2 = table.concat(said, "\n", before + 1, #said)
-    H.ok(said2:find("/bisg script", 1, true) ~= nil,
-         "and once it knows, it points at the script instead", said2)
+    -- moment is the easy mistake; saying what to do is the fix. And a typo lands here too (anything
+    -- unknown is the report), so it points at the NOTEBOOK - the PowerShell road is the officers'
+    -- own since 18 Oct and a raider must never be sent down it
+    for _, logs in ipairs({ false, true }) do
+        _G.BiSGuildDB.logs = nil
+        if logs then P.SetLogs("C:\\Program Files (x86)\\World of Warcraft\\_anniversary_\\Logs") end
+        local before = #said
+        _G.SlashCmdList.BISGUILD("report")
+        local out = table.concat(said, "\n", before + 1, #said)
+        H.ok(out:find("/bisg paste", 1, true) ~= nil and out:find("/bisg script", 1, true) == nil,
+             ("no report (%s logs folder): it points at the notebook, never the script"):format(logs and "a" or "no"), out)
+    end
     _G.BiSGuildDB.logs = nil
 end
 
@@ -203,92 +200,28 @@ end
 -- to write out commands, also the warning can get lost easy in the chat, better to make them a pop
 -- up in the window where they can confirm with a button".
 --
--- The second half is the safety one. A caution printed into chat competes with loot rolls and zone
--- changes and scrolls away while you read it. A warning you must press a button to get past cannot
--- scroll away - and the press is a deliberate act rather than something that happened above the
--- thing you copied.
+-- THE OFFICERS' OWN SINCE 18 OCT 2026 (Arn: "a secret powershell feature just for us"). Raiders
+-- read their logs in the notebook; the warning screen and the hash check went with the fingerprint.
 --=============================================================================
-H.section("the window, and the warning you cannot scroll past")
+H.section("the officers' window: the command, at once")
 do
     local U = NS.U
     H.ok(U ~= nil, "there is a window")
     P.SetLogs("C:\\Program Files (x86)\\World of Warcraft\\_anniversary_\\Logs")
-    U.agreed, U.hash = nil, nil
 
     local f = U.Build()
     H.ok(f ~= nil, "it builds")
     U.Refresh()
-
-    -- THE ONE THAT MATTERS: the command must not be anywhere a player can take it from until the
-    -- warning has been answered. Showing it greyed, or beside the warning, is a warning you get
-    -- past by looking slightly to the left.
-    H.eq(f.cmd:GetText(), "", "the command is EMPTY until the warning is answered")
-    H.ok(f.warn:IsShown(), "and the warning is over the top of it")
-
-    -- press the button
-    f.warn.__ok = nil
-    U.agreed = true
-    U.Refresh()
-    H.ok(f.warn:IsShown() == false, "answering it puts the warning away")
-    H.ok(f.cmd:GetText():find("logreport.ps1", 1, true) ~= nil,
-         "and only THEN is the command there", f.cmd:GetText())
+    H.ok(f.warn == nil and f.hashLine == nil and f.back == nil, "no warning screen and no hash check any more")
+    H.ok(f.cmd:GetText():find("logreport.ps1", 1, true) ~= nil, "the command is there at once", f.cmd:GetText())
     H.ok(f.cmd:GetText():find("_anniversary_\\Logs", 1, true) ~= nil,
          "with the paths already filled in - nothing to type")
-    -- the command box never had the prompt in its text; a test so it never gains one
+    -- THE PROMPT IS A LABEL, NOT PART OF THE TEXT (5 Oct 2026): pasted with the command, PowerShell
+    -- answers "The term 'PS>' is not recognized"
     H.ok(f.cmd:GetText():find("PS>", 1, true) == nil,
-         "and no prompt in the copyable text here either", f.cmd:GetText())
+         "and no prompt in the copyable text", f.cmd:GetText())
     H.eq(f.prompt:GetText(), "PS>", "the prompt beside it is a label")
 
-    -- THE HASH CHECK LIVES INSIDE THE WARNING, and types itself out. Arn's screenshot, 5 Oct: it
-    -- was a box on the window BEHIND, so pressing the button printed it straight through the
-    -- warning's own words - the "one bar, one label" shape, in a new place.
-    H.eq(f.hashLine:GetText(), "", "the hash check is not shown until asked for")
-    U.hash = true
-    U.Refresh()
-    H.ok(U.typeTarget and U.typeTarget:find("Get-FileHash", 1, true) ~= nil,
-         "asked for, it is there", tostring(U.typeTarget))
-    H.ok(U.typeTarget:find("$a='" .. P.AddonPath() .. "'", 1, true) ~= nil,
-         "and checks the folder the command runs from - the whole addon, not one file (16 Oct)")
-    H.eq(U.typeTarget, P.CheckCommand(), "it is the one-line check, exactly")
-    -- THE PROMPT IS A LABEL, NOT PART OF THE TEXT (5 Oct 2026). It used to be inside the copied
-    -- string, so pasting into PowerShell gave:
-    --
-    --     PS> : The term 'PS>' is not recognized as the name of a cmdlet
-    --
-    -- Whatever is in that box is what somebody runs. A decoration that travels with the thing being
-    -- copied is not a decoration, it is a bug with a font.
-    H.ok(U.typeTarget:find("PS>", 1, true) == nil,
-         "the prompt is NOT in the copyable text", U.typeTarget)
-    H.ok(U.typeTarget:match("^%$a='") ~= nil,
-         "the line starts with the command itself", U.typeTarget)
-    H.eq(f.hashPrompt:GetText(), "PS>", "the prompt is a label beside it, so it still reads as a shell")
-
-
-    -- it ARRIVES a character at a time rather than appearing
-    H.ok(#f.hashLine:GetText() < #U.typeTarget, "it starts unfinished")
-    U.Type(0.2)
-    local part = f.hashLine:GetText()
-    H.ok(#part > 0 and #part < #U.typeTarget, "and fills in", part)
-    H.ok(part:sub(-1) == "_", "with a cursor on the end while it types", part)
-    U.Type(10)
-    H.eq(f.hashLine:GetText(), U.typeTarget, "until it is all there, with no cursor left on it")
-
-    -- A LINE YOU CANNOT TAKE IS A DEAD END (5 Oct 2026). Arn, looking at exactly this: "what do i
-    -- do with this". It was a FontString - readable, unselectable - and it said nothing about
-    -- itself. Both halves were the bug.
-    H.ok(f.hashLine.HighlightText ~= nil, "the hash line can be selected, so it can be copied")
-    H.ok(f.hashLine._scripts.OnMouseUp ~= nil, "clicking it does something")
-    H.ok(f.hashWhat:GetText():find("PowerShell", 1, true) ~= nil,
-         "and it SAYS what to do with it", f.hashWhat:GetText())
-    H.ok(f.hashWhat:GetText():find("CurseForge", 1, true) ~= nil,
-         "including the only comparison that counts")
-
-    -- ONE CLICK COPIES IT (5 Oct 2026). Arn: "when i click that blue part i should not have to
-    -- select and copy when i click it should copy to clipboard with a message saying copied".
-    --
-    -- I nearly said addons cannot reach the clipboard, which is what it has always been - this
-    -- client has CopyToClipboard, and Attune already calls it. The mock is the client's shape: a
-    -- plain global that takes the text.
     -- THE CLIPBOARD IS PROTECTED, AND BEING IN THE CENSUS DID NOT MEAN WE COULD USE IT (5 Oct
     -- 2026). CopyToClipboard is on both baselines, the fence passed, and the client answered:
     --
@@ -306,66 +239,15 @@ do
         local realCopy = _G.CopyToClipboard
         _G.CopyToClipboard = function() reached = true end
 
-        U.TypeOut(U.typeTarget)
-        f.hashLine._scripts.OnMouseUp(f.hashLine)
-        H.eq(f.hashLine:GetText(), U.typeTarget, "clicking it finishes the typing at once")
-        H.eq(reached, false, "and NEVER calls the protected clipboard function")
+        f.cmd._scripts.OnMouseUp(f.cmd)
+        H.eq(reached, false, "clicking the command NEVER calls the protected clipboard function")
         H.ok(f.flash:GetText():find("Ctrl+C", 1, true) ~= nil,
              "it says which key to press instead", f.flash:GetText())
         H.ok(f.flash:GetText():find("copied", 1, true) == nil,
              "and never claims it copied, because it did not")
 
-        f.cmd._scripts.OnMouseUp(f.cmd)
-        H.eq(reached, false, "the command box does not reach for it either")
-
         _G.CopyToClipboard = realCopy
     end
-
-    -- A FINISHED ANIMATION MUST STOP TOUCHING ITS TEXT (5 Oct 2026). Arn: "i cant select it it
-    -- shows selected for a split second and then unselects. maybe our blinking _". Right about the
-    -- cause, wrong about which part: the typewriter ran every frame and re-set the same finished
-    -- string forever, and SetText on an EditBox CLEARS THE SELECTION - so the highlight the click
-    -- put there was gone a frame later.
-    --
-    -- An animation that keeps running after it has finished is not idle; it is holding the thing it
-    -- drew.
-    do
-        local sets = 0
-        local realSet = f.hashLine.SetText
-        f.hashLine.SetText = function(self, t) sets = sets + 1 return realSet(self, t) end
-
-        U.TypeOut("PS> a line to finish")
-        U.Type(10)                      -- finished
-        local afterFinish = sets
-        U.Type(0.1) U.Type(0.1) U.Type(0.1)
-        H.eq(sets, afterFinish, "once typed, more ticks do not touch the text at all")
-
-        -- and a NEW line must still be written even if the cache is warm
-        U.TypeOut("PS> a different line")
-        U.Type(10)
-        H.ok(sets > afterFinish, "but a new line is still typed out")
-        H.eq(f.hashLine:GetText(), "PS> a different line", "and lands in full")
-
-        -- TypeNow must leave the cache agreeing, or the next tick rewrites and unselects again
-        U.TypeOut("PS> finished by a click")
-        U.TypeNow()
-        local afterNow = sets
-        U.Type(0.1) U.Type(0.1)
-        H.eq(sets, afterNow, "a line finished by clicking is not rewritten either")
-
-        f.hashLine.SetText = realSet
-    end
-
-    -- NOTHING MAY PRINT THROUGH THE WARNING. The box that did is empty and hidden now, and the
-    -- warning sits above anything the window makes after it.
-    H.eq(f.hashBox:GetText(), "", "the old box behind the warning stays empty")
-    H.ok(f.warn:GetFrameLevel() > f:GetFrameLevel(),
-         "and the warning is above the window, so nothing can draw over its words")
-
-    -- a person who wants to copy the line should never wait on a flourish
-    U.TypeOut("PS> something long enough to still be typing")
-    U.TypeNow()
-    H.eq(f.hashLine:GetText(), U.typeTarget, "and it can be finished instantly")
 
     -- IT SHOULD LOOK LIKE A SHELL (5 Oct 2026). Arn: "the more we make it look like a powershell
     -- window the better blinking _ and everything". Not only taste: the box holding a command you
@@ -388,10 +270,7 @@ do
     tick(f.cmdWrap, 0.5)
     H.eq(f.caret:GetAlpha(), 1, "and comes back - it is a blink, not a fade-out")
 
-    -- ESCAPE CLOSES IT, AND THERE IS A WAY BACK (5 Oct 2026). Arn: "also no way to go back from
-    -- this screen and esc does not close this window". Pressing "I understand" was ONE-WAY, so the
-    -- warning and the hash check - the only safety on the page - could be read once per session and
-    -- never again.
+    -- ESCAPE CLOSES IT (5 Oct 2026, Arn: "esc does not close this window")
     H.ok(f._scripts.OnKeyDown ~= nil, "the window handles keys itself")
     U.Show()
     f._scripts.OnKeyDown(f, "ESCAPE")
@@ -400,203 +279,59 @@ do
     f._scripts.OnKeyDown(f, "A")
     H.eq(f:IsShown(), true, "and any other key is left alone, so typing still reaches chat")
 
-    U.agreed = true
-    U.Refresh()
-    H.ok(f.back:IsShown(), "once past the warning there is a way back to it")
-    f.back._scripts.OnClick(f.back)
-    H.ok(f.warn:IsShown(), "and it goes back")
-    H.eq(f.cmd:GetText(), "", "with the command put away again")
-    H.ok(f.back:IsShown() == false, "and no button back to where you already are")
-
-    -- A DECISION IS NOT REMEMBERED. Running a script is a decision, and one made last Tuesday is
-    -- not one made now - so a fresh session puts the warning back.
-    U.agreed, U.hash = nil, nil
-    U.Refresh()
-    H.ok(f.warn:IsShown(), "a new session asks again")
-    H.eq(f.cmd:GetText(), "", "and the command is gone again with it")
-
     -- no logs folder: the window says so rather than offering an empty command
     _G.BiSGuildDB.logs = nil
-    U.agreed = true
     U.Refresh()
     H.eq(f.cmd:GetText(), "", "with no logs folder there is no command to copy")
     P.SetLogs("C:\\Program Files (x86)\\World of Warcraft\\_anniversary_\\Logs")
-    U.agreed, U.hash = nil, nil
+    U.Hide()
 end
 
-H.section("the warning, and the fingerprint")
+H.section("/bisg script: the officers' line, and the fingerprint gone")
 do
-    -- Arn, 4 Oct: "we need a big warning that you are about to run a powershell make sure no one
-    -- sent you this copy". "Paste this into PowerShell" is how people get robbed, and nothing in
-    -- this addon can tell a good script from a bad one - so the warning is not optional decoration,
-    -- it is the feature.
-    -- ONE NUMBER FOR THE WHOLE ADDON (16 Oct 2026). Arn: "we can do it like face fusion and there are
-    -- multiple places that need to match up for the hash to work". It was the script's hash alone.
-    local FP = NS.BUILD and NS.BUILD.fingerprint
-    H.ok(type(FP) == "string" and #FP == 64 and FP:match("^%x+$") ~= nil,
-         "the addon carries one fingerprint (Core/Build.lua): 64 hex", tostring(FP))
-    H.eq(P.Fingerprint(), FP and FP:upper(), "and shows it as it is")
-
-    -- AND IT IS THE HASH OF THE SCRIPT WE ACTUALLY SHIP (5 Oct 2026). It was not: Arn ran the check,
-    -- got BBFE79CF..., and the window said 64E58A59.... The one number on that page whose entire job
-    -- is to match did not match, which is worse than having no check at all - a player who compares
-    -- and sees a mismatch concludes they have been given a doctored addon.
-    --
-    -- "Lua 5.1 cannot compute SHA-256" was why this was never enforced, and it was simply untrue:
-    -- no bitwise operators, so the 32-bit work is arithmetic. dev/sha256.lua, checked against the
-    -- published NIST vectors every run, because a hash written from memory and never verified is
-    -- precisely the thing that looks right and is not. (Mine was wrong the first time: `a * 2^(32-n)`
-    -- overflows a double. The vectors caught it in one run.)
-    do
-        local sha = dofile(HERE .. "/sha256.lua")
-        H.eq(sha(""):lower(), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-             "the hasher agrees with the published answer for an empty file")
-        H.eq(sha("abc"):lower(), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
-             "and for \"abc\"")
-
-        -- THE FINGERPRINT, WORKED OUT AGAIN HERE, ON ITS OWN. Tools\fingerprint.ps1 writes it and the
-        -- CurseForge page's line checks it; this is the third hand, so a mistake in one of them cannot
-        -- hide behind the others. Every place it is written must agree, or this is red - and a red
-        -- suite stops the release, so a stale number cannot reach CurseForge (it did, 5 Oct).
-        --
-        -- Pure-Lua SHA-256 over every file is ~15 s, so `sha256sum` does the files when it is there
-        -- (Git Bash, every Linux) - and only after it agrees with dev/sha256.lua on a real file.
-        local WIN = package.config:sub(1, 1) == "\\"
-        local NULL = WIN and "nul" or "/dev/null"
-        local function run(cmd)
-            local p = io.popen and io.popen(cmd .. " 2>" .. NULL)
-            if not p then return nil end
-            local s = p:read("*a")
-            p:close()
-            return s
-        end
-        local function q(path) return '"' .. path .. '"' end
-        local function slow(rel) return sha(bytes(ROOT .. "/" .. rel)):upper() end
-        local function quick(rel)
-            local out = run("sha256sum " .. q(ROOT .. "/" .. rel))
-            local h = out and out:match("^\\?(%x+)")
-            return h and #h == 64 and h:upper() or nil
-        end
-        local fast = quick("Libs/LibStub/LibStub.lua") == slow("Libs/LibStub/LibStub.lua")
-        if not fast then H.say("  (note) no sha256sum that agrees with dev/sha256.lua - hashing in Lua, slowly") end
-        local function hash(rel) return fast and quick(rel) or slow(rel) end
-
-        local listed = run("git -C " .. q(ROOT) .. " -c core.quotepath=off ls-files --cached --others --exclude-standard")
-        if not (listed and listed:find("BiSGuild.toc", 1, true)) then
-            H.say("  (note) git could not list the addon - the fingerprint is not worked out again here")
-        else
-            -- what ships: _bisdev/release/stage.ps1's rule; then what the fingerprint leaves out:
-            -- Tools/fingerprint.ps1's, written the Lua way (P.SKIP is the same rule as a pattern)
-            local NEVER = { dev = true, test = true, ["CLAUDE.md"] = true, [".pkgmeta"] = true }
-            local function out(rel)
-                local top = rel:match("^[^/]+")
-                if NEVER[top] or top:sub(1, 1) == "." then return true end
-                return rel:find("/%.") ~= nil or rel:lower():find("%.md$") ~= nil or rel == "Data/Report.lua"
-                    or rel == "Core/Build.lua" or rel == "Tools/manifest.txt"
-            end
-            local lines, seen = {}, {}
-            for rel in listed:gmatch("[^\r\n]+") do
-                if not seen[rel] and not out(rel) and bytes(ROOT .. "/" .. rel) then
-                    seen[rel] = true
-                    lines[#lines + 1] = hash(rel) .. " " .. rel
-                end
-            end
-            table.sort(lines)
-            local manifest = table.concat(lines, "\n") .. "\n"
-            H.ok(#lines >= 20, "the fingerprint covers every shipped file: " .. #lines)
-            H.ok(seen["Tools/logreport.ps1"] and seen["BiSGuild.toc"] and seen["Core/Copies.lua"],
-                 "the script, the TOC and the code among them")
-            H.eq(bytes(ROOT .. "/Tools/manifest.txt"), manifest,
-                 "Tools/manifest.txt lists exactly those files and their hashes - run Tools\\stamp.ps1 if this is red")
-            H.eq(sha(manifest):upper(), FP and FP:upper(),
-                 "and the fingerprint is the manifest's own hash - run Tools\\stamp.ps1 if this is red")
+    -- THE FINGERPRINT IS GONE (18 Oct 2026). Arn: "can we get rid of the fingerprint thing and just do
+    -- a secret powershell feature just for us". It guarded the script raiders ran (4-18 Oct); raiders
+    -- run the notebook now. Gone everywhere it lived, so nothing half-remembers it.
+    for _, rel in ipairs({ "Core/Build.lua", "Tools/manifest.txt", "Tools/stamp.ps1", "Tools/fingerprint.ps1" }) do
+        H.eq(bytes(ROOT .. "/" .. rel), nil, rel .. " is gone")
+    end
+    H.ok(NS.BUILD == nil and NS.parts == nil and NS.broken == nil and NS.TellBroken == nil,
+         "and so are the build list, the per-file stamps and the not-whole switch-off")
+    H.eq(bytes(ROOT .. "/BiSGuild.toc"):find("Build.lua", 1, true), nil, "the TOC no longer loads a build file")
+    for _, rel in ipairs(FILES) do
+        if not rel:find("^Libs/") then
+            local body = bytes(ROOT .. "/" .. rel) or ""
+            H.ok(not body:find("ns%.parts%["), rel .. " carries no version stamp")
         end
     end
+    local ps = bytes(ROOT .. "/Tools/logreport.ps1") or ""
+    H.ok(not ps:find("Test-BiSGuildCopy", 1, true) and not ps:find("fingerprint.ps1", 1, true),
+         "the script no longer refuses a copy - there is no list to check it against")
 
-    -- EVERY PLACE THE NUMBER IS WRITTEN SAYS THE SAME NUMBER
-    do
-        local cf = bytes(ROOT .. "/dev/cf-desc.md") or ""
-        H.ok(FP and cf:find("    Fingerprint   " .. FP, 1, true) ~= nil,
-             "cf-desc's record line carries it - run Tools\\stamp.ps1 if this is red")
-        -- THE NUMBER LIVES IN THE RELEASE NOTES (Arn, 17 Oct: "we change to release note"): the part
-        -- that is pasted onto the page carries no number - a stale one there would make honest copies
-        -- look doctored - and sends people to the Files tab instead
-        local page = cf:match("\n%-%-%-\n(.*)$") or ""
-        H.ok(page ~= "" and not page:find("%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x"),
-             "the pasted page carries no fingerprint")
-        H.ok(page:find("release notes", 1, true) and page:find("Files", 1, true),
-             "and says where it is: the version's release notes, on the Files tab")
-        H.ok(cf:find("    " .. P.CheckCommand("<your WoW folder>\\Interface\\AddOns\\BiSGuild") .. "\n", 1, true) ~= nil,
-             "and the CurseForge page's check line is the addon's, letter for letter")
-        local cl = bytes(ROOT .. "/CHANGELOG.md") or ""
-        local top = cl:match("\n## [^\n]*\n(.-)\n## ") or cl:match("\n## [^\n]*\n(.*)$") or ""
-        -- opt-in per release (Arn, 16 Oct: "dont put the fingerprint lets get approved first"):
-        -- no line is fine; a line with another number is not
-        local inLog = top:match("^\nFingerprint %(SHA%-256[^\n]*`(%x+)`")
-        if inLog then
-            H.eq(inLog, FP, "the changelog's top entry (the release notes) carries it")
-        else
-            H.say("  (note) the changelog's top entry has no fingerprint line - fine until it does")
-        end
-        local ps = bytes(ROOT .. "/Tools/fingerprint.ps1") or ""
-        H.ok(ps:find("$script:BiSGuildSkip = '" .. P.SKIP .. "'", 1, true) ~= nil,
-             "the script's rule for which files count is the addon's, letter for letter")
-        H.ok(cf:find(P.SKIP, 1, true) ~= nil, "and the page's line uses it too")
-
-        -- Core/Build.lua is outside the fingerprint (it holds it), so it must be EXACTLY what
-        -- Tools/fingerprint.ps1 writes - the script refuses a copy where it is not, and this is the
-        -- same text built the other way
-        local parts = {}
-        for _, rel in ipairs(FILES) do
-            if not (rel:find("^Libs/") or rel == "Data/Report.lua" or rel == "Core/Build.lua") then parts[#parts + 1] = rel end
-        end
-        local want = [[
--- BiSGuild :: Core/Build.lua - written by Tools\stamp.ps1. Never edit it by hand.
---
--- What this copy says it is. Every file of ours ends by writing its version into ns.parts, and
--- Core/Copies.lua checks them against this list at login: a file missing, failing to load, or
--- left over from another version, and BiS Guild says so and stops. The fingerprint is the
--- SHA-256 of Tools/manifest.txt. This file is not inside it (it holds it); logreport.ps1 checks
--- instead that it is exactly this text and nothing else.
-local _, ns = ...
-ns.BUILD = {
-    version = "]] .. TOC_VERSION .. [[",
-    fingerprint = "]] .. tostring(FP) .. [[",
-    parts = {
-]]
-        for _, p in ipairs(parts) do want = want .. '        "' .. p .. '",\n' end
-        want = want .. "    },\n}\n"
-        H.eq(bytes(ROOT .. "/Core/Build.lua"), want, "Core/Build.lua is exactly the stamped text")
-        H.eq(NS.BUILD.version, TOC_VERSION, "of this version")
-        H.eq(#NS.BUILD.parts, #parts, "and lists every file of ours the TOC loads: " .. #parts)
-        for _, p in ipairs(parts) do
-            local body = bytes(ROOT .. "/" .. p) or ""
-            H.ok(body:find('\nns%.parts%["' .. (p:gsub("%p", "%%%0")) .. '"%] = "' .. (TOC_VERSION:gsub("%p", "%%%0")) .. '"\n$') ~= nil,
-                 p .. " ends by saying it is " .. TOC_VERSION)
-        end
-    end
+    -- THE NOTEBOOK'S LINK, AND THE PAGE'S: one link, so the page can be the check (Arn, 18 Oct: "the
+    -- link should also go into the curseforge description so people can double check")
+    local cf = bytes(ROOT .. "/dev/cf-desc.md") or ""
+    local page = cf:match("\n%-%-%-\n(.*)$") or ""
+    H.ok(page:find("(" .. NS.U.NOTEBOOK .. ")", 1, true) ~= nil, "the CurseForge page carries the window's link, exactly")
+    H.ok(not page:lower():find("fingerprint", 1, true) and not page:find("Get-FileHash", 1, true),
+         "and no fingerprint or check line any more")
 
     P.SetLogs("C:\\Program Files (x86)\\World of Warcraft\\_anniversary_\\Logs")
     local before = #said
     _G.SlashCmdList.BISGUILD("script")
     local out = table.concat(said, "\n", before + 1, #said)
+    H.ok(out:find("PowerShell", 1, true) ~= nil, "/bisg script still says the word PowerShell")
+    H.ok(out:find("/bisg paste", 1, true) ~= nil, "and sends raiders to the notebook instead")
+    H.ok(not out:lower():find("fingerprint", 1, true) and not out:find("Get-FileHash", 1, true),
+         "no fingerprint, no hash check", out)
 
-    H.ok(out:find("PowerShell", 1, true) ~= nil, "it says the word PowerShell")
-    H.ok(out:find("anything you can do", 1, true) ~= nil, "and what that means")
-    H.ok(out:find("do not run", 1, true) ~= nil, "and says not to run a copy somebody sent you")
-    H.ok(out:find("CurseForge", 1, true) ~= nil, "and where a trustworthy copy comes from")
-    H.ok(out:find(P.CheckCommand(), 1, true) ~= nil, "it gives the one-line check for the whole addon")
-    H.ok(out:find(P.Fingerprint(), 1, true) ~= nil, "and shows what this copy claims")
-    H.ok(out:find("will not run", 1, true) ~= nil, "and says the script checks every file itself")
-
-    -- ARN FOUND THE HOLE (4 Oct): "won't someone that steals the zip can just write code to put up
-    -- whatever hash is the most correct tho?" Yes - whoever changes the script changes this
-    -- constant with it, and then both ends of the check agree. A check an attacker controls both
-    -- ends of is WORSE than none, because it manufactures confidence. The addon must say so.
-    H.ok(out:find("proves nothing on its own", 1, true) ~= nil,
-         "and says plainly that the two agreeing proves nothing on its own", out)
-    H.ok(out:find("faked number here too", 1, true) ~= nil,
-         "because a faked addon would fake this number as well")
+    -- OFF THE HELP: the notebook is listed, the PowerShell road is not (it still works)
+    before = #said
+    _G.SlashCmdList.BISGUILD("help")
+    local help = table.concat(said, "\n", before + 1, #said)
+    H.ok(help:find("/bisg paste", 1, true) and not help:find("/bisg script", 1, true)
+         and not help:find("/bisg window", 1, true) and not help:find("/bisg logs", 1, true),
+         "/bisg help lists the notebook, not the PowerShell road", help)
 
     -- THE WARNING MUST COME FIRST. A caution printed under the command is one people scroll past
     -- having already copied the line.
@@ -864,28 +599,16 @@ do
         -- the console fades its words in on the ticker, by the CLOCK: run a second of it, as the
         -- client would before anybody reads the window
         for _ = 1, 4 do H.clock = H.clock + 0.3 tick(f.cmdWrap, 0.3) end
-        U.TypeNow()
     end
     P.SetLogs("C:\\Program Files (x86)\\World of Warcraft\\_anniversary_\\Logs")
     _G.BiSGuildReport = nil
 
-    -- empty: the warning, nothing answered, no report
-    U.agreed, U.hash = nil, nil
+    -- the command, no report yet, and the "press Ctrl+C" notice from clicking it
     show()
-    fitsIn(f, "the warning, fresh")
-
-    -- the warning with the hash check typed out, and the "press Ctrl+C" notice from clicking it
-    U.hash = true
-    show()
-    f.hashLine._scripts.OnMouseUp(f.hashLine)
-    fitsIn(f, "the warning with the hash check open")
-
-    -- past the warning, no report yet
-    U.agreed, U.hash = true, nil
-    show()
+    f.cmd._scripts.OnMouseUp(f.cmd)
     fitsIn(f, "the command, no report yet")
 
-    -- past the warning with no logs folder: the header note asks for it
+    -- no logs folder: the header note asks for it
     _G.BiSGuildDB.logs = nil
     show()
     fitsIn(f, "the command, no logs folder")
@@ -930,7 +653,6 @@ do
     H.ok(not f.lastHit:IsShown(), "and with no report there is nothing to hover")
 
     U.Hide()
-    U.agreed, U.hash = nil, nil
     _G.BiSGuildReport = nil
 end
 
@@ -1877,16 +1599,25 @@ do
         f.keys.raiders:Click()
     end
 
-    -- THE LOG TAB PUTS ITS WINDOW IN FRONT, WHOLE (Arn, 16 Oct: "this windows kinda get
-    -- overlapping" - the terminal's ticker drew across the log window)
-    local uf = NS.U.Build()
-    local raised, top = false, false
-    uf.Raise = function() raised = true end
-    uf.SetToplevel = function(_, v) top = v end
+    -- THE LOG TAB OPENS THE NOTEBOOK'S WINDOW, IN FRONT (Arn, 18 Oct: "in the logs we give them the
+    -- link to go to the google code thing"; 16 Oct: "this windows kinda get overlapping")
+    local pf = NS.U.BuildPaste()
+    local raised = false
+    pf.Raise = function() raised = true end
+    pf:Hide()
     f.keys.log:Click()
-    H.ok(uf:IsShown() and raised and top, "the LOG tab raises the log window over the terminal")
-    NS.U.Hide()
-    uf.Raise, uf.SetToplevel = nil, nil
+    H.ok(pf:IsShown() and raised, "the LOG tab opens the paste window, raised over the terminal")
+    H.ok(not (NS.U.frame and NS.U.frame:IsShown()), "not the PowerShell window - that one is the officers'")
+    H.eq(pf.link:GetText(), NS.U.NOTEBOOK, "with the notebook's link in it")
+    H.ok(NS.U.NOTEBOOK:find("^https://colab%.research%.google%.com/github/blankfer/BiSGuild/blob/main/") ~= nil,
+         "on Google's Colab, from our GitHub, on main", NS.U.NOTEBOOK)
+    -- a click selects it for Ctrl+C; a stray key cannot change it
+    pf.link._scripts.OnMouseUp(pf.link)
+    pf.link:SetText("oops")
+    pf.link._scripts.OnTextChanged(pf.link, true)
+    H.eq(pf.link:GetText(), NS.U.NOTEBOOK, "typing into the link box puts the link straight back")
+    pf:Hide()
+    pf.Raise = nil
 
     -- NO FUNCTION KEYS (Arn: "i have stuff keybound to those keys")
     local before = K.page
@@ -2614,51 +2345,7 @@ do
     _G.BiSTheme = realTheme
 end
 
-H.section("a copy that is not whole switches itself off (Core/Copies.lua)")
-do
-    local C, K, X = NS.Copy, NS.K, NS.X
-    H.ok(NS.broken == nil, "this copy is whole: every file loaded, all from " .. TOC_VERSION,
-         table.concat(NS.broken or {}, "; "))
-    H.eq(#C.Problems(), 0, "and has nothing to say about itself")
-
-    -- a file that never ran (the client skips a missing one without a word), and one left over
-    local keep = NS.parts["Core/Where.lua"]
-    NS.parts["Core/Where.lua"] = nil
-    NS.parts["Core/Pins.lua"] = "0.0.0"
-    local p = table.concat(C.Problems(), "; ")
-    H.ok(p:find("Core/Where.lua did not load", 1, true) ~= nil, "a missing file is named", p)
-    H.ok(p:find("Core/Pins.lua is from 0.0.0", 1, true) ~= nil, "and a file from another version", p)
-    local realBuild = NS.BUILD
-    NS.BUILD = nil
-    H.eq(C.Problems()[1], "Core/Build.lua did not load", "no build file: said so")
-    NS.BUILD = { version = "9.9.9", fingerprint = realBuild.fingerprint, parts = {} }
-    H.ok(C.Problems()[1]:find("from 9.9.9", 1, true) ~= nil, "a build file from another version: said so")
-    NS.BUILD = realBuild
-
-    -- and then it does nothing but say so
-    H.eq(C.Check(), false, "the check fails")
-    local before = #said
-    K.Show()
-    H.ok(not (K.frame and K.frame:IsShown()), "the terminal does not open")
-    H.ok(said[before + 1] and said[before + 1]:find("not whole", 1, true), "it says why instead", said[before + 1])
-    H.eq(NS.U.Show(), false, "nor the script window")
-    before = #said
-    _G.SlashCmdList.BISGUILD("report")
-    H.ok(said[before + 1] and said[before + 1]:find("not whole", 1, true), "every /bisg command says it", said[before + 1])
-    H.ok(table.concat(said, "\n", before + 1):find("CurseForge", 1, true), "and where a whole copy comes from")
-    local outBefore = #X.out
-    X.Send("HAVE", "261016.2.2")
-    H.eq(#X.out, outBefore, "and it shares nothing")
-    X.Send("BUILD", "0.0.1", "-", ".x")
-    H.eq(#X.out, outBefore + 1, "except that it is broken")
-    X.out[#X.out] = nil
-
-    NS.parts["Core/Where.lua"], NS.parts["Core/Pins.lua"] = keep, TOC_VERSION
-    NS.broken = nil
-    H.ok(C.Check(), "whole again")
-end
-
-H.section("the guild's copies: same as mine? (Core/Copies.lua)")
+H.section("the guild's versions: is a newer one about? (Core/Copies.lua)")
 do
     local C, X = NS.Copy, NS.X
     local ROSTER = { { "Kumlust", 1 }, { "Bigboss", 0 }, { "Anna", 4 }, { "Bea", 4 }, { "Cid", 4 },
@@ -2677,85 +2364,67 @@ do
     end
     drain()
     NS.Books().copies = nil
-    local FP, V = C.Fingerprint(), TOC_VERSION
-    local OTHER = ("AB"):rep(32)
+    C.toldOld = nil
+    local V = TOC_VERSION
+    local OLDFP = ("AB"):rep(32)        -- what a 0.1.x copy still sends in the middle field
 
-    -- at login: one line, asking
+    -- at login: one line, asking. THE MIDDLE FIELD STAYS, AS "-": 0.1.x copies drop a BUILD line whose
+    -- middle is not "-" or 64 hex, and they are the very copies that need to hear a newer one is about
     H.wire = {}
     C.lastSent = nil
     H.ok(C.Say(true), "the copy tells the guild")
     drain()
     local b = builds()
     H.eq(#b, 1, "in one line")
-    H.ok(b[1] and b[1]:find("|BUILD|" .. V .. "|" .. FP .. "|?", 1, true), "its version, fingerprint and a question", b[1])
+    H.ok(b[1] and b[1]:find("|BUILD|" .. V .. "|-|?", 1, true), "its version, a '-' where the fingerprint was, and a question", b[1])
     H.ok(b[1] and #b[1] <= 250, "under the client's limit: " .. (b[1] and #b[1] or 0))
+    -- the 0.1.1 check, verbatim from the released Core/Copies.lua C.Hear: our line passes it
+    local fp = "-"
+    H.ok(fp == "-" or (#fp == 64 and fp:match("^%x+$")), "a released 0.1.1 copy accepts that line")
 
     -- what is believed: guildmates only, never ourselves, nothing malformed
-    C.Hear("Stranger", V, FP, ".")
-    C.Hear("Kumlust", V, FP, ".")
-    C.Hear("Anna", V, "not hex", ".")
-    C.Hear("Anna", "0.1;drop", FP, ".")
+    C.Hear("Stranger", "9.0.0", "-", ".")
+    C.Hear("Kumlust", "9.0.0", "-", ".")
+    C.Hear("Anna", "0.1;drop", "-", ".")
     H.eq(next(C.Book()), nil, "a stranger, ourselves and garbage are not written down")
+    H.ok(not C.toldOld, "and none of them told us anything")
 
-    C.Hear("Anna-Dreamscythe", V, FP, ".")
-    C.Hear("Bea", V, FP:lower(), ".")
-    C.Hear("Cid", V, OTHER, ".")
-    C.Hear("Dot", "0.0.0", OTHER, ".")
-    C.Hear("Eve", "9.0.0", OTHER, ".")
-    C.Hear("Fay", V, FP, ".x")
-    local s = C.Summary()
-    H.eq(s.match, 2, "two the same as mine (case does not matter)")
-    H.eq(s.differ, 1, "one the same version with other files")
-    H.eq(s.older, 1, "one older")
-    H.eq(s.newer, 1, "one newer")
-    H.eq(s.broken, 1, "one that failed its own check")
+    -- an old copy still sends its fingerprint: heard all the same, the field ignored
+    C.Hear("Anna-Dreamscythe", V, OLDFP, ".")
+    C.Hear("Bea", "0.0.0", OLDFP, ".x")
+    H.eq(C.Summary().newer, 0, "the same version and an older one: nothing newer")
+    H.ok(not C.toldOld, "so nothing said")
+    local before = #said
+    C.Hear("Eve", "9.0.0", "-", ".")
+    local told = table.concat(said, "\n", before + 1)
+    H.ok(told:find("1 guildmate(s) run BiS Guild 9.0.0", 1, true) and told:find("CurseForge", 1, true),
+         "a newer copy about: said, with where to update", told)
+    before = #said
+    C.Hear("Fay", "9.1.0", "-", ".")
+    H.eq(#said, before, "once a session")
+    H.eq(C.Summary().newest, "9.1.0", "the newest is kept")
     H.ok(C.Newer("0.10.0", "0.9.3") and not C.Newer("0.9.3", "0.10.0"), "0.10.0 is newer than 0.9.3")
-    H.ok(C.toldOld, "a newer copy about: said once")
 
     -- an ask is answered - by a few, not by everyone
     H.wire = {}
     C.lastSent, C.waiting = nil, nil
-    C.Hear("Anna", V, FP, "?")
+    C.Hear("Anna", V, "-", "?")
     H.ok(C.waiting, "an ask: we wait our turn")
-    C.Hear("Bea", V, FP, ".")
+    C.Hear("Bea", V, "-", ".")
     drain()
-    H.eq(#builds(), 1, "and answer, when not enough copies like ours already have")
+    H.eq(#builds(), 1, "and answer, when not enough copies of our version already have")
     H.wire = {}
-    C.Hear("Cid", V, OTHER, "?")
+    C.Hear("Cid", V, "-", "?")
     drain()
     H.eq(#builds(), 0, "a second ask right after: we spoke a moment ago, so we stay quiet")
     C.lastSent, C.waiting = nil, nil
-    C.Hear("Dot", "0.0.0", OTHER, "?")
-    for _, n in ipairs({ "Anna", "Bea", "Fay" }) do C.Hear(n, V, FP, ".") end
+    C.Hear("Dot", "0.0.0", "-", "?")
+    for _, n in ipairs({ "Anna", "Bea", "Fay" }) do C.Hear(n, V, OLDFP, ".") end
     drain()
-    H.eq(#builds(), 0, C.ENOUGH .. " copies like ours answered first: we stand down")
+    H.eq(#builds(), 0, C.ENOUGH .. " copies of our version answered first: we stand down")
 
-    -- the odd one out hears it, once
-    NS.Books().copies = nil
-    C.toldOdd = nil
-    local before = #said
-    for _, n in ipairs({ "Anna", "Bea", "Cid" }) do C.Hear(n, V, OTHER, ".") end
-    local told = table.concat(said, "\n", before + 1)
-    H.ok(told:find("not the same as 3 guildmates", 1, true) ~= nil, "a copy unlike everyone's says so", told)
-    before = #said
-    C.Hear("Dot", V, OTHER, ".")
-    H.eq(#said, before, "once")
-
-    -- /bisg copy: this copy, the guild, and for an officer who runs what
-    before = #said
-    _G.SlashCmdList.BISGUILD("copy")
-    local out = table.concat(said, "\n", before + 1)
-    H.ok(out:find(FP, 1, true) and out:find("whole", 1, true), "/bisg copy: this copy, whole", out)
-    H.ok(out:find("proves", 1, true) or out:find("SAYS", 1, true), "and that its own number is only what it says")
-    H.ok(out:find("4 different", 1, true) ~= nil, "the guild's count", out)
-    H.ok(out:find("Anna " .. V, 1, true) ~= nil, "an officer sees who", out)
-    ROSTER[1][2] = 4
-    X._ranksDirty = true
-    before = #said
-    _G.SlashCmdList.BISGUILD("copy")
-    out = table.concat(said, "\n", before + 1)
-    H.ok(out:find("Anna", 1, true) == nil, "a member sees the count, not the names", out)
-    ROSTER[1][2] = 1
+    -- /bisg copy is gone with the fingerprint: it is just a word now, and words are the report
+    H.eq(NS.Copy.Report, nil, "no /bisg copy report any more")
 
     -- a guildmate's copy is forgotten after a month
     C.Book().Anna.t = time() - C.KEEP - 1
@@ -2765,13 +2434,13 @@ do
     -- lean: hearing a whole guild log in
     local Cost = dofile("../_bisdev/dev/cost.lua")
     local n, by = Cost.Count(function()
-        for i = 1, 40 do C.Hear(ROSTER[(i % #ROSTER) + 1][1], V, FP, ".") end
+        for i = 1, 40 do C.Hear(ROSTER[(i % #ROSTER) + 1][1], V, "-", ".") end
     end)
     H.say(("   cost: hearing 40 copies = %d calls (%s)"):format(n, Cost.Top(by, 3)))
     H.ok(n <= 3 * 40, "hearing a copy costs a few client calls: " .. n, Cost.Top(by, 4))
 
     NS.Books().copies = nil
-    C.toldOdd, C.toldOld, C.waiting, C.lastSent = nil, nil, nil, nil
+    C.toldOld, C.waiting, C.lastSent = nil, nil, nil
     _G.GetNumGuildMembers, _G.GetGuildRosterInfo = realNum, realInfo
     X._ranksDirty = true
     drain()

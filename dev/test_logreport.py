@@ -242,17 +242,10 @@ def main():
                 os.makedirs(logs2)
                 os.makedirs(addon2)
                 shutil.copy(path, logs2)
-                # A WHOLE COPY, AS A RAIDER HAS IT. Since 16 Oct the script checks its own folder
-                # against Tools/manifest.txt and stops on anything extra - and the repo has dev/ in
-                # it. So the shipped files are copied into the scratch client and the script runs
-                # from THERE (the repo must be stamped: Tools\stamp.ps1).
+                # THE SHIPPED Tools/, AS AN OFFICER HAS IT: the script, its consumables and gear lists,
+                # run from a scratch client so the report it writes lands there and not in the repo
                 repo = os.path.dirname(HERE)
-                with open(os.path.join(repo, "Tools", "manifest.txt"), encoding="utf-8") as mf:
-                    shipped = [ln.split(" ", 1)[1].strip() for ln in mf if " " in ln.strip()]
-                for rel in shipped + ["Tools/manifest.txt", "Core/Build.lua"]:
-                    dst = os.path.join(addon2, *rel.split("/"))
-                    os.makedirs(os.path.dirname(dst), exist_ok=True)
-                    shutil.copyfile(os.path.join(repo, *rel.split("/")), dst)
+                shutil.copytree(os.path.join(repo, "Tools"), os.path.join(addon2, "Tools"))
                 script = os.path.join(addon2, "Tools", "logreport.ps1")
                 r = subprocess.run([ps, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script,
                                     "-Logs", logs2], capture_output=True, text=True)

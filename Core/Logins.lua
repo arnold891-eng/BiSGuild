@@ -455,5 +455,3 @@ end)
 
 -- the start and the end of raid time, looked for every L.TICK seconds
 if C_Timer and C_Timer.NewTicker then C_Timer.NewTicker(L.TICK, function() L.Tick() end) end
-
-ns.parts["Core/Logins.lua"] = "0.1.1"
