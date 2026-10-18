@@ -264,4 +264,4 @@ f:SetScript("OnEvent", function(_, event, a, b)
     end
 end)
 
-ns.parts["Core/Copies.lua"] = "0.1.0"
+ns.parts["Core/Copies.lua"] = "0.1.1"

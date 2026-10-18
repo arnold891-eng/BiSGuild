@@ -205,4 +205,4 @@ SlashCmdList.BISGUILD = function(input)
     (lib and lib:Enabled()) and T.text("good", "on") or T.text("warn", "off"), lib and lib:Count() or 0)
 end
 
-ns.parts["Core/Init.lua"] = "0.1.0"
+ns.parts["Core/Init.lua"] = "0.1.1"

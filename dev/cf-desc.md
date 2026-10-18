@@ -55,7 +55,7 @@ A 110 MB log takes seconds. It reads one line at a time, and only the logs it ha
 
 ## ⚠️ Before you run the script
 
-**A PowerShell script can do anything you can do on your computer.** Only run this one if you got BiS Guild from this page or from your own officers. **If somebody sent you a copy, don't run it**, however helpful they seem. Where you got it is the check that matters. Everything below is the second line.
+**A PowerShell script can do anything you can do on your computer.** We publish BiS Guild in two places only: **this CurseForge page** and **its GitHub page** (github.com/arnold891-eng/BiSGuild). Anywhere else (another website, a file in Discord, a "fixed" copy somebody sends you) isn't us, however official it looks, so don't run it. Where you got it is the check that matters. Everything below is the second line.
 
 ### Check your copy
 
@@ -65,7 +65,7 @@ One number covers every file of the addon. Change one letter anywhere, add a fil
 
 The answer must be exactly this, for **the current version**:
 
-    Fingerprint   EF71A17DCE929C18BBDABC298A957CB26FA1DE53E3A1AB3A25C3035E3E0173A4
+    Fingerprint   93B8570923F7CCE40F422614E08BFBD59C527287E992460939285076C5EF67AC
 
 The addon shows you a number too. **Compare with this page, not with that.** Whoever doctors a copy can change what the addon shows just as easily. If your answer differs, stop and ask an officer.
 
