@@ -1,7 +1,10 @@
 # BiSGuild
 
-## Unreleased
+## 0.1.1
 
+Fingerprint (SHA-256 of the whole addon, check it with the command on the CurseForge page): `93B8570923F7CCE40F422614E08BFBD59C527287E992460939285076C5EF67AC`
+
+- **Where BiS Guild comes from:** only its CurseForge page and its GitHub page. A copy from anywhere else is not ours, however official it looks - the CurseForge page says so above the check line.
 - The terminal's frame is a thin dark-purple line all round, like BiS Tools' windows. It was a bar along the top in your accent colour, which came out white with EllesmereUI's.
 
 ## 0.1.0

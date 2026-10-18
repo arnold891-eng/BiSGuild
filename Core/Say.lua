@@ -184,4 +184,4 @@ function ns.Say(cmd, rest)
     return ns.Say("report")
 end
 
-ns.parts["Core/Say.lua"] = "0.1.0"
+ns.parts["Core/Say.lua"] = "0.1.1"
