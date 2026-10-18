@@ -2894,7 +2894,20 @@ do
     H.ok(math.abs(U.PW / U.PH - 1.43) < 0.01, "at the family's 1.43:1")
     p.box:SetText(good)
     U.DoPaste()
-    H.ok(p.status:GetText():find("1 raid", 1, true), "Import: '1 raid(s) taken in' in the window", p.status:GetText())
+    -- THE BAR (Arn, 18 Oct: "fake progress bars - to make it look like its doing something"): the raid
+    -- is in at once; the bar plays it out, the window narrating, and only then says the result
+    H.ok(S.Record().nights["2026-10-16 409"] ~= nil, "Import: the raid is on record at once")
+    local step = p:GetScript("OnUpdate")
+    H.ok(step ~= nil and p.bar:IsShown(), "and the bar starts")
+    step(p, U.BAR_LEN * 0.3)
+    local lit = 0
+    for _, b in ipairs(p.bar.blocks) do if b:IsShown() then lit = lit + 1 end end
+    H.ok(lit > 0 and lit < U.BAR_BLOCKS, "a third of the way: part of the bar lit", lit)
+    H.ok(p.status:GetText():find("Raid 2026-10-16 Molten Core", 1, true), "the window says which raid it is reading", p.status:GetText())
+    H.ok(U.DoPaste() == nil, "a second Import while the bar runs does nothing")
+    step(p, U.BAR_LEN)
+    H.ok(p.status:GetText():find("1 raid", 1, true), "at the end: '1 raid(s) taken in'", p.status:GetText())
+    H.eq(p:GetScript("OnUpdate"), nil, "and the bar stops ticking (nothing runs after)")
     H.eq(p.box:GetText(), "", "and the box empties")
     p.box:SetText("nonsense")
     U.DoPaste()

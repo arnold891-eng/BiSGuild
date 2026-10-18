@@ -490,27 +490,84 @@ function U.BuildPaste()
     clear:SetPoint("LEFT", import, "RIGHT", 8, 0)
     clear:SetText("Clear")
     clear:SetScript("OnClick", function() box:SetText("") p.status:SetText("") end)
+
+    -- THE BAR (Arn, 18 Oct: "fake progress bars - to make it look like its doing something"). Beside
+    -- the buttons, the family's chunky blocks in the accent: it fills while the window says what it
+    -- is doing. Flavour: the import is already done when it starts.
+    local bar = CreateFrame("Frame", nil, p)
+    bar:SetSize(U.BAR_W, 14)
+    bar:SetPoint("BOTTOMRIGHT", -12, 14)
+    local bbg = bar:CreateTexture(nil, "BACKGROUND")
+    bbg:SetAllPoints()
+    bbg:SetColorTexture(0.08, 0.08, 0.10, 1)
+    bar.blocks = {}
+    local bw = (U.BAR_W - 2) / U.BAR_BLOCKS
+    local ar, ag, ab = 0.72, 0.5, 1
+    if T().rgb then ar, ag, ab = T().rgb("accent") end
+    for i = 1, U.BAR_BLOCKS do
+        local b = bar:CreateTexture(nil, "ARTWORK")
+        b:SetSize(bw - 2, 10)
+        b:SetPoint("LEFT", bar, "LEFT", 2 + (i - 1) * bw, 0)
+        b:SetColorTexture(ar, ag, ab, 1)
+        b:Hide()
+        bar.blocks[i] = b
+    end
+    bar:Hide()
+    p.bar = bar
     p:Hide()
     U.paste = p
     return p
 end
+U.BAR_W, U.BAR_BLOCKS, U.BAR_LEN = 250, 20, 1.8
 
---- Take the box's text in and say what happened, in the window.
+--- Take the box's text in. The import happens HERE, at once; then the bar plays it out and the
+--- window says what came in. A refusal is said at once - nothing to wait for.
 function U.DoPaste()
     local p = U.BuildPaste()
     if not p then return nil end
-    local raids, gear, bad = ns.X.ImportPaste(p.box:GetText())
+    if p.run then return nil end                       -- one at a time
+    local text = p.box:GetText() or ""
+    local raids, gear, bad = ns.X.ImportPaste(text)
     if not raids then
         p.status:SetText(T().text("warn", gear))
         return nil, gear
     end
-    local said = ("%d raid(s) taken in, %d raider(s)' gear"):format(raids, gear)
-    if raids == 0 and gear == 0 then said = "nothing new - this is already on record" end
-    if bad > 0 then said = said .. T().text("warn", ("  (%d line(s) could not be read)"):format(bad)) end
-    p.status:SetText(T().text(bad > 0 and "gold" or "good", said))
-    if raids > 0 then p.box:SetText("") end
-    if ns.K and ns.K.Paint and ns.K.frame and ns.K.frame:IsShown() then pcall(ns.K.Paint) end
+    local script = { "Reading the paste..." }
+    for key in text:gmatch("R~([^~\n]+)~") do
+        script[#script + 1] = "Raid " .. tostring(ns.S.Label(key) or key)
+    end
+    script[#script + 1] = ("Merging into the guild's record: %d new"):format(raids)
+    script[#script + 1] = ("Gear: %d raider(s)"):format(gear)
+    script[#script + 1] = "Done."
+    p.run = { t = 0, script = script, said = 0, raids = raids, gear = gear, bad = bad }
+    p.bar:Show()
+    for _, b in ipairs(p.bar.blocks) do b:Hide() end
+    p:SetScript("OnUpdate", function(self, elapsed) U.PasteStep(self, elapsed) end)
     return raids, gear, bad
+end
+
+--- One frame of the bar. OnUpdate runs only while the bar plays (lean: nothing ticks otherwise).
+function U.PasteStep(p, elapsed)
+    local r = p.run
+    if not r then p:SetScript("OnUpdate", nil) return end
+    r.t = r.t + (tonumber(elapsed) or 0)
+    local frac = math.min(1, r.t / U.BAR_LEN)
+    local lit = math.floor(frac * U.BAR_BLOCKS + 0.5)
+    for i, b in ipairs(p.bar.blocks) do if i <= lit then b:Show() else b:Hide() end end
+    local n = math.min(#r.script, math.floor(frac * #r.script) + 1)
+    if n ~= r.said then
+        r.said = n
+        p.status:SetText(T().text("muted", r.script[n]))
+    end
+    if frac < 1 then return end
+    p.run = nil
+    p:SetScript("OnUpdate", nil)
+    local said = ("%d raid(s) taken in, %d raider(s)' gear"):format(r.raids, r.gear)
+    if r.raids == 0 and r.gear == 0 then said = "nothing new - this is already on record" end
+    if r.bad > 0 then said = said .. T().text("warn", ("  (%d line(s) could not be read)"):format(r.bad)) end
+    p.status:SetText(T().text(r.bad > 0 and "gold" or "good", said))
+    if r.raids > 0 then p.box:SetText("") end
+    if ns.K and ns.K.Paint and ns.K.frame and ns.K.frame:IsShown() then pcall(ns.K.Paint) end
 end
 
 --- IN FRONT, ALONE (Arn's first paste, 18 Oct: it opened BEHIND the script window). The script
