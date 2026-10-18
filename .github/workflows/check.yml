@@ -2,7 +2,7 @@
 #
 # Every push and pull request runs `_bisdev/check.sh BiSGuild` - every dev suite, the
 # embed-bytes asserts against canon, bislint, the API fence - through the reusable workflow in
-# arnold891-eng/bis-ci.
+# blankfer/bis-ci.
 #
 # WHY bis-ci AND NOT bisdev (19 Sep 2026). A PUBLIC repository cannot `uses:` a reusable workflow
 # that lives in a PRIVATE one. No setting opens it - bisdev's Actions access was already "user" -
@@ -17,7 +17,7 @@ name: check
 on: [push, pull_request]
 jobs:
   check:
-    uses: arnold891-eng/bis-ci/.github/workflows/check.yml@main
+    uses: blankfer/bis-ci/.github/workflows/check.yml@main
     with:
       addon: BiSGuild
     secrets:
