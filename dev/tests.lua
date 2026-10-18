@@ -517,7 +517,15 @@ do
     do
         local cf = bytes(ROOT .. "/dev/cf-desc.md") or ""
         H.ok(FP and cf:find("    Fingerprint   " .. FP, 1, true) ~= nil,
-             "the CurseForge page carries it - run Tools\\stamp.ps1 if this is red")
+             "cf-desc's record line carries it - run Tools\\stamp.ps1 if this is red")
+        -- THE NUMBER LIVES IN THE RELEASE NOTES (Arn, 17 Oct: "we change to release note"): the part
+        -- that is pasted onto the page carries no number - a stale one there would make honest copies
+        -- look doctored - and sends people to the Files tab instead
+        local page = cf:match("\n%-%-%-\n(.*)$") or ""
+        H.ok(page ~= "" and not page:find("%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x"),
+             "the pasted page carries no fingerprint")
+        H.ok(page:find("release notes", 1, true) and page:find("Files", 1, true),
+             "and says where it is: the version's release notes, on the Files tab")
         H.ok(cf:find("    " .. P.CheckCommand("<your WoW folder>\\Interface\\AddOns\\BiSGuild") .. "\n", 1, true) ~= nil,
              "and the CurseForge page's check line is the addon's, letter for letter")
         local cl = bytes(ROOT .. "/CHANGELOG.md") or ""

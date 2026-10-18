@@ -1,9 +1,14 @@
 # BiS Guild — CurseForge page text
 
-Paste everything below the line into the project description, in the Markdown editor. **The check
-block's number changes every release** — `.\Tools\stamp.ps1` rewrites it here; paste the page again
-when the version goes up. The number on the live page is the one a faker cannot reach, so a stale
-one there is worse than none.
+Paste everything below the line into the project description, in the Markdown editor.
+
+**THE NUMBER LIVES IN EACH RELEASE'S NOTES, NOT ON THE PAGE (Arn, 17 Oct 2026: "we change to release
+note").** Every release uploads its CHANGELOG entry as that file's notes on CurseForge, with the
+fingerprint as its first line - on CurseForge's own site, under our account, where no copy can reach.
+So the page never needs editing at release time; it tells people to look there. The line below is a
+record only, never pasted: `.\Tools\stamp.ps1` still rewrites it (step 4), and the suite checks it.
+
+    Fingerprint   93B8570923F7CCE40F422614E08BFBD59C527287E992460939285076C5EF67AC
 
 In the house voice (`_bisdev/docs/voice.md`): the opener and the script section talk; lists stay flat.
 
@@ -63,11 +68,9 @@ One number covers every file of the addon. Change one letter anywhere, add a fil
 
     $a='<your WoW folder>\Interface\AddOns\BiSGuild';$l=[string[]](ls -LiteralPath $a -Recurse -File|%{$r=$_.FullName.Substring($a.Length+1).Replace('\','/');if($r -notmatch '(^|/)\.|\.md$|^(Data/Report\.lua|Core/Build\.lua|Tools/manifest\.txt)$'){(Get-FileHash -A SHA256 -LiteralPath $_.FullName).Hash+' '+$r}});[Array]::Sort($l,[StringComparer]::Ordinal);[BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes(($l -join "`n")+"`n"))).Replace('-','')
 
-The answer must be exactly this, for **the current version**:
+The answer must match the **fingerprint in your version's release notes**: open the **Files** tab on this page, click the version you have, and it's the first line of its notes. Every release puts it there, here on CurseForge, where no copy can change it.
 
-    Fingerprint   93B8570923F7CCE40F422614E08BFBD59C527287E992460939285076C5EF67AC
-
-The addon shows you a number too. **Compare with this page, not with that.** Whoever doctors a copy can change what the addon shows just as easily. If your answer differs, stop and ask an officer.
+The addon shows you a number too. **Compare with the release notes here, not with that.** Whoever doctors a copy can change what the addon shows just as easily. If your answer differs, stop and ask an officer.
 
 The addon checks itself as well:
 
