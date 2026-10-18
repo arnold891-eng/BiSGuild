@@ -8,7 +8,7 @@
 local _, ns = ...
 ns.BUILD = {
     version = "0.1.0",
-    fingerprint = "CC39A9924269739C9CD81D2BCA07B50763858BFBF691CF07B4D256C4A459E688",
+    fingerprint = "2E7F2193719BBA8BB1799A1727968D606937FA215C773A108407529B9F0DAC33",
     parts = {
         "Core/Init.lua",
         "Core/Report.lua",

@@ -2700,6 +2700,20 @@ do
     H.ok(again:find("2 of 14 done", 1, true), "how far along the Horde chain")
     H.ok(again:find("1 carried", 1, true) and again:find("Drakefire Amulet", 1, true), "the amulet in the bags")
     H.ok(again:find("9990 Black Dragon Business", 1, true), "a completed quest that sounds like the chain is listed - a renumbered step")
+    -- Arn's first probe (17 Oct): no name ever loaded. The probe now says whether the server answered
+    H.ok(again:find("the server answered 0 loaded, 0 refused", 1, true) and again:find("no answer at all", 1, true),
+         "no QUEST_DATA_LOAD_RESULT yet: it says the server never answered", again)
+    fire("QUEST_DATA_LOAD_RESULT", 4903, true)
+    fire("QUEST_DATA_LOAD_RESULT", 4941, false)
+    fire("QUEST_DATA_LOAD_RESULT", 123456, true)     -- not ours: not counted
+    H.ok(table.concat(A.Probe(), "\n"):find("answered 1 loaded, 1 refused", 1, true), "answers counted, only for what we asked")
+    -- the name question tried on a quest in the log, which the client surely has
+    _G.C_QuestLog.GetNumQuestLogEntries = function() return 2 end
+    _G.C_QuestLog.GetQuestIDForLogIndex = function(i) return i == 2 and 4903 or 0 end
+    _G.C_QuestLog.GetTitleForLogIndex = function(i) return i == 2 and "Warlord's Command" or nil end
+    local logged = table.concat(A.Probe(), "\n")
+    H.ok(logged:find('a quest in your log, 4903: by number "Warlord\'s Command", by log line "Warlord\'s Command"', 1, true),
+         "a quest in the log: the name asked both ways", logged)
     -- a hidden answer is "?", never a guess
     _G.C_QuestLog.IsQuestFlaggedCompleted = function() return HARNESS and HARNESS.secret and HARNESS.secret() or nil end
     H.ok(pcall(A.Probe), "a hidden done flag does not throw")

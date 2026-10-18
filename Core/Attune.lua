@@ -63,9 +63,25 @@ function A.Title(id)
   local ok, t = pcall(QL.GetTitleForQuestID, id)
   t = ok and plain(t)
   if type(t) == "string" and t ~= "" then return t end
-  if QL.RequestLoadQuestByID then pcall(QL.RequestLoadQuestByID, id) end
+  if QL.RequestLoadQuestByID and not A.asked[id] then
+    A.asked[id] = true
+    pcall(QL.RequestLoadQuestByID, id)
+  end
   return nil
 end
+
+-- WHAT THE SERVER SAYS TO A NAME REQUEST (Arn's first probe, 17 Oct: three runs, not one quest name -
+-- not even the 331 this character has done). Every request should come back as QUEST_DATA_LOAD_RESULT
+-- (questID, success). Counted, so the probe can say "answered, refused" or "never answered".
+A.asked, A.heard = {}, { ok = 0, refused = 0 }
+local ev = CreateFrame("Frame")
+pcall(ev.RegisterEvent, ev, "QUEST_DATA_LOAD_RESULT")
+ev:SetScript("OnEvent", function(_, _, id, success)
+  id, success = plain(id), plain(success)
+  if type(id) ~= "number" or not A.asked[id] then return end
+  if success then A.heard.ok = A.heard.ok + 1 else A.heard.refused = A.heard.refused + 1 end
+end)
+A.events = ev
 
 --- How many Drakefire Amulets are in the bags (and the bank), or nil when the client will not say.
 function A.Amulets()
@@ -134,6 +150,34 @@ function A.Probe()
         #hits > 0 and table.concat(hits, ", ") or "none")
     end
   end
+  -- DOES THE NAME QUESTION WORK AT ALL? Asked of a quest in the quest log right now, which the
+  -- client certainly has: empty there means the function is empty on Forever, not "still loading".
+  if QL and QL.GetQuestIDForLogIndex and QL.GetNumQuestLogEntries then
+    local okN, n = pcall(QL.GetNumQuestLogEntries)
+    n = okN and plain(n) or 0
+    local found, line
+    for i = 1, (type(n) == "number" and n or 0) do
+      local okI, id = pcall(QL.GetQuestIDForLogIndex, i)
+      id = okI and plain(id)
+      if type(id) == "number" and id > 0 then found, line = id, i break end
+    end
+    if found then
+      local okT, t = pcall(QL.GetTitleForQuestID, found)
+      t = okT and plain(t)
+      local okL, tl = false, nil
+      if QL.GetTitleForLogIndex then okL, tl = pcall(QL.GetTitleForLogIndex, line) end
+      tl = okL and plain(tl)
+      say("  a quest in your log, %d: by number %s, by log line %s", found,
+        type(t) == "string" and t ~= "" and ('"' .. t .. '"') or T.text("warn", "empty"),
+        type(tl) == "string" and tl ~= "" and ('"' .. tl .. '"') or T.text("warn", "empty"))
+    else
+      say("  %s", T.text("muted", "no quest in your log to test the name question on - pick one up and run it again"))
+    end
+  end
+  local asked = 0
+  for _ in pairs(A.asked) do asked = asked + 1 end
+  say("  name requests sent: %d; the server answered %d loaded, %d refused%s", asked, A.heard.ok, A.heard.refused,
+    (asked > 0 and A.heard.ok + A.heard.refused == 0) and T.text("warn", " - no answer at all so far") or "")
   if loading > 0 then
     say("  %s", T.text("gold", ("%d name(s) still loading from the server - run /bisg attune probe once more"):format(loading)))
   end

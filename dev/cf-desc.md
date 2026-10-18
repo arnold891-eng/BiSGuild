@@ -65,7 +65,7 @@ One number covers every file of the addon. Change one letter anywhere, add a fil
 
 The answer must be exactly this, for **the current version**:
 
-    Fingerprint   CC39A9924269739C9CD81D2BCA07B50763858BFBF691CF07B4D256C4A459E688
+    Fingerprint   2E7F2193719BBA8BB1799A1727968D606937FA215C773A108407529B9F0DAC33
 
 The addon shows you a number too. **Compare with this page, not with that.** Whoever doctors a copy can change what the addon shows just as easily. If your answer differs, stop and ask an officer.
 
