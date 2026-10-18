@@ -68,7 +68,7 @@ One number covers every file of the addon. Change one letter anywhere, add a fil
 
     $a='<your WoW folder>\Interface\AddOns\BiSGuild';$l=[string[]](ls -LiteralPath $a -Recurse -File|%{$r=$_.FullName.Substring($a.Length+1).Replace('\','/');if($r -notmatch '(^|/)\.|\.md$|^(Data/Report\.lua|Core/Build\.lua|Tools/manifest\.txt)$'){(Get-FileHash -A SHA256 -LiteralPath $_.FullName).Hash+' '+$r}});[Array]::Sort($l,[StringComparer]::Ordinal);[BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes(($l -join "`n")+"`n"))).Replace('-','')
 
-The answer must match the **fingerprint in your version's release notes**: open the **Files** tab on this page, click the version you have, and it's the first line of its notes. Every release puts it there, here on CurseForge, where no copy can change it.
+The answer must match the **fingerprint in your version's release notes**: open the **Files** tab on this page, click the version you have, and it's the first line under **What's new**. Every release puts it there, here on CurseForge, where no copy can change it.
 
 The addon shows you a number too. **Compare with the release notes here, not with that.** Whoever doctors a copy can change what the addon shows just as easily. If your answer differs, stop and ask an officer.
 
