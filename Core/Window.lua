@@ -535,7 +535,14 @@ function U.BuildRaids()
     local close = CreateFrame("Button", nil, w, "UIPanelCloseButton")
     close:SetPoint("TOPRIGHT", -4, -4)
     close:SetScript("OnClick", function() w:Hide() end)
-    ns.EscKeys(w, function() w:Hide() end)
+    -- ESC steps back to the paste window, the way the terminal's ESC walks back
+    ns.EscKeys(w, function() U.ShowPaste() end)
+    local back = CreateFrame("Button", nil, w, "UIPanelButtonTemplate")
+    back:SetSize(130, 20)
+    back:SetPoint("TOPRIGHT", -36, -7)
+    back:SetText("Back to the paste")
+    back:SetScript("OnClick", function() U.ShowPaste() end)
+    w.back = back
 
     w.who = w:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     w.who:SetPoint("TOPLEFT", 12, -32)
@@ -618,12 +625,25 @@ function U.PaintRaids()
     end
 end
 
+--- ONE OF OUR SMALL WINDOWS AT A TIME (Arn, 18 Oct: "we keep running into this problem where it opens
+--- the window right on top of the otherone"). They share the screen's centre and the DIALOG strata, so
+--- two open at once interleave their pieces. Whichever opens, the others step aside; it comes in front.
+function U.Alone(keep)
+    -- by name, not ipairs: a window never built is nil, and ipairs would stop at it
+    for _, k in ipairs({ "frame", "paste", "raids" }) do
+        local w = U[k]
+        if w and w ~= keep and w:IsShown() then w:Hide() end
+    end
+    keep:Show()
+    if keep.SetToplevel then keep:SetToplevel(true) end
+    if keep.Raise then keep:Raise() end
+end
+
 function U.ShowRaids()
     local w = U.BuildRaids()
     if not w then return end
     w.offset = 0
-    w:Show()
-    if w.Raise then w:Raise() end
+    U.Alone(w)
     U.PaintRaids()
 end
 
@@ -632,9 +652,7 @@ end
 function U.ShowPaste()
     local p = U.BuildPaste()
     if not p then return end
-    if U.frame and U.frame:IsShown() then U.Hide() end
-    p:Show()
-    if p.Raise then p:Raise() end
+    U.Alone(p)
     p.box:SetFocus()
 end
 
@@ -704,13 +722,8 @@ function U.Show()
     local f = U.Build()
     if not f then return false end
     U.Refresh()
-    f:Show()
-    -- IN FRONT, WHOLE (Arn, 16 Oct: "this windows kinda get overlapping"). The terminal opens this
-    -- from its LOG tab, and two windows on the same strata interleave their pieces - the terminal's
-    -- ticker bar drew across this one. Toplevel + Raise is the client's own answer: the window you
-    -- opened or clicked last is on top, all of it.
-    if f.SetToplevel then f:SetToplevel(true) end
-    if f.Raise then f:Raise() end
+    -- IN FRONT, WHOLE (Arn, 16 Oct: "this windows kinda get overlapping"), and alone (18 Oct, U.Alone)
+    U.Alone(f)
     return true
 end
 

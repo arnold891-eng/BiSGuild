@@ -82,20 +82,37 @@ end
 
 --- The guild rank index of a name (0 = guild master), or nil for somebody not on the roster.
 --- Rebuilt after GUILD_ROSTER_UPDATE, never per message.
+--- FORENAME OR WHOLE NAME (18 Oct 2026: Arn, the guild master, was told "only your copy" by the raids
+--- list). Forever names carry a surname: the guild list says "Nebeon Nohealzforu" where the player's
+--- own name - and a sender's - can be "Nebeon" alone, and an exact lookup found no rank at all. So a
+--- name is matched whole first, then by its forename - when several members share it (alts), the one
+--- online, as the terminal's K.Member does.
 function X.Rank(name)
     name = Short(name)
     if not name then return nil end
     if X._ranksDirty ~= false or not X._ranks then
-        local ranks = {}
+        local ranks, first = {}, {}
         local n = (GetNumGuildMembers and GetNumGuildMembers()) or 0
         for i = 1, n do
-            local member, _, rankIndex = GetGuildRosterInfo(i)
+            local member, _, rankIndex, _, _, _, _, _, online = GetGuildRosterInfo(i)
             local s = Short(member)
-            if s then ranks[s] = tonumber(rankIndex) end
+            if s then
+                ranks[s] = tonumber(rankIndex)
+                local f = s:match("^(%S+)")
+                local list = first[f]
+                if not list then list = {} first[f] = list end
+                list[#list + 1] = { rank = tonumber(rankIndex), online = online and true or false }
+            end
         end
-        X._ranks, X._ranksDirty = ranks, false
+        X._ranks, X._first, X._ranksDirty = ranks, first, false
     end
-    return X._ranks[name]
+    if X._ranks[name] ~= nil then return X._ranks[name] end
+    if name:find(" ", 1, true) then return nil end     -- a whole name that is not on the list is not ours
+    local list = X._first and X._first[name]
+    if not list then return nil end
+    if #list == 1 then return list[1].rank end
+    for _, m in ipairs(list) do if m.online then return m.rank end end
+    return list[1].rank
 end
 
 function X.IsOfficer(name)

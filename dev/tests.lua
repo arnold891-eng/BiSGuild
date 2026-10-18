@@ -2706,6 +2706,28 @@ do
     drain()
     H.eq(#sent("ARCH"), 0, "once a session")
 
+    -- FORENAME OR WHOLE NAME (Arn, the guild master, was told "only your copy"): the guild list says
+    -- "Nebeon Nohealzforu", the player's own name can be "Nebeon" - the client's shape, online 9th
+    do
+        local realInfo2 = _G.GetGuildRosterInfo
+        local R2 = { { "Nebeon Nohealzforu", 0, true }, { "Nebeon Nohotzforu", 1, false }, { "Nebeon Notrapforu", 4, false },
+                     { "Solo Person", 2, false } }
+        _G.GetNumGuildMembers = function() return #R2 end
+        _G.GetGuildRosterInfo = function(i)
+            local r = R2[i]
+            return r[1], "rank", r[2], 60, "MAGE", "", "", "", r[3], 0, "MAGE"
+        end
+        X._ranksDirty = true
+        H.eq(X.Rank("Nebeon Nohealzforu"), 0, "a whole name: its own rank")
+        H.eq(X.Rank("Nebeon Notrapforu-Realm"), 4, "realm dropped")
+        H.eq(X.Rank("Nebeon"), 0, "a forename shared by alts: the one online (the guild master)")
+        H.eq(X.Rank("Solo"), 2, "a forename only one member has: theirs")
+        H.eq(X.Rank("Nebeon Fakename"), nil, "a whole name not on the list is not ours")
+        H.eq(X.Rank("Stranger"), nil, "nor a stranger")
+        _G.GetNumGuildMembers, _G.GetGuildRosterInfo = function() return #ROSTER end, realInfo2
+        X._ranksDirty = true
+    end
+
     -- a member's own archive stays theirs
     ROSTER[1][2] = 4
     X._ranksDirty = true
@@ -2727,6 +2749,14 @@ do
     U.paste.listBtn:Click()
     local w = U.raids
     H.ok(w and w:IsShown(), "'Raids on record' in the paste window opens the list")
+    -- ONE WINDOW AT A TIME (Arn, 18 Oct: "it opens the window right on top of the otherone")
+    H.ok(not U.paste:IsShown(), "and the paste window steps aside - never two on top of each other")
+    w.back:Click()
+    H.ok(U.paste:IsShown() and not w:IsShown(), "Back returns to the paste window, alone")
+    U.Show()
+    H.ok(U.frame:IsShown() and not U.paste:IsShown(), "the officers' window opens alone too")
+    U.paste.listBtn:Click()
+    H.ok(w:IsShown() and not U.frame:IsShown(), "and steps aside for the list")
     H.ok(w.rows[1].label:GetText():find("2026-10-16 Molten Core", 1, true), "the raids on record first",
          w.rows[1].label:GetText())
     H.ok(w.rows[1].sizes:GetText():find("1 kill, 2 raiders", 1, true), "with their size", w.rows[1].sizes:GetText())
