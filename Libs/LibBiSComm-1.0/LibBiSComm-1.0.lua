@@ -37,7 +37,7 @@
 -- minor 12 (14 Oct 2026): SPOT - where guildmates are, for BiS Tools' map: every embedder shares
 -- your spot on the GUILD channel while you move (cascading 15/30/60 s by guild size), one switch
 -- for all of them (/biscomm share on|off), and lib.spots for any addon to draw
-local MAJOR, MINOR = "LibBiSComm-1.0", 12
+local MAJOR, MINOR = "LibBiSComm-1.0", 13
 
 local lib = _G.LibBiSComm
 if lib and (lib.MINOR or 0) >= MINOR then return end   -- an equal or newer copy won
@@ -430,9 +430,13 @@ local function ChatLocked()
 end
 lib.ChatLocked = ChatLocked
 
---- THE REALM'S OWN BLOCK (minor 10). C_ChatInfo.AreOutgoingAddonChatMessagesRestricted is a separate
---- question from the lockdown: not "wait", but "this realm will not carry addon messages from you
---- right now" (ForeverAuras Transmission.lua asks it first). Held like the lockdown, and named.
+--- THE REALM'S OWN "BLOCK" (minor 10) - AN ANSWER, NOT A GATE SINCE MINOR 13. Measured on Forever,
+--- 18 Oct 2026 (Arn's /run): C_ChatInfo.AreOutgoingAddonChatMessagesRestricted() says plain TRUE while
+--- C_ChatInfo.SendAddonMessage("BiS", "test", "GUILD") answers 0 and the message arrives. Minor 10-12
+--- held the outbox on it - and so sent NOTHING on Forever (Arn's lib: "sent 0 ... err dropped a stale
+--- message"): no spots, no GLOG, no BiS> now, no peers. The send's own result is the client's real
+--- word (ResultKind: throttle / general error are retried, anything else is named); this question is
+--- only reported, in /biscomm.
 local function OutgoingBlocked()
     local f = C_ChatInfo and C_ChatInfo.AreOutgoingAddonChatMessagesRestricted
     if not f then return false end
@@ -489,10 +493,6 @@ function lib:_Pump()
         elseif ChatLocked() then
             self:_Arm(SEND_GAP)
             return
-        elseif OutgoingBlocked() then
-            self._lastError = "this realm is not carrying addon messages right now"
-            self:_Arm(5 * SEND_GAP)
-            return
         elseif now < self.nextSendAt then
             self:_Arm(self.nextSendAt - now)
             return
@@ -547,7 +547,7 @@ end
 --- come out of the lockdown a moment later than we do (LibSpecialization's way, EllesmereUI;
 --- Overlord's catch-up burst). The short-answer rule keeps it from becoming 25 x 25.
 function lib:OnRestrictionChanged()
-    if ChatLocked() or OutgoingBlocked() then return false end
+    if ChatLocked() then return false end          -- (never the realm "block": see OutgoingBlocked)
     self:_Pump()
     if not InGroup() then return false end
     local first = 1 + math.random() * 2
@@ -992,7 +992,11 @@ lib.spots = lib.spots or {}
 if lib.share == nil then lib.share = true end
 lib.guildMods.SPOT = true
 local SPOT_CHECK, SPOT_STEP, SPOT_STALE = 5, 0.012, 180
-lib.SPOT_CHECK, lib.SPOT_STEP, lib.SPOT_STALE = SPOT_CHECK, SPOT_STEP, SPOT_STALE
+-- STANDING STILL STILL SHOWS (minor 13; Arn, 18 Oct: a guildmate standing in Undercity was gone from
+-- the map - he had sent his spot once, then stood, and three minutes on every map dropped it as
+-- stale). Still, the spot goes again every SPOT_RESEND - inside SPOT_STALE, so it never lapses.
+local SPOT_RESEND = 120
+lib.SPOT_CHECK, lib.SPOT_STEP, lib.SPOT_STALE, lib.SPOT_RESEND = SPOT_CHECK, SPOT_STEP, SPOT_STALE, SPOT_RESEND
 
 local function plainNum(v)
     if v == nil or Secret(v) or type(v) ~= "number" then return nil end
@@ -1040,7 +1044,8 @@ function lib:ShareTick()
     local map, x, y = self:MySpot()
     if not map then return "hidden" end
     local s, now = self._spotSent, Now()
-    if s and s.map == map and math.abs(s.x - x) < SPOT_STEP and math.abs(s.y - y) < SPOT_STEP then
+    if s and s.map == map and math.abs(s.x - x) < SPOT_STEP and math.abs(s.y - y) < SPOT_STEP
+        and now - s.at < SPOT_RESEND then
         return "still"
     end
     if s and now - s.at < self:ShareEvery() then return "wait" end
@@ -1102,6 +1107,10 @@ if SlashCmdList then
             say(("comm %s, share %s, lib %d, %d peer(s), running %s")
                 :format(lib:Enabled() and "on" or "off", lib:Sharing() and "on" or "off", lib.MINOR, lib:Count(),
                         lib:AddonsBlob() ~= "" and lib:AddonsBlob() or "nothing"))
+            -- what left and what did not (minor 13: the night "sent 0" took four /run lines to see)
+            say(("sent %d, refused %d, waiting %d%s%s"):format(lib.sentCount or 0, lib.refusedCount or 0,
+                #(lib.outbox or {}), lib._lastError and (", last trouble: " .. lib._lastError) or "",
+                OutgoingBlocked() and " (the realm says restricted - Forever always does; ignored)" or ""))
             say("/biscomm on | off  -  /biscomm share on | off")
         end
     end
