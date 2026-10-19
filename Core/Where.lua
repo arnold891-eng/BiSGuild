@@ -433,6 +433,34 @@ local function Dot(p, i)
     return d, l
 end
 
+--- THE LITTLE FIGURES (Arn, 18-19 Oct: "actual size so very tiny maybe like 10 pixels max"): a 3D
+--- stand-in of each guildmate's race and sex (Core/Looks.lua) standing on their dot, turned the way they
+--- last moved. A 3D model is not clipped by its frame, so they are kept small and few.
+W.FIG_W, W.FIG_H, W.FIG_MAX = 10, 14, 40
+W.prev, W.face = {}, {}
+local function Fig(p, i)
+    p.figs = p.figs or {}
+    local m = p.figs[i]
+    if not m then
+        m = CreateFrame("DressUpModel", nil, p.land)
+        m:SetSize(W.FIG_W, W.FIG_H)
+        if m.SetPortraitZoom then pcall(m.SetPortraitZoom, m, 0) end
+        p.figs[i] = m
+    end
+    return m
+end
+
+--- Which way someone faces: toward where they went since their last spot (map y runs down).
+function W.Heading(key, map, x, y)
+    local was = W.prev[key]
+    W.prev[key] = { map = map, x = x, y = y }
+    if was and was.map == map then
+        local dx, dy = x - was.x, y - was.y
+        if math.abs(dx) + math.abs(dy) > 0.002 then W.face[key] = math.atan2(dx, dy) end
+    end
+    return W.face[key] or 0
+end
+
 function K.PaintWhere(p)
     local ui = K.ui
     local spots = W.Spots()
@@ -444,6 +472,8 @@ function K.PaintWhere(p)
     if map then p.open:Show() else p.open:Hide() end
     for _, t in ipairs(p.tiles) do t:Hide() end
     for i, d in ipairs(p.dots) do d:Hide() p.labels[i]:Hide() end
+    for _, fg in ipairs(p.figs or {}) do fg:Hide() end
+    local figs, Lk = 0, ns.Looks
 
     -- the map
     local lw, lh, pieces = W.Pieces(map)
@@ -490,13 +520,28 @@ function K.PaintWhere(p)
                     local d, l = Dot(p, n)
                     local m = K.Member(sp.name)
                     local cc = m and m.class and colours and colours[m.class]
-                    local size = sp.me and 10 or 8
+                    -- their stand-in, when we know their race and sex: the figure stands on a small dot
+                    local display = Lk and figs < W.FIG_MAX and (sp.me and Lk.Mine() or Lk.Display(sp.name))
+                    local size = display and 4 or (sp.me and 10 or 8)
                     d:SetSize(size, size)
                     if sp.me then d:SetColorTexture(ui.rgb("gold")) elseif cc then d:SetColorTexture(cc.r, cc.g, cc.b, 1)
                     else d:SetColorTexture(ui.rgb("ink")) end
                     d:ClearAllPoints()
                     d:SetPoint("CENTER", p.land, "TOPLEFT", px, -py)
                     d:Show()
+                    if display then
+                        figs = figs + 1
+                        local fg = Fig(p, figs)
+                        if fg._display ~= display then                -- a call only when it changes
+                            fg._display = display
+                            pcall(fg.SetDisplayInfo, fg, display)
+                        end
+                        local face = W.Heading(sp.key or sp.name, sp.map, sp.x, sp.y)
+                        if fg._face ~= face then fg._face = face pcall(fg.SetFacing, fg, face) end
+                        fg:ClearAllPoints()
+                        fg:SetPoint("BOTTOM", p.land, "TOPLEFT", px, -py)
+                        fg:Show()
+                    end
                     l:SetText(sp.me and "you" or sp.name)
                     l:SetTextColor(ui.rgb(sp.me and "gold" or "ink"))
                     l:ClearAllPoints()

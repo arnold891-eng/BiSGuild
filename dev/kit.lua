@@ -310,8 +310,33 @@ end
 function _G.CreateFrame(ftype, name, parent, template)
     local f = newFrame(ftype, name, parent, template)
     if name then rawset(_G, name, f) end
+    -- A 3D MODEL FRAME, as BiS Shell's kit has it (the WHERE map's figures, 19 Oct): a display id draws
+    -- at once unless it is in H.noDisplay; facing and animation are recorded. No SetCustomRace - Forever
+    -- has none (Test-Model -Race, 19 Oct).
+    if ftype == "DressUpModel" or ftype == "PlayerModel" then
+        function f:SetDisplayInfo(id)
+            if type(id) ~= "number" then error("SetDisplayInfo needs a display id", 0) end
+            self._display, self._file = id, (H.noDisplay or {})[id] and 0 or 300000 + id
+        end
+        function f:SetFacing(r)
+            if type(r) ~= "number" then error("SetFacing needs radians", 0) end
+            self._facing = r
+        end
+        function f:SetAnimation(a) self._anim = a end
+        function f:SetPortraitZoom(z) self._zoom = z end
+        function f:GetModelFileID() return self._file or 0 end
+        f.SetCustomRace = false
+    end
     return f
 end
+
+-- Forever's names and bodies (measured): UnitName the first name, GetUnitName the whole; UnitRace's
+-- second answer the race's file name ("Scourge" for Undead); UnitSex 2 male, 3 female. H.units[unit] =
+-- { name = "Chain Healz", race = "Tauren", sex = 2 } (UnitExists / UnitIsPlayer are the group mock's, below).
+H.units = {}
+_G.GetUnitName = function(u) local x = H.units[u] return x and x.name or nil end
+_G.UnitRace = function(u) local x = H.units[u] if not x then return nil end return x.race, x.race end
+_G.UnitSex = function(u) local x = H.units[u] return x and x.sex or nil end
 
 --------------------------------------------------------------------
 -- globals

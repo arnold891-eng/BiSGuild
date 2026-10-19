@@ -33,6 +33,7 @@ Core\Window.lua
 Core\Terminal.lua
 Core\Where.lua
 Core\Pins.lua
+Core\Looks.lua
 Core\Invite.lua
 Core\Logins.lua
 Core\Loot.lua

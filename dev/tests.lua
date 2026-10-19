@@ -1416,6 +1416,47 @@ do
         table.sort(labels)
         H.ok(deq(labels, { "Bob", "you" }), "each dot named, mine as 'you'", table.concat(labels, ","))
 
+        -- THE LITTLE FIGURES (Arn: "actual size so very tiny maybe like 10 pixels max"; "store ... when they
+        -- party or raid and are near us and keep that until next time we see them") - a stand-in of their
+        -- race and sex, since Forever cannot build a body (no SetCustomRace)
+        local Lk = NS.Looks
+        local realExists = _G.UnitExists
+        H.units = { player = { name = "Kumlust", race = "Tauren", sex = 2 }, target = { name = "Bob", race = "Orc", sex = 2 } }
+        _G.UnitExists = function(u) return H.units[u] ~= nil or realExists(u) end
+        H.eq(Lk.Display("Bob"), nil, "never seen: no look, a plain dot")
+        H.ok(Lk.Note("target"), "targeting Bob notes his race and sex")
+        H.eq(Lk.Display("Bob"), Lk.FOLK.Orc[1], "Bob: the orc man's stand-in")
+        H.ok(_G.BiSGuildDB.looks.bob and _G.BiSGuildDB.looks.bob.race == "Orc", "kept in the saved data, by his roster name")
+        H.units.target = { name = "Stranger Danger", race = "Human", sex = 3 }
+        H.ok(not Lk.Note("target"), "somebody outside the guild is not kept")
+        H.units.target = { name = "Bob", race = "Pandaren", sex = 2 }
+        Lk.DB().cara = nil
+        H.ok(not Lk.Note("target") and Lk.Display("Bob") == Lk.FOLK.Orc[1], "a race we cannot draw is not kept (Bob stays an orc)")
+        K.Paint()
+        local shownFigs = {}
+        for _, fg in ipairs(wp.figs or {}) do if fg:IsShown() then shownFigs[#shownFigs + 1] = fg._display end end
+        table.sort(shownFigs)
+        H.ok(#shownFigs == 2 and shownFigs[1] == Lk.FOLK.Tauren[1] and shownFigs[2] == Lk.FOLK.Orc[1],
+             "two figures: me a tauren man, Bob an orc man", table.concat(shownFigs, ","))
+        local small = 0
+        for _, d in ipairs(wp.dots) do if d:IsShown() and (d._w or d:GetWidth()) == 4 then small = small + 1 end end
+        H.eq(small, 2, "each stands on a small dot")
+        H.ok(wp.figs[1]:GetWidth() <= 10 and wp.figs[1]:GetHeight() <= 14, "about ten pixels")
+        -- they face the way they went
+        local bobFig
+        for _, fg in ipairs(wp.figs) do if fg:IsShown() and fg._display == Lk.FOLK.Orc[1] then bobFig = fg end end
+        lib.spots.Bob = { map = 1411, x = 0.55, y = 0.5, at = H.clock }
+        K.Paint()
+        H.ok(math.abs(bobFig._facing - math.pi / 2) < 1e-6, "Bob walked east: he faces east", bobFig._facing)
+        local calls = bobFig._display
+        bobFig._display = nil
+        K.Paint()
+        H.eq(bobFig._display, calls, "a repaint sets the look again only when it changed")
+        lib.spots.Bob = { map = 1411, x = 0.5, y = 0.5, at = H.clock }
+        H.units = {}
+        _G.UnitExists = realExists
+        K.Paint()
+
         local rows = wp.grid.rows
         H.eq(rows[1].cells[1]:GetText(), "Durotar", "the busiest zone first")
         H.eq(rows[1].cells[2]:GetText(), "2", "with how many are there")
