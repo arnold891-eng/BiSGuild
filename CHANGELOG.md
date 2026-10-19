@@ -1,5 +1,10 @@
 # BiSGuild
 
+## 0.2.1
+
+- **BiS addons can talk to other players on Forever again.** The game wrongly says addon messages are restricted, and the shared BiS code believed it, so nothing this addon sends to other players went out. It does now - and your guild's BiS Guild map shows where you are (outside instances; `/biscomm share off` turns that off).
+- **Names with surnames work.** The shared code now uses your whole "Name Surname": you no longer show up twice on your own guild map, and party members with surnames are recognised.
+
 ## 0.2.0
 
 - **No PowerShell: the BiS Guild notebook.** The terminal's LOG tab has its link - click it, Ctrl+C, paste it in your browser. Press Run all, drop your combat log in, and copy the text it prints; back in game, paste it in the LOG tab and press Import. It runs on Google's computer, under your own Google account - nothing runs on yours. The raid goes in exactly as if an officer had shared it. Our CurseForge page carries the same link, so you can check it.
