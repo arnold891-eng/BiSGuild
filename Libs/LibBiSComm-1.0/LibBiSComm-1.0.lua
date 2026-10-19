@@ -37,7 +37,7 @@
 -- minor 12 (14 Oct 2026): SPOT - where guildmates are, for BiS Tools' map: every embedder shares
 -- your spot on the GUILD channel while you move (cascading 15/30/60 s by guild size), one switch
 -- for all of them (/biscomm share on|off), and lib.spots for any addon to draw
-local MAJOR, MINOR = "LibBiSComm-1.0", 13
+local MAJOR, MINOR = "LibBiSComm-1.0", 14
 
 local lib = _G.LibBiSComm
 if lib and (lib.MINOR or 0) >= MINOR then return end   -- an equal or newer copy won
@@ -100,8 +100,27 @@ local function Short(name)
 end
 lib.Short = Short
 
+--- A unit's WHOLE name, as its addon messages arrive (minor 14). Forever measured, 18 Oct 2026 (Arn's
+--- /run): UnitName("player") is "Chain" while his messages come from "Chain Healz" - so minor 13 and
+--- before took its own GUILD echo for a guildmate (Arn on his own map twice, "you'n Healz") and could
+--- never match a party member's "Name Surname" to a unit. GetUnitName(unit, false) carries the
+--- surname (solved.md, 13 Oct); UnitName is the fallback where it is missing or hidden.
+local function FullName(unit)
+    if GetUnitName then
+        local ok, n = pcall(GetUnitName, unit, false)
+        if ok and n ~= nil and not Secret(n) and type(n) == "string" and n ~= "" then return Short(n) end
+    end
+    return Short(UnitName and UnitName(unit) or nil)
+end
+lib.FullName = FullName
+
 local function PlayerName()
-    return Short(UnitName and UnitName("player") or nil)
+    return FullName("player")
+end
+
+--- A name's first word: what UnitName gives on Forever ("Chain" of "Chain Healz").
+local function First(name)
+    return name and (string.match(name, "^(%S+)") or name) or nil
 end
 
 local function InGroup()
@@ -138,24 +157,33 @@ local function ForEachMember(cb)
     if IsInRaid and IsInRaid() then
         for i = 1, n do
             local unit = "raid" .. i
-            if UnitExists and UnitExists(unit) then cb(unit, Short(UnitName(unit))) end
+            if UnitExists and UnitExists(unit) then cb(unit, FullName(unit)) end
         end
     else
         cb("player", PlayerName())
         for i = 1, math.max(0, n - 1) do
             local unit = "party" .. i
-            if UnitExists and UnitExists(unit) then cb(unit, Short(UnitName(unit))) end
+            if UnitExists and UnitExists(unit) then cb(unit, FullName(unit)) end
         end
     end
 end
 
+--- The unit of a name: the whole name exactly, or - for a first name alone (a caller holding UnitName's
+--- answer) - the one member whose first name it is. Two members sharing it: nobody, never a guess.
 local function UnitOf(name)
     name = Short(name)
     if not name then return nil end
     if name == PlayerName() then return "player" end
-    local found
-    ForEachMember(function(unit, n) if not found and n == name then found = unit end end)
-    return found
+    local found, byFirst, firsts = nil, nil, 0
+    local bare = not string.find(name, " ", 1, true)
+    ForEachMember(function(unit, n)
+        if found or not n then return end
+        if n == name then found = unit
+        elseif bare and First(n) == name then byFirst, firsts = unit, firsts + 1 end
+    end)
+    if found then return found end
+    if firsts == 1 then return byFirst end
+    return nil
 end
 lib.UnitOf = UnitOf
 
@@ -249,7 +277,23 @@ local function peer(name)
     return p
 end
 
-function lib:Peer(name) return self.peers[Short(name or "")] end
+--- The peers key for a name (minor 14): the whole name as it arrived, or a first name alone when one
+--- peer has it (a caller holding UnitName's "Bree" for the peer "Bree Stone").
+function lib:PeerKey(name)
+    name = Short(name or "")
+    if not name or name == "" then return nil end
+    if self.peers[name] then return name end
+    if string.find(name, " ", 1, true) then return nil end
+    local hit
+    for k in pairs(self.peers) do
+        if First(k) == name then
+            if hit then return nil end                       -- two of them: never a guess
+            hit = k
+        end
+    end
+    return hit
+end
+function lib:Peer(name) local k = self:PeerKey(name) return k and self.peers[k] or nil end
 function lib:Peers() return self.peers end
 
 function lib:Count()
@@ -263,8 +307,9 @@ end
 -- two must never look alike in a UI.
 function lib:HasLib(name)
     name = Short(name or "")
-    if name == PlayerName() then return true end
-    return self.peers[name] ~= nil
+    local me = PlayerName()
+    if name == me or (name == First(me) and not string.find(name or "", " ", 1, true)) then return true end
+    return self:PeerKey(name) ~= nil
 end
 
 -- ONE WALK OF THE ROSTER, NOT ONE PER PEER (7 Oct 2026). This asked UnitOf about every peer,
