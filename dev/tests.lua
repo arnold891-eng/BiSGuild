@@ -887,12 +887,16 @@ do
 
     H.ok(X.IsOfficer("Kumlust") and X.IsOfficer("Bigboss"), "ranks 0 and 1 are officers")
     H.ok(not X.IsOfficer("Memberguy") and not X.IsOfficer("Stranger"), "a member and a stranger are not")
-    -- a guild laid out differently says so once, in the Guild Information text every member reads
-    _G.GetGuildInfoText = function() return "Raids Tue/Thu 8pm\nBiSGuild officers: 4\nBe nice" end
-    H.eq(X.OfficerRank(), 4, "the guild's info text moves the cutoff")
-    H.ok(X.IsOfficer("Memberguy"), "and rank 4 counts then")
-    _G.GetGuildInfoText = function() return "no line here" end
-    H.eq(X.OfficerRank(), 1, "without the line: the guild master and the rank under")
+    -- THE GUILD INFORMATION TEXT IS NEVER READ (Arn's BugGrabber, 19 Oct: GetGuildInfoText is protected
+    -- on Forever - an addon calling it is blocked). The mock is the client: calling it is the block.
+    local asked = 0
+    _G.GetGuildInfoText = function() asked = asked + 1 error("ADDON_ACTION_BLOCKED: GetGuildInfoText", 0) end
+    H.eq(X.OfficerRank(), 1, "the guild master and the rank under")
+    X.Announce()
+    H.eq(asked, 0, "and the protected Guild Information text is never asked")
+    NS.DB().officerRank = 4
+    H.ok(X.IsOfficer("Memberguy"), "the saved officerRank still moves it, on this client (testing)")
+    NS.DB().officerRank = nil
     _G.GetGuildInfoText = nil
 
     local function drain()

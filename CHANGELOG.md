@@ -1,5 +1,11 @@
 # BiSGuild
 
+## 0.3.0
+
+- **Guildmates as tiny figures on the WHERE map.** Each guildmate sharing their spot stands there as a little 3D figure of their race and sex, facing the way they're heading. BiS Guild learns what someone looks like whenever you group with them or target them, and keeps it - they need nothing installed for that part. Someone it hasn't seen yet is a dot, as before.
+- **No more names printed on top of each other.** When guildmates stand together - a party, say - their names share one label, like "you +3". Every figure still shows, and the list beside the map names everyone. Names on the map are first names only.
+- **Fixed: an "action blocked" error for officers.** BiS Guild read the guild's Information text to see how many ranks count as officers, and Forever doesn't allow addons to read it. It doesn't any more: officers are the guild master and the rank under.
+
 ## 0.2.1
 
 - **BiS addons can talk to other players on Forever again.** The game wrongly says addon messages are restricted, and the shared BiS code believed it, so nothing this addon sends to other players went out. It does now - and your guild's BiS Guild map shows where you are (outside instances; `/biscomm share off` turns that off).
