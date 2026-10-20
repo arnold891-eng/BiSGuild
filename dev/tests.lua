@@ -1503,13 +1503,27 @@ do
         K.Paint()
         H.eq(Wh.shown, 947, "WHERE opens on the world")
         H.ok(wp.map.title:GetText():find("AZEROTH", 1, true), "titled so", wp.map.title:GetText())
-        local wl = {}
-        for i, l in ipairs(wp.labels) do if wp.dots[i]:IsShown() then wl[#wl + 1] = l:GetText() end end
+        local wl, dots = {}, 0
+        for i, l in ipairs(wp.labels) do
+            if wp.dots[i]:IsShown() then dots = dots + 1 if l:IsShown() then wl[#wl + 1] = l:GetText() end end
+        end
         table.sort(wl)
-        H.ok(deq(wl, { "Bob", "Cara", "you" }), "every dot, from every zone, on one map", table.concat(wl, ","))
+        H.eq(dots, 3, "every dot, from every zone, on one map")
+        -- ONE LABEL FOR A CROWD (Arn, 19 Oct: "yeah its crowded"): you and Bob, close on the world map,
+        -- share "you +1"; Cara, far off, keeps her own
+        H.ok(deq(wl, { "Cara", "you +1" }), "close dots share one label, you leading", table.concat(wl, ","))
         local shownMarks = 0
         for _, m in ipairs(wp.marks) do if m:IsShown() then shownMarks = shownMarks + 1 end end
         H.eq(shownMarks, 0, "everyone online here has a dot: no zone markers")
+        -- the crowd rule itself: Arn's Hillsbrad - you, Frankadank beside you, and a zone marker for two
+        -- guildmates with no dot, all on one spot; a dot far off keeps its own label
+        local cr = Wh.Crowd({ { x = 100, y = 50, n = 1, text = "Frankadank" }, { x = 104, y = 52, n = 1, me = true },
+                              { x = 98, y = 56, n = 2, mark = true }, { x = 300, y = 50, n = 1 } })
+        H.ok(cr[2].lead and cr[2].extra == 3 and not cr[1].lead and not cr[3].lead,
+             "you lead the crowd: 'you +3' (Frankadank, and the zone's two)")
+        H.ok(cr[4].lead and cr[4].extra == 0, "a dot far off keeps its own label")
+        local cr2 = Wh.Crowd({ { x = 100, y = 50, n = 2, mark = true }, { x = 110, y = 50, n = 1 } })
+        H.ok(cr2[2].lead and cr2[2].extra == 2 and not cr2[1].lead, "a dot leads over a zone marker")
         lib.spots.Cara = nil
         K.Paint()
         local markText

@@ -418,6 +418,40 @@ local function MapText(parent, size, colour)
 end
 W.MapText = MapText
 
+--- ONE LABEL FOR A CROWD (Arn, 19 Oct, partied with four guildmates: "yeah its crowded" - "you",
+--- "Frankadank Sithlord" and "Hillsbrad Foothills 2" printed through each other on one spot). Things
+--- whose labels would land within W.CROWD_X / W.CROWD_Y px of each other share ONE label - the first
+--- one's, with "+N" for the people folded into it. You lead a crowd you are in, then dots, then zone
+--- markers. Every dot still draws; the list beside the map still names everyone.
+--- items: { x =, y = (map px), n = people it stands for, me = bool } in placing order. Answers, per
+--- item, lead = true and extra = people folded in, or lead = false.
+W.CROWD_X, W.CROWD_Y = 44, 12
+function W.Crowd(items)
+    local order = {}
+    for i, it in ipairs(items) do order[#order + 1] = i end
+    table.sort(order, function(a, b)
+        local A, B = items[a], items[b]
+        if (A.me and true or false) ~= (B.me and true or false) then return A.me and true or false end
+        if (A.mark and true or false) ~= (B.mark and true or false) then return not A.mark end
+        return a < b
+    end)
+    local out = {}
+    for _, i in ipairs(order) do
+        if not out[i] then
+            local lead = items[i]
+            out[i] = { lead = true, extra = 0 }
+            for _, j in ipairs(order) do
+                local o = items[j]
+                if not out[j] and math.abs(o.x - lead.x) <= W.CROWD_X and math.abs(o.y - lead.y) <= W.CROWD_Y then
+                    out[j] = { lead = false }
+                    out[i].extra = out[i].extra + (o.n or 1)
+                end
+            end
+        end
+    end
+    return out
+end
+
 local function Dot(p, i)
     local d, l = p.dots[i], p.labels[i]
     if not d then
@@ -510,6 +544,7 @@ function K.PaintWhere(p)
         -- the dots on this map: class colours, me in gold and a size bigger
         local colours = _G.RAID_CLASS_COLORS
         local n = 0
+        local crowd = {}                                  -- every label, for W.Crowd
         for _, sp in ipairs(spots) do
             -- a spot on its own zone, or placed onto the map shown (the world view)
             local mx, my = W.OnMap(sp.map, sp.x, sp.y, map)
@@ -542,11 +577,12 @@ function K.PaintWhere(p)
                         fg:SetPoint("BOTTOM", p.land, "TOPLEFT", px, -py)
                         fg:Show()
                     end
-                    l:SetText(sp.me and "you" or sp.name)
+                    -- the forename: "Frankadank", not "Frankadank Sithlord" (the list has the rest)
+                    local short = sp.me and "you" or (tostring(sp.name):match("^(%S+)") or sp.name)
                     l:SetTextColor(ui.rgb(sp.me and "gold" or "ink"))
                     l:ClearAllPoints()
                     l:SetPoint("LEFT", d, "RIGHT", 3, 0)
-                    l:Show()
+                    crowd[#crowd + 1] = { x = px, y = py, n = 1, me = sp.me, text = short, label = l }
                 end
             end
         end
@@ -573,10 +609,20 @@ function K.PaintWhere(p)
                         mk:ClearAllPoints()
                         mk:SetPoint("CENTER", p.land, "TOPLEFT", px, -py)
                         mk:Show()
-                        mk.label:SetText(("%s %d"):format(zone, count))
-                        mk.label:Show()
+                        crowd[#crowd + 1] = { x = px, y = py, n = count, mark = true,
+                                              text = ("%s %d"):format(zone, count), label = mk.label }
                     end
                 end
+            end
+        end
+        -- the labels: one per crowd (W.Crowd)
+        for i, c in ipairs(W.Crowd(crowd)) do
+            local it = crowd[i]
+            if c.lead then
+                it.label:SetText(c.extra > 0 and ("%s +%d"):format(it.text, c.extra) or it.text)
+                it.label:Show()
+            else
+                it.label:Hide()
             end
         end
         -- short: the title bar is shared with WORLD and OPEN (16 Oct: the long form ran under them)
