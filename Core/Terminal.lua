@@ -115,6 +115,7 @@ function K.Parse(line, cards, bosses)
     end
     if l == "raiders" then return "raiders" end
     if l == "bosses" then return "bosses" end
+    if l == "report" or l == "run report" then return "report" end
     if l == "log" then return "log" end
     if l == "where" or l == "map" then return "where" end
     if l == "roster" or l == "import" then return "roster" end
@@ -731,7 +732,18 @@ function K.Build()
     pr.invite = BarButton(plist, "INVITE ONLINE", 110, "TOPLEFT", 90, function()
         if ns.Inv then ns.Inv.InviteOnline() end
     end)
+    -- the team at a glance, by class (K.Report)
+    pr.report = BarButton(plist, "RUN REPORT", 100, "TOPLEFT", 206, function() K.Go("report") end)
     f.pages.raiders = pr
+
+    -- the raid team report
+    local pt = Page()
+    local tlist = Panel(pt, "RAID TEAM REPORT", 8, 0, K.W - 16, bodyH - 4)
+    pt.grid = Grid(tlist, { "CLASS", "RAIDING", "IN THE LAST RAIDS", "ON THE ROSTER, NO RAIDS (LEVEL)" },
+        { { 100, "LEFT" }, { 60, "RIGHT" }, { 340, "LEFT" }, { 300, "LEFT" } },
+        K.LIST_ROWS, 22, function() end)
+    pt.panel = tlist
+    f.pages.report = pt
 
     -- every boss
     local pb = Page()
@@ -963,6 +975,112 @@ local function PaintRaiders(p)
     end
 end
 
+--- THE RAID TEAM, AS IT IS (Arn, 19 Oct: "some bloomberg terminal thing that kinda says run report and
+--- itll say what our raid team looks like at the moment ... Druid: raiders by name and how many ... not
+--- just in our roster but by looking at the last 2-4 logs who has been consistently raiding" - and "right
+--- now nobody will come out since there are no raids out yet"). By class: who EARNED a night in the
+--- last K.REPORT_RAIDS raids on record (S.Earned: half the kills), each with how many of them - and,
+--- beside them, every guild member of that class with no raid in those, by level. With no raids yet
+--- the roster side is the whole team; it fills from the logs as raids are read.
+K.REPORT_RAIDS = 4
+function K.Report(n)
+    n = n or K.REPORT_RAIDS
+    local rec, dates = S().Record(), S().Dates()
+    local raids = {}
+    for i = math.max(1, #dates - n + 1), #dates do raids[#raids + 1] = dates[i] end
+    local earned = {}
+    for _, key in ipairs(raids) do
+        local night = rec.nights[key]
+        for name in pairs(night and night.raiders or {}) do
+            if S().Earned(night, name) then earned[name] = (earned[name] or 0) + 1 end
+        end
+    end
+    local byClass, logged, total, rosterN = {}, {}, 0, 0
+    local function slot(c)
+        c = c or "?"
+        local b = byClass[c]
+        if not b then b = { class = c, raiding = {}, roster = {} } byClass[c] = b end
+        return b
+    end
+    local function first(s) return tostring(s):match("^(%S+)") or tostring(s) end
+    for name, k in pairs(earned) do
+        local m = K.Member(name)
+        if m and m.key then logged[m.key] = true end
+        table.insert(slot(m and m.class).raiding, { name = first(name), n = k, pug = m == nil })
+        total = total + 1
+    end
+    for key, m in pairs(K.Guild().members) do
+        if not logged[key] then
+            table.insert(slot(m.class).roster, { name = first(m.name or key), level = tonumber(m.level) or 0 })
+            rosterN = rosterN + 1
+        end
+    end
+    -- in the RAIDERS list's class order (K.CLASS_ORDER), a class it does not list and "?" last
+    local classes = {}
+    for _, b in pairs(byClass) do classes[#classes + 1] = b end
+    table.sort(classes, function(a, b)
+        local ra, rb = K.CLASS_ORDER[a.class] or 99, K.CLASS_ORDER[b.class] or 99
+        if ra ~= rb then return ra < rb end
+        return a.class < b.class
+    end)
+    for _, b in ipairs(classes) do
+        table.sort(b.raiding, function(a, c) if a.n ~= c.n then return a.n > c.n end return a.name < c.name end)
+        table.sort(b.roster, function(a, c) if a.level ~= c.level then return a.level > c.level end return a.name < c.name end)
+    end
+    return { raids = raids, classes = classes, raiding = total, roster = rosterN, of = n }
+end
+
+--- The report's rows: a class, then as many lines as its names need (K.REPORT_PER on each side).
+K.REPORT_PER = 4
+function K.ReportRows(rep)
+    local rows = {}
+    local function chunk(list, fmt)
+        local out, line = {}, {}
+        for _, x in ipairs(list) do
+            line[#line + 1] = fmt(x)
+            if #line == K.REPORT_PER then out[#out + 1] = table.concat(line, ", ") line = {} end
+        end
+        if #line > 0 then out[#out + 1] = table.concat(line, ", ") end
+        return out
+    end
+    local of = #rep.raids
+    for _, b in ipairs(rep.classes) do
+        local left = chunk(b.raiding, function(x) return ("%s %d/%d%s"):format(x.name, x.n, of, x.pug and " pug" or "") end)
+        local right = chunk(b.roster, function(x) return ("%s %d"):format(x.name, x.level) end)
+        for i = 1, math.max(1, #left, #right) do
+            rows[#rows + 1] = { class = i == 1 and b.class or nil, n = i == 1 and #b.raiding or nil,
+                                left = left[i] or "", right = right[i] or "" }
+        end
+    end
+    rows[#rows + 1] = { total = true, n = rep.raiding, left = "", right = rep.roster .. " on the roster" }
+    return rows
+end
+
+local function PaintReport(p)
+    local rep = K.Report()
+    local rows = K.ReportRows(rep)
+    local off = Scroll(p.grid, #rows)
+    local r1, rN = rep.raids[1], rep.raids[#rep.raids]
+    p.panel.right:SetText((#rep.raids == 0 and "no raids logged yet - the roster is the team" or
+        ("the last %d raid%s: %s - %s"):format(#rep.raids, #rep.raids == 1 and "" or "s", S().Label(r1), S().Label(rN)))
+        .. Showing(p.grid))
+    p.grid.heads[3]:SetText(("IN THE LAST %d RAIDS"):format(K.REPORT_RAIDS))
+    local colours = _G.RAID_CLASS_COLORS
+    for i, row in ipairs(p.grid.rows) do
+        local r = rows[i + off]
+        if not r then
+            SetRow(row, nil, {})
+        elseif r.total then
+            SetRow(row, nil, { "TOTAL", r.n, r.left, r.right }, { "gold", "gold", "ink2", "muted" })
+        else
+            local cc = r.class and colours and colours[r.class]
+            local label = r.class and (r.class == "?" and "unknown" or (r.class:sub(1, 1) .. r.class:sub(2):lower())) or ""
+            SetRow(row, nil, { label, r.n or "", r.left, r.right },
+                { cc and { cc.r, cc.g, cc.b } or "ink", "gold", "ink", "muted" })
+        end
+    end
+end
+
 local function PaintBosses(p)
     local rows = K.BossRows(S().Bosses())
     local off = Scroll(p.grid, #rows)
@@ -1117,6 +1235,7 @@ function K.Paint()
     local p = f.pages[K.page]
     if K.page == "raiders" then PaintRaiders(p)
     elseif K.page == "bosses" then PaintBosses(p)
+    elseif K.page == "report" then PaintReport(p)
     elseif K.page == "raider" then PaintRaider(p, K.key)
     elseif K.page == "boss" then PaintBoss(p, K.key)
     elseif K.page == "where" and K.PaintWhere then K.PaintWhere(p)
@@ -1125,7 +1244,7 @@ function K.Paint()
     end
     p:Show()
     -- the tab you are on is lit; a card lights the list it belongs to
-    local on = (K.page == "raider" and "raiders") or (K.page == "boss" and "bosses") or K.page
+    local on = (K.page == "raider" and "raiders") or (K.page == "report" and "raiders") or (K.page == "boss" and "bosses") or K.page
     for name, b in pairs(f.keys) do
         Fill(b.bg, name == on and "accentSoft" or "sunken")
         b.fs:SetTextColor(rgb(name == on and "gold" or "ink"))
@@ -1189,10 +1308,12 @@ function K.Go(line)
         if ns.U and ns.U.ShowPaste then ns.U.ShowPaste() end
         return "log"
     end
-    if kind == "raiders" or kind == "bosses" or kind == "where" or kind == "roster" or kind == "recruits" then
+    if kind == "raiders" or kind == "bosses" or kind == "where" or kind == "roster" or kind == "report"
+        or kind == "recruits" then
         K.trail = {}                                   -- a list is the top: nothing behind it
         K.Open(kind)
         Say((kind == "raiders" and "every raider - click one, or type a name   (click NAME or ATTEND to sort)")
+            or (kind == "report" and ("the raid team by class: who raided in the last %d raids, and who is on the roster"):format(K.REPORT_RAIDS))
             or (kind == "bosses" and "every boss - click one, or type a name")
             or (kind == "roster" and ("paste a roster, READ IT, INVITE - " .. (ns.Inv and ns.Inv.Tools()
                 and "BiS Tools' invite list takes it from there" or "a second click sends")))

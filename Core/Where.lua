@@ -287,7 +287,84 @@ function W.MapForZone(zone)
     return hit and hit.id or nil
 end
 
+--- IN AN INSTANCE (Arn, 19 Oct: "darth is online can we have a check that says this person is in an
+--- instance"): the roster names the zone - "Shadowfang Keep" - and no BiS addon shares a spot inside
+--- one, so there is never a dot. The kind, from the client's map types when it lists the place (4 =
+--- Enum.UIMapType.Dungeon), else from the Classic names below (UNVERIFIED on Forever: its own new
+--- instances will be missing until seen). Answers "dungeon", "raid", "battleground", or nil.
+W.INSTANCES = {}
+for kind, names in pairs({
+    dungeon = { "Ragefire Chasm", "Wailing Caverns", "The Deadmines", "Deadmines", "Shadowfang Keep",
+        "Blackfathom Deeps", "The Stockade", "Stormwind Stockade", "Gnomeregan", "Razorfen Kraul",
+        "Scarlet Monastery", "Razorfen Downs", "Uldaman", "Zul'Farrak", "Maraudon",
+        "The Temple of Atal'Hakkar", "Sunken Temple", "Blackrock Depths", "Blackrock Spire",
+        "Lower Blackrock Spire", "Upper Blackrock Spire", "Dire Maul", "Stratholme", "Scholomance" },
+    raid = { "Molten Core", "Onyxia's Lair", "Blackwing Lair", "Zul'Gurub", "Ruins of Ahn'Qiraj",
+        "Temple of Ahn'Qiraj", "Ahn'Qiraj Temple", "Naxxramas" },
+    battleground = { "Warsong Gulch", "Arathi Basin", "Alterac Valley" },
+}) do
+    for _, n in ipairs(names) do W.INSTANCES[n:lower()] = kind end
+end
+--- DOCKED (Arn, 19 Oct: "the idea for the map is how they track the oil tankers out at sea ... a player in
+--- an instance should show them but docked in an instance"): where each instance's door is, on its zone
+--- map - { uiMapID, x %, y % } - so a guildmate inside is drawn at the door. Classic's entrances, from
+--- public game data (Questie's dungeon table, cross-checked against Wowhead Classic; 19 Oct): the four
+--- Blackrock instances share the mountain's Searing Gorge door; Ahn'Qiraj's two share the gate; the
+--- battlegrounds have a door per faction. UNVERIFIED on Forever: its own instances are not here.
+W.DOCK = {
+    ["ragefire chasm"] = { 1454, 52.6, 49.0 }, ["wailing caverns"] = { 1413, 46.0, 36.5 },
+    ["the deadmines"] = { 1436, 42.5, 71.7 }, ["deadmines"] = { 1436, 42.5, 71.7 },
+    ["shadowfang keep"] = { 1421, 44.8, 67.8 }, ["blackfathom deeps"] = { 1440, 14.5, 14.2 },
+    ["the stockade"] = { 1453, 42.3, 58.9 }, ["stormwind stockade"] = { 1453, 42.3, 58.9 },
+    ["gnomeregan"] = { 1426, 24.3, 39.8 }, ["razorfen kraul"] = { 1413, 42.9, 90.2 },
+    ["scarlet monastery"] = { 1420, 82.6, 33.8 }, ["razorfen downs"] = { 1413, 49.0, 93.9 },
+    ["uldaman"] = { 1418, 44.6, 12.1 }, ["zul'farrak"] = { 1446, 38.7, 20.1 }, ["maraudon"] = { 1443, 29.1, 62.5 },
+    ["the temple of atal'hakkar"] = { 1435, 69.9, 53.5 }, ["sunken temple"] = { 1435, 69.9, 53.5 },
+    ["blackrock depths"] = { 1427, 34.8, 85.3 }, ["blackrock spire"] = { 1427, 34.8, 85.3 },
+    ["lower blackrock spire"] = { 1427, 34.8, 85.3 }, ["upper blackrock spire"] = { 1427, 34.8, 85.3 },
+    ["molten core"] = { 1427, 34.8, 85.3 }, ["blackwing lair"] = { 1427, 34.8, 85.3 },
+    ["dire maul"] = { 1444, 59.2, 45.1 }, ["stratholme"] = { 1423, 31.3, 15.7 }, ["scholomance"] = { 1422, 69.7, 73.2 },
+    ["onyxia's lair"] = { 1445, 52.6, 76.8 }, ["zul'gurub"] = { 1434, 53.9, 17.6 },
+    ["ruins of ahn'qiraj"] = { 1451, 28.6, 92.3 }, ["temple of ahn'qiraj"] = { 1451, 28.6, 92.3 },
+    ["ahn'qiraj temple"] = { 1451, 28.6, 92.3 }, ["naxxramas"] = { 1423, 39.9, 25.8 },
+    ["warsong gulch"] = { Horde = { 1413, 46.5, 8.6 }, Alliance = { 1440, 61.7, 84.5 } },
+    ["arathi basin"] = { Horde = { 1417, 73.5, 29.0 }, Alliance = { 1417, 45.4, 44.4 } },
+    ["alterac valley"] = { Horde = { 1416, 63.6, 58.8 }, Alliance = { 1416, 39.5, 80.2 } },
+}
+--- An instance's door: its zone map and x, y (0-1), for your faction's door where there are two; nil.
+function W.Dock(zone)
+    if type(zone) ~= "string" then return nil end
+    local d = W.DOCK[zone:lower()]
+    if not d then return nil end
+    if not d[1] then
+        local faction
+        if UnitFactionGroup then
+            local ok, f = pcall(UnitFactionGroup, "player")
+            faction = ok and f or nil
+        end
+        d = d[faction or ""] or d.Horde or d.Alliance
+    end
+    return d[1], d[2] / 100, d[3] / 100
+end
+
+function W.Instance(zone)
+    if type(zone) ~= "string" or zone == "" or zone == "?" then return nil end
+    local kind = W.INSTANCES[zone:lower()]
+    if kind then return kind end
+    W.MapForZone(zone)                                     -- fills W.zoneMaps
+    local hit = W.zoneMaps and W.zoneMaps[zone:lower()]
+    if hit and hit.t == 4 then return "dungeon" end
+    return nil
+end
+
 function W.Person(row)
+    -- in a dungeon, a raid or a battleground: say so - no spot is shared in there, so no map shows them
+    local kind = W.Instance(row.zone)
+    if kind then
+        K.Say(("%s is in a %s - %s, level %s. Inside an instance nobody's spot is shared.")
+            :format(row.name, kind, row.zone, tostring(row.level or "?")), "ink2")
+        return "instance"
+    end
     local map = W.MapForZone(row.zone)
     if map and W.Pieces(map) then
         K.whereMap, W.focus = map, nil
@@ -590,10 +667,40 @@ function K.PaintWhere(p)
         -- counted in the middle of the zone the roster says they are in - never a dot we invented
         for _, m in ipairs(p.marks) do m:Hide() m.label:Hide() end
         local marks = 0
+        -- DOCKED: a guildmate in an instance, at its door (W.Dock) - on any map that shows the door,
+        -- the world or the zone itself (Arn, 19 Oct: "show them but docked in an instance")
+        local docked, dockOrder = {}, {}
+        for _, r in ipairs(W.Rows(spots)) do
+            if not r.header and not r.spot and W.Instance(r.zone) then
+                local d = docked[r.zone]
+                if not d then d = {} docked[r.zone] = d dockOrder[#dockOrder + 1] = r.zone end
+                d[#d + 1] = tostring(r.name):match("^(%S+)") or r.name
+            end
+        end
+        table.sort(dockOrder)
+        for _, zone in ipairs(dockOrder) do
+            local who = docked[zone]
+            local dm, dx, dy = W.Dock(zone)
+            local cx, cy
+            if dm then cx, cy = W.OnMap(dm, dx, dy, map) end
+            if cx then
+                local px, py = (cx * lw - x0) * s, (cy * lh - y0) * s
+                if px >= 0 and py >= 0 and px <= landW and py <= landH then
+                    marks = marks + 1
+                    local mk = Mark(p, marks)
+                    mk:ClearAllPoints()
+                    mk:SetPoint("CENTER", p.land, "TOPLEFT", px, -py)
+                    mk:Show()
+                    crowd[#crowd + 1] = { x = px, y = py, n = #who, mark = true, label = mk.label,
+                        text = #who == 1 and ("%s - docked: %s"):format(who[1], zone)
+                            or ("%d docked: %s"):format(#who, zone) }
+                end
+            end
+        end
         if map == W.WORLD or (W.MapInfoType(map) or 9) <= 2 then
             local nodot = {}
             for _, r in ipairs(W.Rows(spots)) do
-                if not r.header and not r.spot and r.zone and r.zone ~= "?" then
+                if not r.header and not r.spot and r.zone and r.zone ~= "?" and not W.Instance(r.zone) then
                     nodot[r.zone] = (nodot[r.zone] or 0) + 1
                 end
             end
@@ -652,11 +759,15 @@ function K.PaintWhere(p)
         if not r then
             ui.SetRow(row, nil, {})
         elseif r.header then
-            ui.SetRow(row, "#" .. r.zone, { r.zone, r.n, "", "" }, { "gold", "gold", "muted", "muted" })
+            local kind = W.Instance(r.zone)
+            ui.SetRow(row, "#" .. r.zone, { r.zone .. (kind and (" (" .. kind .. ")") or ""), r.n, "", "" },
+                { "gold", "gold", "muted", "muted" })
             W.byKey["#" .. r.zone] = r
         else
             local cc = r.class and colours and colours[r.class]
-            ui.SetRow(row, r.key, { "  " .. r.name, r.level or "", r.rank or "", r.spot and "on map" or "" },
+            local kind = not r.spot and W.Instance(r.zone)
+            ui.SetRow(row, r.key, { "  " .. r.name, r.level or "", r.rank or "",
+                                    r.spot and "on map" or kind and ("in " .. kind) or "" },
                 { cc and { cc.r, cc.g, cc.b } or "ink", "ink2", "muted",
                   (r.spot and r.spot.map == map) and "good" or "accent" })
             row.who = r.name
