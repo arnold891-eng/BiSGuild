@@ -1348,6 +1348,41 @@ do
         K.Paint()
         H.eq(rows[5].cells[2]:GetText(), "?", "missing from half a roster reads ?, not pug")
 
+        -- RUN REPORT (Arn, 19 Oct: "what our raid team looks like at the moment ... Druid: raiders by name
+        -- and how many ... by looking at the last 2-4 logs who has been consistently raiding")
+        _G.GetNumGuildMembers = function() return #ROSTER end
+        ROSTER[#ROSTER + 1] = { "Zara Leafsong", "Initiate", "DRUID" }
+        K._guildDirty = true
+        local rep = K.Report(4)
+        local byClass = {}
+        for _, b in ipairs(rep.classes) do byClass[b.class] = b end
+        H.eq(#rep.raids, math.min(4, #NS.S.Dates()), "the last raids on record, at most four")
+        H.ok(byClass.SHAMAN and byClass.SHAMAN.raiding[1] and byClass.SHAMAN.raiding[1].name == "Dax",
+             "Dax raided: under shaman")
+        H.ok(byClass.DRUID and #byClass.DRUID.raiding == 0 and byClass.DRUID.roster[1].name == "Zara"
+             and byClass.DRUID.roster[1].level == 60, "Zara has no raids: on the druid roster side, with her level")
+        local cara
+        for _, b in ipairs(rep.classes) do for _, x in ipairs(b.raiding) do if x.name == "Cara" then cara = { b.class, x.pug } end end end
+        H.ok(cara and cara[1] == "?" and cara[2], "Cara is not in the guild: a pug, class unknown", cara and cara[1])
+        local order = {}
+        for _, b in ipairs(rep.classes) do order[#order + 1] = b.class end
+        H.eq(order[1], "WARRIOR", "classes in the RAIDERS list's order, warrior first")
+        H.eq(order[#order], "?", "and the unknown last")
+        -- no raids yet (Arn: "right now nobody will come out since there are no raids out yet"): the
+        -- roster is the whole team
+        local none = K.Report(0)
+        H.ok(#none.raids == 0 and none.raiding == 0 and none.roster == #ROSTER, "no raids: the roster is the team",
+             none.roster)
+        local rr = K.ReportRows(rep)
+        H.ok(rr[#rr].total and rr[#rr].n == rep.raiding, "a total line closes it")
+        -- the button
+        f.pages.raiders.report:Click()
+        H.eq(K.page, "report", "RUN REPORT opens the report")
+        H.ok(f.pages.report.panel.right:GetText():find("the last", 1, true), "titled by the raids it read",
+             f.pages.report.panel.right:GetText())
+        K.Go("raiders")
+        table.remove(ROSTER)
+
         nights.Cara, nights.Dax, nights.Eve = nil, nil, nil
         _G.GetNumGuildMembers, _G.GetGuildRosterInfo, _G.RAID_CLASS_COLORS = realNum, realInfo, realColours
         K._guildDirty = true
@@ -1534,6 +1569,39 @@ do
         for _, m in ipairs(wp.marks) do if m:IsShown() then markText = m.label:GetText() end end
         H.eq(markText, "Orgrimmar 1", "Cara without a dot: a marker in Orgrimmar, counted - never an invented dot")
         H.ok(wp.map.right:GetText():find("+1 zone", 1, true), "and the corner says so")
+        -- DOCKED (Arn, 19 Oct: "how they track the oil tankers out at sea ... a player in an instance should
+        -- show them but docked"): Cara in Shadowfang Keep sits at its door in Silverpine (1421: 44.8, 67.8)
+        local cara = K.Member("Cara")
+        local keepZone = cara.zone
+        cara.zone = "Shadowfang Keep"
+        local prevRect = _G.C_Map.GetMapRectOnMap
+        _G.C_Map.GetMapRectOnMap = function(from, to)
+            if from == 1421 and to == 947 then return 0.10, 0.20, 0.20, 0.30 end     -- Silverpine, far north-west
+            return prevRect(from, to)
+        end
+        Wh.rects = {}
+        local m1, dx, dy = Wh.Dock("Shadowfang Keep")
+        H.ok(m1 == 1421 and math.abs(dx - 0.448) < 1e-9 and math.abs(dy - 0.678) < 1e-9, "Shadowfang Keep's door: Silverpine 44.8, 67.8")
+        K.Paint()
+        local docked, orgMark
+        for _, m in ipairs(wp.marks) do
+            if m:IsShown() and m.label:IsShown() then
+                if m.label:GetText():find("docked", 1, true) then docked = m.label:GetText() end
+                if m.label:GetText():find("Orgrimmar", 1, true) then orgMark = true end
+            end
+        end
+        H.eq(docked, "Cara - docked: Shadowfang Keep", "Cara in the dungeon: docked at its door")
+        H.ok(not orgMark, "and not counted in a zone as well")
+        local keepFaction = _G.UnitFactionGroup
+        _G.UnitFactionGroup = function() return "Alliance", "Alliance" end
+        local wm = Wh.Dock("Warsong Gulch")
+        _G.UnitFactionGroup = function() return "Horde", "Horde" end
+        H.ok(wm == 1440 and Wh.Dock("Warsong Gulch") == 1413, "a battleground docks at your faction's door")
+        _G.UnitFactionGroup = keepFaction
+        cara.zone = keepZone
+        _G.C_Map.GetMapRectOnMap = prevRect
+        Wh.rects = {}
+        K.Paint()
         H.ok(not wp.world:IsShown(), "on the world: no WORLD button")
         rows[2]:Click()                                       -- Bob, who has a dot
         H.eq(Wh.shown, 1411, "clicking somebody zooms to their zone")
@@ -1579,6 +1647,24 @@ do
         H.ok(f.status:GetText():find("somewhere in Zephras Isle", 1, true), "and says 'somewhere in' - no exact spot",
              f.status:GetText())
         H.eq(Wh.focus, nil, "no dot to zoom on")
+        -- IN AN INSTANCE (Arn, 19 Oct: "darth is online can we have a check that says this person is in
+        -- an instance") - by name, or by the client's own map type (4 = dungeon)
+        H.eq(Wh.Instance("Shadowfang Keep"), "dungeon", "Shadowfang Keep: a dungeon")
+        H.eq(Wh.Instance("Molten Core"), "raid", "Molten Core: a raid")
+        H.eq(Wh.Instance("Warsong Gulch"), "battleground", "Warsong Gulch: a battleground")
+        H.eq(Wh.Instance("Zephras Isle"), nil, "a zone is not an instance")
+        _G.C_Map.GetMapChildrenInfo = function(root)
+            if root ~= 947 then return {} end
+            return { { name = "Forever's New Crypt", mapID = 3001, mapType = 4 } }
+        end
+        Wh.zoneMaps = nil
+        H.eq(Wh.Instance("Forever's New Crypt"), "dungeon", "a place the client lists as a dungeon, though not named here")
+        K.whereMap = 1411
+        Wh.Person({ name = "Darthsidiouz Sithlord", zone = "Shadowfang Keep", level = 21 })
+        H.ok(f.status:GetText():find("Darthsidiouz Sithlord is in a dungeon - Shadowfang Keep, level 21", 1, true)
+             and f.status:GetText():find("nobody's spot is shared", 1, true), "clicked: they are in a dungeon, and why no dot",
+             f.status:GetText())
+        H.eq(K.whereMap, 1411, "and no map is opened for it")
         _G.C_Map.GetMapChildrenInfo = nil
         Wh.zoneMaps = nil
         _G.OpenMapAPI = {
