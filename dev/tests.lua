@@ -1579,6 +1579,24 @@ do
         H.ok(f.status:GetText():find("somewhere in Zephras Isle", 1, true), "and says 'somewhere in' - no exact spot",
              f.status:GetText())
         H.eq(Wh.focus, nil, "no dot to zoom on")
+        -- IN AN INSTANCE (Arn, 19 Oct: "darth is online can we have a check that says this person is in
+        -- an instance") - by name, or by the client's own map type (4 = dungeon)
+        H.eq(Wh.Instance("Shadowfang Keep"), "dungeon", "Shadowfang Keep: a dungeon")
+        H.eq(Wh.Instance("Molten Core"), "raid", "Molten Core: a raid")
+        H.eq(Wh.Instance("Warsong Gulch"), "battleground", "Warsong Gulch: a battleground")
+        H.eq(Wh.Instance("Zephras Isle"), nil, "a zone is not an instance")
+        _G.C_Map.GetMapChildrenInfo = function(root)
+            if root ~= 947 then return {} end
+            return { { name = "Forever's New Crypt", mapID = 3001, mapType = 4 } }
+        end
+        Wh.zoneMaps = nil
+        H.eq(Wh.Instance("Forever's New Crypt"), "dungeon", "a place the client lists as a dungeon, though not named here")
+        K.whereMap = 1411
+        Wh.Person({ name = "Darthsidiouz Sithlord", zone = "Shadowfang Keep", level = 21 })
+        H.ok(f.status:GetText():find("Darthsidiouz Sithlord is in a dungeon - Shadowfang Keep, level 21", 1, true)
+             and f.status:GetText():find("nobody's spot is shared", 1, true), "clicked: they are in a dungeon, and why no dot",
+             f.status:GetText())
+        H.eq(K.whereMap, 1411, "and no map is opened for it")
         _G.C_Map.GetMapChildrenInfo = nil
         Wh.zoneMaps = nil
         _G.OpenMapAPI = {

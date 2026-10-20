@@ -287,7 +287,42 @@ function W.MapForZone(zone)
     return hit and hit.id or nil
 end
 
+--- IN AN INSTANCE (Arn, 19 Oct: "darth is online can we have a check that says this person is in an
+--- instance"): the roster names the zone - "Shadowfang Keep" - and no BiS addon shares a spot inside
+--- one, so there is never a dot. The kind, from the client's map types when it lists the place (4 =
+--- Enum.UIMapType.Dungeon), else from the Classic names below (UNVERIFIED on Forever: its own new
+--- instances will be missing until seen). Answers "dungeon", "raid", "battleground", or nil.
+W.INSTANCES = {}
+for kind, names in pairs({
+    dungeon = { "Ragefire Chasm", "Wailing Caverns", "The Deadmines", "Deadmines", "Shadowfang Keep",
+        "Blackfathom Deeps", "The Stockade", "Stormwind Stockade", "Gnomeregan", "Razorfen Kraul",
+        "Scarlet Monastery", "Razorfen Downs", "Uldaman", "Zul'Farrak", "Maraudon",
+        "The Temple of Atal'Hakkar", "Sunken Temple", "Blackrock Depths", "Blackrock Spire",
+        "Lower Blackrock Spire", "Upper Blackrock Spire", "Dire Maul", "Stratholme", "Scholomance" },
+    raid = { "Molten Core", "Onyxia's Lair", "Blackwing Lair", "Zul'Gurub", "Ruins of Ahn'Qiraj",
+        "Temple of Ahn'Qiraj", "Ahn'Qiraj Temple", "Naxxramas" },
+    battleground = { "Warsong Gulch", "Arathi Basin", "Alterac Valley" },
+}) do
+    for _, n in ipairs(names) do W.INSTANCES[n:lower()] = kind end
+end
+function W.Instance(zone)
+    if type(zone) ~= "string" or zone == "" or zone == "?" then return nil end
+    local kind = W.INSTANCES[zone:lower()]
+    if kind then return kind end
+    W.MapForZone(zone)                                     -- fills W.zoneMaps
+    local hit = W.zoneMaps and W.zoneMaps[zone:lower()]
+    if hit and hit.t == 4 then return "dungeon" end
+    return nil
+end
+
 function W.Person(row)
+    -- in a dungeon, a raid or a battleground: say so - no spot is shared in there, so no map shows them
+    local kind = W.Instance(row.zone)
+    if kind then
+        K.Say(("%s is in a %s - %s, level %s. Inside an instance nobody's spot is shared.")
+            :format(row.name, kind, row.zone, tostring(row.level or "?")), "ink2")
+        return "instance"
+    end
     local map = W.MapForZone(row.zone)
     if map and W.Pieces(map) then
         K.whereMap, W.focus = map, nil
@@ -652,11 +687,15 @@ function K.PaintWhere(p)
         if not r then
             ui.SetRow(row, nil, {})
         elseif r.header then
-            ui.SetRow(row, "#" .. r.zone, { r.zone, r.n, "", "" }, { "gold", "gold", "muted", "muted" })
+            local kind = W.Instance(r.zone)
+            ui.SetRow(row, "#" .. r.zone, { r.zone .. (kind and (" (" .. kind .. ")") or ""), r.n, "", "" },
+                { "gold", "gold", "muted", "muted" })
             W.byKey["#" .. r.zone] = r
         else
             local cc = r.class and colours and colours[r.class]
-            ui.SetRow(row, r.key, { "  " .. r.name, r.level or "", r.rank or "", r.spot and "on map" or "" },
+            local kind = not r.spot and W.Instance(r.zone)
+            ui.SetRow(row, r.key, { "  " .. r.name, r.level or "", r.rank or "",
+                                    r.spot and "on map" or kind and ("in " .. kind) or "" },
                 { cc and { cc.r, cc.g, cc.b } or "ink", "ink2", "muted",
                   (r.spot and r.spot.map == map) and "good" or "accent" })
             row.who = r.name
