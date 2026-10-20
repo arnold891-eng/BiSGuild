@@ -17,7 +17,7 @@
                                           raid by key and check number, the time it was decided
 
   WHO IS BELIEVED: only nights and gear from an OFFICER are taken in - a guild rank at or above
-  `officerRank` (0 = guild master; default 1, `/bisg officers <n>`). Anyone in the guild could
+  `officerRank` (0 = guild master; default 1 - see X.OfficerRank). Anyone in the guild could
   otherwise post a made-up night, and a record that anyone can write is not a record. Members keep
   the copy; officers are the ones who answer.
 
@@ -61,22 +61,15 @@ end
 -- who is an officer
 --------------------------------------------------------------------
 
---- HOW FAR DOWN THE RANKS "OFFICER" GOES (Arn, 16 Oct, his roster: Guild Master, Officer, Veteran -
---- "but it's not always like that"). Every member's client has to agree on who is believed, and
---- members will never set anything, so the answer lives where every member can read it: a line in
---- the guild's Guild Information text, written once by the guild master -
----     BiSGuild officers: 2
---- counts ranks 0..2 (rank 0 is the guild master; the line is ranks DOWN from the top). Without the
---- line it is 1: the guild master and the rank under. `officerRank` in the saved variables is for
+--- HOW FAR DOWN THE RANKS "OFFICER" GOES: the guild master and the rank under (ranks 0 and 1) - Arn's
+--- roster, 16 Oct: Guild Master, Officer, Veteran. `officerRank` in the saved variables moves it, for
 --- testing on one client only.
+--- NOT THE GUILD INFORMATION TEXT ANY MORE (Arn's BugGrabber, 19 Oct: "AddOn 'BiSGuild' tried to call the
+--- protected function"). A line there ("BiSGuild officers: 2") was to let a guild master move the cutoff
+--- for every member at once - but GetGuildInfoText is PROTECTED on Forever: it is in the census, and an
+--- addon calling it is blocked, which no pcall hides. So it is never called.
 function X.OfficerRank()
     local n = tonumber(ns.DB().officerRank)
-    if not n and GetGuildInfoText then
-        local ok, text = pcall(GetGuildInfoText)
-        if ok and type(text) == "string" then
-            n = tonumber(text:lower():match("bisguild%s*officers%s*[:=]%s*(%d+)"))
-        end
-    end
     return n and n >= 0 and math.floor(n) or 1
 end
 

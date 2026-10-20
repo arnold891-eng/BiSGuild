@@ -42,7 +42,7 @@ Hover any item for its tooltip, enchant included. Right-click any name for the g
 
 ## Shared with your officers
 
-Any officer who reads a log hands the night to everyone else in the guild. Miss a raid and your copy still fills in. Nights, gear and punctuality are only taken from officers, so nobody can write themselves into the record. The guild master sets who counts as an officer once, with one line in the Guild Information text.
+Any officer who reads a log hands the night to everyone else in the guild. Miss a raid and your copy still fills in. Nights, gear and punctuality are only taken from officers, so nobody can write themselves into the record. Officers are the guild master and the rank under.
 
 Your alts keep their own books. A character in another guild sees that guild's record, never your main's.
 
