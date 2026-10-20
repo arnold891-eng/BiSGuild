@@ -118,6 +118,7 @@ function K.Parse(line, cards, bosses)
     if l == "log" then return "log" end
     if l == "where" or l == "map" then return "where" end
     if l == "roster" or l == "import" then return "roster" end
+    if l == "recruits" or l == "recruit" then return "recruits" end
     if want == "raider" or want == "player" then bosses = {} end
     if want == "boss" then cards = {} end
 
@@ -614,14 +615,16 @@ function K.Build()
     end
     f.keys = {}
     -- CENTRED ON THE WINDOW, however many there are (Arn, 16 Oct: a fourth tab, and "the top tabs
-    -- shifted a little to the right" - they started at a fixed x)
+    -- shifted a little to the right" - they started at a fixed x). Six since RECRUITS (21 Oct 2026):
+    -- 78 wide, so the row starts clear of the prompt's 180 px.
     local TABS = { { "RAIDERS", "raiders" }, { "BOSSES", "bosses" }, { "WHERE", "where" }, { "ROSTER", "roster" },
-                   { "LOG", "log" } }
-    local keyX = math.floor((K.W - (#TABS * 102 - 6)) / 2)
+                   { "RECRUITS", "recruits" }, { "LOG", "log" } }
+    K.TAB_W, K.TAB_GAP = 78, 6
+    local keyX = math.floor((K.W - (#TABS * (K.TAB_W + K.TAB_GAP) - K.TAB_GAP)) / 2)
     for _, k in ipairs(TABS) do
         local b = CreateFrame("Button", nil, f)
         b:SetPoint("TOPLEFT", keyX, -6)
-        b:SetSize(96, 18)
+        b:SetSize(K.TAB_W, 18)
         b.bg = b:CreateTexture(nil, "BACKGROUND")
         b.bg:SetAllPoints()
         Fill(b.bg, "sunken")
@@ -633,7 +636,7 @@ function K.Build()
         b.fs:SetText(k[1])
         b:SetScript("OnClick", function() K.Go(k[2]) end)
         f.keys[k[2]] = b
-        keyX = keyX + 102
+        keyX = keyX + K.TAB_W + K.TAB_GAP
     end
     local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
     close:SetPoint("TOPRIGHT", -2, -2)
@@ -830,6 +833,8 @@ function K.Build()
     if K.BuildWhere then f.pages.where = K.BuildWhere(Page(), bodyH) end
     -- ROSTER: paste a Discord raid tool's roster, invite who is online (Core/Invite.lua)
     if K.BuildRoster then f.pages.roster = K.BuildRoster(Page(), bodyH) end
+    -- RECRUITS: BiS> Nebbinator's guild book, through its API (Core/Recruits.lua)
+    if K.BuildRecruits then f.pages.recruits = K.BuildRecruits(Page(), bodyH) end
 
     -- the ticker along the bottom
     local tbg = f:CreateTexture(nil, "BORDER")
@@ -1116,6 +1121,7 @@ function K.Paint()
     elseif K.page == "boss" then PaintBoss(p, K.key)
     elseif K.page == "where" and K.PaintWhere then K.PaintWhere(p)
     elseif K.page == "roster" and K.PaintRoster then K.PaintRoster(p)
+    elseif K.page == "recruits" and K.PaintRecruits then K.PaintRecruits(p)
     end
     p:Show()
     -- the tab you are on is lit; a card lights the list it belongs to
@@ -1183,13 +1189,14 @@ function K.Go(line)
         if ns.U and ns.U.ShowPaste then ns.U.ShowPaste() end
         return "log"
     end
-    if kind == "raiders" or kind == "bosses" or kind == "where" or kind == "roster" then
+    if kind == "raiders" or kind == "bosses" or kind == "where" or kind == "roster" or kind == "recruits" then
         K.trail = {}                                   -- a list is the top: nothing behind it
         K.Open(kind)
         Say((kind == "raiders" and "every raider - click one, or type a name   (click NAME or ATTEND to sort)")
             or (kind == "bosses" and "every boss - click one, or type a name")
             or (kind == "roster" and ("paste a roster, READ IT, INVITE - " .. (ns.Inv and ns.Inv.Tools()
                 and "BiS Tools' invite list takes it from there" or "a second click sends")))
+            or (kind == "recruits" and "the guild's recruits and needs, from BiS> Nebbinator")
             or "who is where - a dot is a guildmate sharing their spot from a BiS addon; click a row to see their map")
         return kind
     end
