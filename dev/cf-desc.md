@@ -27,7 +27,7 @@ Loot night. Two raiders want the same trinket. One has been to every raid this m
 
 - **RAIDERS** — your whole guild, and everyone who has raided with you: attendance, last raid, flask or elixirs, deaths, and gear issues in red, like a slot that should be enchanted and isn't. Sorted by class the way a raid sheet reads, pugs at the bottom. Click a name for their whole card.
 - **BOSSES** — every boss you've killed: kills, wipes, your best time, the night it first died, and who was there.
-- **WHERE** — your guildmates on a map, right now. Click one and the map opens on their zone. With OpenMap installed, one button opens it there.
+- **WHERE** — your guildmates on a map, right now, each a tiny 3D figure of their race. Click one and the map opens on their zone. With OpenMap installed, one button opens it there.
 - **ROSTER** — paste the Raid-Helper sign-up and see who's online, who's absent, who isn't in the guild. One button invites everyone online.
 - **LOG** — read a raid: the notebook's link and the box to paste its text into (below).
 
