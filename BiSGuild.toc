@@ -4,7 +4,7 @@
 ## IconTexture: Interface\Icons\INV_Shirt_GuildTabard_01
 ## Notes: Raid attendance and consumables, measured instead of remembered.
 ## Author: Arn
-## Version: 0.3.0
+## Version: 0.4.0
 ## SavedVariables: BiSGuildDB
 ## OptionalDeps: BiSTheme
 ## DefaultState: enabled
@@ -35,6 +35,7 @@ Core\Where.lua
 Core\Pins.lua
 Core\Looks.lua
 Core\Invite.lua
+Core\Recruits.lua
 Core\Logins.lua
 Core\Loot.lua
 API.lua

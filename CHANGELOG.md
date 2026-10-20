@@ -1,5 +1,12 @@
 # BiSGuild
 
+## 0.4.0
+
+- **RECRUITS, a new terminal tab** (with BiS> Nebbinator 4.0). Everyone sees what the guild needs and which officer set it. Officers also see the guild's recruits - who, how far along, who in the guild is talking to them, when, and the note - and which channel brings the most whispers. An officer's **SET THEM** opens Nebbinator's Team page. Type `recruits` to open it too.
+- **RUN REPORT:** what the raid team looks like, by class - who has raided in the last four raids beside every guild member of that class who hasn't. With no raids yet, the roster is the team. A button on the RAIDERS bar, or type `report`.
+- **WHERE knows who is in an instance.** A guildmate inside a dungeon, raid or battleground shows docked at its door on the map ("Darth - docked: Shadowfang Keep", "3 docked: Molten Core"), and the list says "in dungeon" instead of a missing dot.
+- The tabs are a little narrower, so all six fit beside the prompt.
+
 ## 0.3.0
 
 - **Guildmates as tiny figures on the WHERE map.** Each guildmate sharing their spot stands there as a little 3D figure of their race and sex, facing the way they're heading. BiS Guild learns what someone looks like whenever you group with them or target them, and keeps it - they need nothing installed for that part. Someone it hasn't seen yet is a dot, as before.

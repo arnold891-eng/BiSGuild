@@ -2974,4 +2974,84 @@ do
     H.wire = {}
 end
 
+-- RECRUITS (21 Oct 2026): BiS> Nebbinator's guild book in the terminal, through NebbinatorAPI v2. The stand-in
+-- answers in the shapes Nebbinator's API.lua documents (and its own suite holds): Team rows carry class,
+-- level and note only on an officer's client, Needs a list of { classFile, class, spec, role, count }.
+H.section("RECRUITS: the guild's recruits, from BiS> Nebbinator")
+do
+    local K = NS.K
+    local realNum, realInfo = _G.GetNumGuildMembers, _G.GetGuildRosterInfo
+    local ROSTER = { { "Kumlust-Dreamscythe", 4 } }
+    _G.GetNumGuildMembers = function() return #ROSTER end
+    _G.GetGuildRosterInfo = function(i) local r = ROSTER[i] return r[1], "rank", r[2] end
+    X._ranksDirty = true
+    local f = K.Show()
+    -- six tabs, centred, and the first one clear of the prompt
+    H.ok(f.keys.recruits ~= nil, "a RECRUITS tab")
+    local first = f.keys.raiders:OffsetFor("TOPLEFT")
+    local last = f.keys.log:OffsetFor("TOPLEFT") + f.keys.log:GetWidth()
+    H.ok(math.abs(first - (K.W - last)) <= 1 and first >= 180, "six tabs centred, clear of the prompt's 180 px: " .. first)
+
+    _G.NebbinatorAPI = nil
+    f.keys.recruits:Click()
+    local p = f.pages.recruits
+    H.eq(K.page, "recruits", "the tab opens its page")
+    H.ok(p.needLines[1]:GetText():find("BiS> Nebbinator keeps the guild's recruits", 1, true), "without Nebbinator: what would be here",
+         p.needLines[1]:GetText())
+    H.ok(p.needsBy:GetText():find("install it", 1, true) and not p.setNeeds:IsShown(), "and which addon brings it")
+    _G.NebbinatorAPI = { major = 1, version = 1, Ready = function() return true end }
+    K.Paint()
+    H.ok(p.needLines[1]:GetText():find("Update BiS> Nebbinator", 1, true), "an old Nebbinator (version 1): update it")
+
+    local now = GetServerTime()                  -- the API's clock (the kit's, here)
+    local opened
+    local officerClient = false
+    _G.NebbinatorAPI = {
+        major = 1, version = 2,
+        Ready = function() return true end,
+        Needs = function() return { text = "2 Resto Shaman", by = "Bigboss", at = now - 2 * 86400,
+            list = { { classFile = "SHAMAN", class = "Shaman", spec = "Resto", role = "HEALER", count = 2 } } } end,
+        Team = function()
+            return { { name = "Newest", status = "contacted", by = "Memberguy", at = now - 120,
+                       class = officerClient and "PRIEST" or nil, note = officerClient and "good logs" or nil },
+                     { name = "Older", status = "trial", by = "Kumlust", at = now - 7200 } }
+        end,
+        Stats = function() return { posts = 4, whispers = 3, where = { { key = "Trade", posts = 2, whispers = 3 },
+            { key = "General", posts = 2, whispers = 0 } }, ad = {}, when = {} } end,
+        Open = function(page) opened = page return true end,
+    }
+    K.Paint()
+    H.eq(p.needLines[1]:GetText(), "2  Resto Shaman", "everyone sees what the guild needs")
+    H.ok(p.needsBy:GetText():find("set by Bigboss, 2 d ago", 1, true), "and who set it", p.needsBy:GetText())
+    H.ok(not p.setNeeds:IsShown(), "a member has no SET THEM")
+    H.ok(p.hint:IsShown() and p.hint:GetText():find("Officers see", 1, true), "and no list - officers see it")
+    H.ok(not p.grid.rows[1]:IsShown(), "no rows")
+
+    ROSTER = { { "Kumlust-Dreamscythe", 1 } }
+    X._ranksDirty = true
+    officerClient = true
+    K.Paint()
+    H.ok(p.setNeeds:IsShown(), "an officer: SET THEM")
+    p.setNeeds:Click()
+    H.eq(opened, "Team", "which opens Nebbinator's Team page (the needs are set and sent there)")
+    H.ok(not p.hint:IsShown() and p.grid.rows[1]:IsShown(), "the guild's list")
+    H.eq(p.grid.rows[1].cells[1]:GetText(), "Newest", "newest first")
+    H.eq(p.grid.rows[1].cells[3]:GetText(), "Memberguy", "who is talking to them")
+    H.eq(p.grid.rows[1].cells[5]:GetText(), "good logs", "the note")
+    H.eq(p.grid.rows[1].who, "Newest", "right-click: the game's menu for them")
+    H.eq(p.workLines[2]:GetText(), "Trade  3 / 2", "what works: the best channel")
+    H.eq(p.list.right:GetText(), "2 on the list", "how many")
+    -- typed
+    K.Go("raiders")
+    K.Go("recruits")
+    H.eq(K.page, "recruits", "typing recruits opens it too")
+    _G.NebbinatorAPI = { major = 1, version = 2, Ready = function() error("boom") end, Team = function() end }
+    local ok = pcall(K.Paint)
+    H.ok(ok, "a broken Nebbinator never breaks the terminal")
+    _G.NebbinatorAPI = nil
+    K.Hide()
+    _G.GetNumGuildMembers, _G.GetGuildRosterInfo = realNum, realInfo
+    X._ranksDirty = true
+end
+
 H.report()
