@@ -887,12 +887,16 @@ do
 
     H.ok(X.IsOfficer("Kumlust") and X.IsOfficer("Bigboss"), "ranks 0 and 1 are officers")
     H.ok(not X.IsOfficer("Memberguy") and not X.IsOfficer("Stranger"), "a member and a stranger are not")
-    -- a guild laid out differently says so once, in the Guild Information text every member reads
-    _G.GetGuildInfoText = function() return "Raids Tue/Thu 8pm\nBiSGuild officers: 4\nBe nice" end
-    H.eq(X.OfficerRank(), 4, "the guild's info text moves the cutoff")
-    H.ok(X.IsOfficer("Memberguy"), "and rank 4 counts then")
-    _G.GetGuildInfoText = function() return "no line here" end
-    H.eq(X.OfficerRank(), 1, "without the line: the guild master and the rank under")
+    -- THE GUILD INFORMATION TEXT IS NEVER READ (Arn's BugGrabber, 19 Oct: GetGuildInfoText is protected
+    -- on Forever - an addon calling it is blocked). The mock is the client: calling it is the block.
+    local asked = 0
+    _G.GetGuildInfoText = function() asked = asked + 1 error("ADDON_ACTION_BLOCKED: GetGuildInfoText", 0) end
+    H.eq(X.OfficerRank(), 1, "the guild master and the rank under")
+    X.Announce()
+    H.eq(asked, 0, "and the protected Guild Information text is never asked")
+    NS.DB().officerRank = 4
+    H.ok(X.IsOfficer("Memberguy"), "the saved officerRank still moves it, on this client (testing)")
+    NS.DB().officerRank = nil
     _G.GetGuildInfoText = nil
 
     local function drain()
@@ -1416,6 +1420,47 @@ do
         table.sort(labels)
         H.ok(deq(labels, { "Bob", "you" }), "each dot named, mine as 'you'", table.concat(labels, ","))
 
+        -- THE LITTLE FIGURES (Arn: "actual size so very tiny maybe like 10 pixels max"; "store ... when they
+        -- party or raid and are near us and keep that until next time we see them") - a stand-in of their
+        -- race and sex, since Forever cannot build a body (no SetCustomRace)
+        local Lk = NS.Looks
+        local realExists = _G.UnitExists
+        H.units = { player = { name = "Kumlust", race = "Tauren", sex = 2 }, target = { name = "Bob", race = "Orc", sex = 2 } }
+        _G.UnitExists = function(u) return H.units[u] ~= nil or realExists(u) end
+        H.eq(Lk.Display("Bob"), nil, "never seen: no look, a plain dot")
+        H.ok(Lk.Note("target"), "targeting Bob notes his race and sex")
+        H.eq(Lk.Display("Bob"), Lk.FOLK.Orc[1], "Bob: the orc man's stand-in")
+        H.ok(_G.BiSGuildDB.looks.bob and _G.BiSGuildDB.looks.bob.race == "Orc", "kept in the saved data, by his roster name")
+        H.units.target = { name = "Stranger Danger", race = "Human", sex = 3 }
+        H.ok(not Lk.Note("target"), "somebody outside the guild is not kept")
+        H.units.target = { name = "Bob", race = "Pandaren", sex = 2 }
+        Lk.DB().cara = nil
+        H.ok(not Lk.Note("target") and Lk.Display("Bob") == Lk.FOLK.Orc[1], "a race we cannot draw is not kept (Bob stays an orc)")
+        K.Paint()
+        local shownFigs = {}
+        for _, fg in ipairs(wp.figs or {}) do if fg:IsShown() then shownFigs[#shownFigs + 1] = fg._display end end
+        table.sort(shownFigs)
+        H.ok(#shownFigs == 2 and shownFigs[1] == Lk.FOLK.Tauren[1] and shownFigs[2] == Lk.FOLK.Orc[1],
+             "two figures: me a tauren man, Bob an orc man", table.concat(shownFigs, ","))
+        local small = 0
+        for _, d in ipairs(wp.dots) do if d:IsShown() and (d._w or d:GetWidth()) == 4 then small = small + 1 end end
+        H.eq(small, 2, "each stands on a small dot")
+        H.ok(wp.figs[1]:GetWidth() <= 10 and wp.figs[1]:GetHeight() <= 14, "about ten pixels")
+        -- they face the way they went
+        local bobFig
+        for _, fg in ipairs(wp.figs) do if fg:IsShown() and fg._display == Lk.FOLK.Orc[1] then bobFig = fg end end
+        lib.spots.Bob = { map = 1411, x = 0.55, y = 0.5, at = H.clock }
+        K.Paint()
+        H.ok(math.abs(bobFig._facing - math.pi / 2) < 1e-6, "Bob walked east: he faces east", bobFig._facing)
+        local calls = bobFig._display
+        bobFig._display = nil
+        K.Paint()
+        H.eq(bobFig._display, calls, "a repaint sets the look again only when it changed")
+        lib.spots.Bob = { map = 1411, x = 0.5, y = 0.5, at = H.clock }
+        H.units = {}
+        _G.UnitExists = realExists
+        K.Paint()
+
         local rows = wp.grid.rows
         H.eq(rows[1].cells[1]:GetText(), "Durotar", "the busiest zone first")
         H.eq(rows[1].cells[2]:GetText(), "2", "with how many are there")
@@ -1462,13 +1507,27 @@ do
         K.Paint()
         H.eq(Wh.shown, 947, "WHERE opens on the world")
         H.ok(wp.map.title:GetText():find("AZEROTH", 1, true), "titled so", wp.map.title:GetText())
-        local wl = {}
-        for i, l in ipairs(wp.labels) do if wp.dots[i]:IsShown() then wl[#wl + 1] = l:GetText() end end
+        local wl, dots = {}, 0
+        for i, l in ipairs(wp.labels) do
+            if wp.dots[i]:IsShown() then dots = dots + 1 if l:IsShown() then wl[#wl + 1] = l:GetText() end end
+        end
         table.sort(wl)
-        H.ok(deq(wl, { "Bob", "Cara", "you" }), "every dot, from every zone, on one map", table.concat(wl, ","))
+        H.eq(dots, 3, "every dot, from every zone, on one map")
+        -- ONE LABEL FOR A CROWD (Arn, 19 Oct: "yeah its crowded"): you and Bob, close on the world map,
+        -- share "you +1"; Cara, far off, keeps her own
+        H.ok(deq(wl, { "Cara", "you +1" }), "close dots share one label, you leading", table.concat(wl, ","))
         local shownMarks = 0
         for _, m in ipairs(wp.marks) do if m:IsShown() then shownMarks = shownMarks + 1 end end
         H.eq(shownMarks, 0, "everyone online here has a dot: no zone markers")
+        -- the crowd rule itself: Arn's Hillsbrad - you, Frankadank beside you, and a zone marker for two
+        -- guildmates with no dot, all on one spot; a dot far off keeps its own label
+        local cr = Wh.Crowd({ { x = 100, y = 50, n = 1, text = "Frankadank" }, { x = 104, y = 52, n = 1, me = true },
+                              { x = 98, y = 56, n = 2, mark = true }, { x = 300, y = 50, n = 1 } })
+        H.ok(cr[2].lead and cr[2].extra == 3 and not cr[1].lead and not cr[3].lead,
+             "you lead the crowd: 'you +3' (Frankadank, and the zone's two)")
+        H.ok(cr[4].lead and cr[4].extra == 0, "a dot far off keeps its own label")
+        local cr2 = Wh.Crowd({ { x = 100, y = 50, n = 2, mark = true }, { x = 110, y = 50, n = 1 } })
+        H.ok(cr2[2].lead and cr2[2].extra == 2 and not cr2[1].lead, "a dot leads over a zone marker")
         lib.spots.Cara = nil
         K.Paint()
         local markText
