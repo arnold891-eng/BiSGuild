@@ -23,12 +23,13 @@ Loot night. Two raiders want the same trinket. One has been to every raid this m
 
 ## What you get
 
-`/bisg` opens the raider terminal. Five tabs.
+`/bisg` opens the raider terminal. Six tabs.
 
-- **RAIDERS** — your whole guild, and everyone who has raided with you: attendance, last raid, flask or elixirs, deaths, and gear issues in red, like a slot that should be enchanted and isn't. Sorted by class the way a raid sheet reads, pugs at the bottom. Click a name for their whole card.
+- **RAIDERS** — your whole guild, and everyone who has raided with you: attendance, last raid, flask or elixirs, deaths, and gear issues in red, like a slot that should be enchanted and isn't. Sorted by class the way a raid sheet reads, pugs at the bottom. Click a name for their whole card. **RUN REPORT** shows the raid team by class: who has raided in the last four raids, beside every guildmate of that class who hasn't.
 - **BOSSES** — every boss you've killed: kills, wipes, your best time, the night it first died, and who was there.
-- **WHERE** — your guildmates on a map, right now, each a tiny 3D figure of their race. Click one and the map opens on their zone. With OpenMap installed, one button opens it there.
+- **WHERE** — your guildmates on a map, right now, each a tiny 3D figure of their race. Someone inside a dungeon or raid shows docked at its door. Click one and the map opens on their zone. With OpenMap installed, one button opens it there.
 - **ROSTER** — paste the Raid-Helper sign-up and see who's online, who's absent, who isn't in the guild. One button invites everyone online.
+- **RECRUITS** — with BiS> Nebbinator: what the guild needs and which officer set it. Officers also see every recruit the guild is talking to, who is talking to them, and which channel brings the most whispers.
 - **LOG** — read a raid: the notebook's link and the box to paste its text into (below).
 
 Hover any item for its tooltip, enchant included. Right-click any name for the game's own player menu. Esc steps back a page; keep pressing and it closes.
@@ -71,9 +72,10 @@ A 110 MB log takes seconds. Your copy also tells you when a guildmate runs a new
 
 - **BiS Tools** — when it's installed, invites go through its party list. Without it, BiS Guild invites on its own.
 - **OpenMap** — when it's installed, the WHERE tab can open a guildmate's spot in it.
+- **BiS> Nebbinator** — fills the RECRUITS tab, and its ads can say your next raid from the sign-up you pasted.
 - **Other addons** can read the record through `BiSGuildAPI`.
 
-Neither is needed. BiS Guild works alone.
+None of them is needed. BiS Guild works alone.
 
 ## Commands
 
