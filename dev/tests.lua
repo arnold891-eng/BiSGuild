@@ -1348,6 +1348,41 @@ do
         K.Paint()
         H.eq(rows[5].cells[2]:GetText(), "?", "missing from half a roster reads ?, not pug")
 
+        -- RUN REPORT (Arn, 19 Oct: "what our raid team looks like at the moment ... Druid: raiders by name
+        -- and how many ... by looking at the last 2-4 logs who has been consistently raiding")
+        _G.GetNumGuildMembers = function() return #ROSTER end
+        ROSTER[#ROSTER + 1] = { "Zara Leafsong", "Initiate", "DRUID" }
+        K._guildDirty = true
+        local rep = K.Report(4)
+        local byClass = {}
+        for _, b in ipairs(rep.classes) do byClass[b.class] = b end
+        H.eq(#rep.raids, math.min(4, #NS.S.Dates()), "the last raids on record, at most four")
+        H.ok(byClass.SHAMAN and byClass.SHAMAN.raiding[1] and byClass.SHAMAN.raiding[1].name == "Dax",
+             "Dax raided: under shaman")
+        H.ok(byClass.DRUID and #byClass.DRUID.raiding == 0 and byClass.DRUID.roster[1].name == "Zara"
+             and byClass.DRUID.roster[1].level == 60, "Zara has no raids: on the druid roster side, with her level")
+        local cara
+        for _, b in ipairs(rep.classes) do for _, x in ipairs(b.raiding) do if x.name == "Cara" then cara = { b.class, x.pug } end end end
+        H.ok(cara and cara[1] == "?" and cara[2], "Cara is not in the guild: a pug, class unknown", cara and cara[1])
+        local order = {}
+        for _, b in ipairs(rep.classes) do order[#order + 1] = b.class end
+        H.eq(order[1], "WARRIOR", "classes in the RAIDERS list's order, warrior first")
+        H.eq(order[#order], "?", "and the unknown last")
+        -- no raids yet (Arn: "right now nobody will come out since there are no raids out yet"): the
+        -- roster is the whole team
+        local none = K.Report(0)
+        H.ok(#none.raids == 0 and none.raiding == 0 and none.roster == #ROSTER, "no raids: the roster is the team",
+             none.roster)
+        local rr = K.ReportRows(rep)
+        H.ok(rr[#rr].total and rr[#rr].n == rep.raiding, "a total line closes it")
+        -- the button
+        f.pages.raiders.report:Click()
+        H.eq(K.page, "report", "RUN REPORT opens the report")
+        H.ok(f.pages.report.panel.right:GetText():find("the last", 1, true), "titled by the raids it read",
+             f.pages.report.panel.right:GetText())
+        K.Go("raiders")
+        table.remove(ROSTER)
+
         nights.Cara, nights.Dax, nights.Eve = nil, nil, nil
         _G.GetNumGuildMembers, _G.GetGuildRosterInfo, _G.RAID_CLASS_COLORS = realNum, realInfo, realColours
         K._guildDirty = true
