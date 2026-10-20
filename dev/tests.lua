@@ -1569,6 +1569,39 @@ do
         for _, m in ipairs(wp.marks) do if m:IsShown() then markText = m.label:GetText() end end
         H.eq(markText, "Orgrimmar 1", "Cara without a dot: a marker in Orgrimmar, counted - never an invented dot")
         H.ok(wp.map.right:GetText():find("+1 zone", 1, true), "and the corner says so")
+        -- DOCKED (Arn, 19 Oct: "how they track the oil tankers out at sea ... a player in an instance should
+        -- show them but docked"): Cara in Shadowfang Keep sits at its door in Silverpine (1421: 44.8, 67.8)
+        local cara = K.Member("Cara")
+        local keepZone = cara.zone
+        cara.zone = "Shadowfang Keep"
+        local prevRect = _G.C_Map.GetMapRectOnMap
+        _G.C_Map.GetMapRectOnMap = function(from, to)
+            if from == 1421 and to == 947 then return 0.10, 0.20, 0.20, 0.30 end     -- Silverpine, far north-west
+            return prevRect(from, to)
+        end
+        Wh.rects = {}
+        local m1, dx, dy = Wh.Dock("Shadowfang Keep")
+        H.ok(m1 == 1421 and math.abs(dx - 0.448) < 1e-9 and math.abs(dy - 0.678) < 1e-9, "Shadowfang Keep's door: Silverpine 44.8, 67.8")
+        K.Paint()
+        local docked, orgMark
+        for _, m in ipairs(wp.marks) do
+            if m:IsShown() and m.label:IsShown() then
+                if m.label:GetText():find("docked", 1, true) then docked = m.label:GetText() end
+                if m.label:GetText():find("Orgrimmar", 1, true) then orgMark = true end
+            end
+        end
+        H.eq(docked, "Cara - docked: Shadowfang Keep", "Cara in the dungeon: docked at its door")
+        H.ok(not orgMark, "and not counted in a zone as well")
+        local keepFaction = _G.UnitFactionGroup
+        _G.UnitFactionGroup = function() return "Alliance", "Alliance" end
+        local wm = Wh.Dock("Warsong Gulch")
+        _G.UnitFactionGroup = function() return "Horde", "Horde" end
+        H.ok(wm == 1440 and Wh.Dock("Warsong Gulch") == 1413, "a battleground docks at your faction's door")
+        _G.UnitFactionGroup = keepFaction
+        cara.zone = keepZone
+        _G.C_Map.GetMapRectOnMap = prevRect
+        Wh.rects = {}
+        K.Paint()
         H.ok(not wp.world:IsShown(), "on the world: no WORLD button")
         rows[2]:Click()                                       -- Bob, who has a dot
         H.eq(Wh.shown, 1411, "clicking somebody zooms to their zone")
