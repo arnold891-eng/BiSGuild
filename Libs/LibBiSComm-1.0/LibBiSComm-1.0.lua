@@ -1451,14 +1451,17 @@ function lib:RideLook()
   local near, nd = nil, nil
   if x then near, nd = self:RideNear(map, x, y, RIDE_AREA) end
   local prev = self._ridePrev
-  self._ridePrev = { m = map, x = x, y = y, stop = inside, clock = clock }
+  local feet = said(IsPlayerMoving)
+  self._ridePrev = { m = map, x = x, y = y, stop = inside, clock = clock, feet = feet }
   local speed, carried, measured = 0, false, false
   if prev and prev.m == map and x and prev.x then
     measured = true                                        -- two looks on one map: a speed (else nothing is known)
     local dt = math.max(0.2, clock - (prev.clock or clock))
     speed = math.sqrt((x - prev.x) ^ 2 + (y - prev.y) ^ 2) / dt
+    -- still on BOTH looks (Arn's Ghost Wolf, 21 Oct: a run that stops just before a look moved the second before
+    -- while IsPlayerMoving already says no - "carried" at the foot of the tower, a false departure)
     if speed >= RIDE_CARRY then
-      carried = said(IsPlayerMoving) == false and not said(IsFalling) and not said(UnitOnTaxi, "player")
+      carried = feet == false and prev.feet == false and not said(IsFalling) and not said(UnitOnTaxi, "player")
     end
   end
   local last, lastAt = self._rideLast, self._rideLastAt
