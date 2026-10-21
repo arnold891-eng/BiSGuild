@@ -40,7 +40,10 @@
 -- minor 15 (21 Oct 2026): RIDE - when the zeppelins and boats dock, learned by riding them and shared with the
 -- guild, so one rider with any BiS addon sets the clock for everyone; lib:RidesAt / RideSched for any addon to
 -- show (BiS Tools draws the card; the lib still draws nothing)
-local MAJOR, MINOR = "LibBiSComm-1.0", 15
+-- minor 16 (21 Oct 2026): FOJJI - anyone with any BiS addon shows up in FojjiCore's party Experience and Campfires
+-- windows: the lib says FojjiCore's own two lines (FOJJI_GXP_V1, FojjiCamp1) and answers its asks; quiet when
+-- FojjiCore's journal is loaded here
+local MAJOR, MINOR = "LibBiSComm-1.0", 16
 
 local lib = _G.LibBiSComm
 if lib and (lib.MINOR or 0) >= MINOR then return end   -- an equal or newer copy won
@@ -950,6 +953,7 @@ function lib:Boot()
     reg("ADDON_RESTRICTION_STATE_CHANGED")     -- Forever: the lockdown starting or lifting (minor 10)
     if self.StartSpots then self:StartSpots() end -- minor 12: guild spots
     if self.StartRides then self:StartRides() end -- minor 15: the ride clock
+    if self.StartFojji then self:StartFojji() end -- minor 16: FojjiCore's Experience and Campfires windows
 
     f:SetScript("OnEvent", function(_, event, a1, a2, a3, a4)
         if event == "CHAT_MSG_ADDON" then
@@ -1649,6 +1653,358 @@ function lib:RideLine(s, sc)
 end
 
 --------------------------------------------------------------------
+-- FOJJI: show up in FojjiCore's Experience and Campfires windows (minor 16)
+--------------------------------------------------------------------
+-- Arn, 21 Oct 2026, the stress test: his cousin, running only BiS addons, read "No Addon" in FojjiCore's party
+-- Experience window - "fojji does this thing where it shares exp and campfire stuff to party can our addon
+-- broadcast the same thing so they pick it up". In the LIB (his pick), so anyone with any BiS addon shows up.
+--
+-- FojjiCore_DungeonJournal's Levelling.lua (read 21 Oct) speaks two plain lines of its own:
+--   FOJJI_GXP_V1  X1;level;xp;max     the group channel, and GUILD at most every max(30, min(300, online / 2)) s;
+--                                      "Q1" on the group channel = say yours (it never answers one on GUILD)
+--   FojjiCamp1    S6;cooldown;campfire;tools;slot1;slot2;slot3;slot4;;known;buffDur;buffEnd    group only;
+--                                      "R" = say yours
+-- Its receivers check every field (whole numbers in range, exactly 12 fields), so a line it does not take is
+-- ignored - never an error on anybody's screen. We SAY ours and answer its asks; we never read anyone's.
+-- QUIET when FojjiCore_DungeonJournal is loaded here (it says the same - never twice), at the level cap (it
+-- stops there), with /biscomm off, in a chat lockdown, and for any number the client hides.
+-- The group channel is the one FojjiCore listens on: INSTANCE_CHAT in a dungeon-finder group, else RAID, else PARTY.
+do
+    local FJ_XP, FJ_CAMP = "FOJJI_GXP_V1", "FojjiCamp1"
+    local FJ_BUFF, FJ_CD, FJ_ASK_GAP = 1229741, 3600, 5
+    local FJ_FIRES = { 279982, 279974, 279961, 279981 }
+    -- the profession tools in FojjiCore's order: item n is bit n-1 of the tools mask, and a profession's place in
+    -- this list is its number on the wire (1-11) - THE ORDER IS THE PROTOCOL. { skill line, tool items }
+    local FJ_PROFS = {
+        { 171, { 279956, 279970, 279990 } },             -- Alchemy
+        { 164, { 279944, 279988, 279955 } },             -- Blacksmithing
+        { 333, { 279976, 279985, 279987 } },             -- Enchanting
+        { 202, { 279950, 279949, 279989 } },             -- Engineering
+        { 182, { 279962, 279964, 279947 } },             -- Herbalism
+        { 165, { 279978, 279941, 279945 } },             -- Leatherworking
+        { 186, { 279960, 279948, 279952 } },             -- Mining
+        { 393, { 279979, 279969, 279938 } },             -- Skinning
+        { 197, { 279972, 279973, 279943, 279959 } },     -- Tailoring
+        { 129, { 279968, 279940, 279951 } },             -- First Aid (always the third slot)
+        { 356, { 279967, 279965, 279966 } },             -- Fishing (always the fourth)
+    }
+    local FJ_ITEMS, FJ_SKILL = {}, {}
+    for i, p in ipairs(FJ_PROFS) do
+        FJ_SKILL[p[1]] = i
+        for _, id in ipairs(p[2]) do FJ_ITEMS[#FJ_ITEMS + 1] = id end
+    end
+    lib.FJ_XP, lib.FJ_CAMP, lib.FJ_ITEMS = FJ_XP, FJ_CAMP, FJ_ITEMS
+
+    local function state()
+        local s = lib._fj
+        if not s then
+            s = { lastSent = {}, lastAt = {}, pending = {}, asked = {}, soon = {}, camp = nil, useSpells = nil }
+            lib._fj = s
+        end
+        return s
+    end
+
+    local function ask(fn, ...)
+        if not fn then return nil end
+        local ok, v = pcall(fn, ...)
+        if not ok or Secret(v) then return nil end
+        return v
+    end
+
+    -- after a short wait, once however many times it is asked meanwhile (events come in bursts)
+    local function soon(key, delay, fn)
+        local s = state()
+        if s.soon[key] then return end
+        s.soon[key] = true
+        if not After(delay, function() s.soon[key] = nil fn() end) then s.soon[key] = nil fn() end
+    end
+
+    local function send(prefix, msg, chan)
+        local f = C_ChatInfo and C_ChatInfo.SendAddonMessage
+        if not f then return false end
+        local ok, r = pcall(f, prefix, msg, chan)
+        if not ok then return false end
+        local kind = ResultKind(r)
+        if kind ~= "sent" then
+            lib.refusedCount = (lib.refusedCount or 0) + 1
+            return false, kind
+        end
+        lib.sentCount = (lib.sentCount or 0) + 1
+        return true
+    end
+
+    --- The group channel FojjiCore listens on, or nil alone.
+    function lib:FojjiChannel()
+        if ask(IsInGroup, LE_PARTY_CATEGORY_INSTANCE or 2) == true then return "INSTANCE_CHAT" end
+        if ask(IsInRaid) == true then return "RAID" end
+        if ask(IsInGroup) == true then return "PARTY" end
+        return nil
+    end
+
+    --- Why we say nothing now, or nil.
+    function lib:FojjiQuiet()
+        if not self.enabled then return "comm off" end
+        if ChatLocked() then return "chat lockdown" end
+        if C_AddOns and ask(C_AddOns.IsAddOnLoaded, "FojjiCore_DungeonJournal") == true then return "FojjiCore here" end
+        local level = plainNum(ask(UnitLevel, "player"))
+        if not level then return "no level" end
+        if level >= (plainNum(ask(GetMaxPlayerLevel)) or 60) then return "level cap" end
+        return nil
+    end
+
+    --- "X1;level;xp;max", or nil when any of them is hidden.
+    function lib:FojjiXPLine()
+        local level = plainNum(ask(UnitLevel, "player"))
+        local have, need = plainNum(ask(UnitXP, "player")), plainNum(ask(UnitXPMax, "player"))
+        if not (level and have and need) or level < 1 or have < 0 or have > need then return nil end
+        return ("X1;%d;%d;%d"):format(level, have, need)
+    end
+
+    local function gap(ch)
+        if ch ~= "GUILD" then return 0.5 end
+        local ok, _, o = pcall(GetNumGuildMembers)
+        local online = ok and plainNum(o) or 0
+        return math.max(30, math.min(300, online * 0.5))
+    end
+
+    --- My experience, to the group channel and the guild (or `only` one), when it changed or `force`.
+    function lib:FojjiSendXP(force, only)
+        if self:FojjiQuiet() then return "quiet" end
+        local msg = self:FojjiXPLine()
+        if not msg then return "hidden" end
+        local s, now, chans = state(), Now(), {}
+        local group = self:FojjiChannel()
+        if group then chans[#chans + 1] = group end
+        if ask(IsInGuild) == true then chans[#chans + 1] = "GUILD" end
+        for _, ch in ipairs(chans) do
+            if (not only or only == ch) and (force or s.lastSent[ch] ~= msg) then
+                local wait = gap(ch) - (now - (s.lastAt[ch] or -999))
+                if force or wait <= 0 then
+                    local sent, why = send(FJ_XP, msg, ch)
+                    if sent then
+                        s.lastSent[ch], s.lastAt[ch] = msg, now
+                    elseif why == "again" and not s.pending[ch] then
+                        -- about one line a second per prefix (measured): the group's line took the second, so the
+                        -- guild's goes in the next one - FojjiCore's own two sends in a row lose the second
+                        s.pending[ch] = true
+                        After(1.1, function() s.pending[ch] = nil lib:FojjiSendXP(force, ch) end)
+                    end
+                elseif not s.pending[ch] then
+                    -- held: when the wait is over, the NEWEST number goes
+                    s.pending[ch] = true
+                    After(wait + 0.1, function() s.pending[ch] = nil lib:FojjiSendXP(false, ch) end)
+                end
+            end
+        end
+        return "ok"
+    end
+
+    -- the campfire: what is in the bags, the professions, the buff (each looked at only when it may have changed)
+    local function camp()
+        local s = state()
+        if not s.camp then
+            s.camp = { expires = 0, campfire = 0, mask = 0, slots = { { 0, 0 }, { 0, 0 }, { 0, 0 }, { 0, 0 } } }
+        end
+        return s.camp
+    end
+
+    function lib:FojjiScanItems()
+        local d = camp()
+        local count = C_Item and C_Item.GetItemCount
+        d.mask, d.campfire = 0, 0
+        if not count then return d end
+        for i, id in ipairs(FJ_ITEMS) do
+            if (plainNum(ask(count, id, false, false, false, false)) or 0) > 0 then d.mask = d.mask + 2 ^ (i - 1) end
+        end
+        for _, id in ipairs(FJ_FIRES) do
+            if (plainNum(ask(count, id, false, false, false, false)) or 0) > 0 then d.campfire = id break end
+        end
+        return d
+    end
+
+    -- two main professions, then First Aid in the third slot and Fishing in the fourth (FojjiCore's own order)
+    function lib:FojjiScanSkills()
+        local d = camp()
+        d.slots = { { 0, 0 }, { 0, 0 }, { 0, 0 }, { 0, 0 } }
+        if not (GetProfessions and GetProfessionInfo) then return d end
+        local ok, p1, p2, p3, p4, p5, p6 = pcall(GetProfessions)
+        if not ok then return d end
+        local primary = 0
+        for _, idx in ipairs({ p1 or false, p2 or false, p3 or false, p4 or false, p5 or false, p6 or false }) do
+            if idx and not Secret(idx) then
+                local okI, _, _, skill, _, _, _, line = pcall(GetProfessionInfo, idx)
+                local cat = okI and not Secret(line) and FJ_SKILL[line]
+                skill = okI and plainNum(skill) or 0
+                if cat then
+                    local slot
+                    if cat == 10 then slot = 3 elseif cat == 11 then slot = 4
+                    elseif primary < 2 then primary = primary + 1 slot = primary end
+                    if slot then d.slots[slot] = { cat, math.max(0, math.min(1000, math.floor(skill))) } end
+                end
+            end
+        end
+        return d
+    end
+
+    -- the campfire's buff; not in a fight or a lockdown (auras go secret there) - then the last look stands
+    function lib:FojjiScanBuff()
+        local d = camp()
+        if ask(InCombatLockdown) == true then return false end
+        if C_Secrets and C_Secrets.ShouldAurasBeSecret and ask(C_Secrets.ShouldAurasBeSecret) ~= false then return false end
+        if not (C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID) then return false end
+        local ok, buff = pcall(C_UnitAuras.GetPlayerAuraBySpellID, FJ_BUFF)
+        if not ok or Secret(buff) then return false end
+        local dur, fin = 0, 0
+        if type(buff) == "table" then
+            local du, ex = plainNum(buff.duration), plainNum(buff.expirationTime)
+            local now = plainNum(ask(GetServerTime))
+            if du and ex and now and du > 0 then
+                dur = math.floor(du + 0.5)
+                fin = now + math.floor(math.max(0, ex - Now()) + 0.5)
+            end
+        end
+        if d.known and d.buffDur == dur and math.abs((d.buffEnd or 0) - fin) <= 1 then return false end
+        d.known, d.buffDur, d.buffEnd = true, dur, fin
+        return true
+    end
+
+    function lib:FojjiCampLine()
+        local s, d = state(), camp()
+        if not s.scanned then
+            s.scanned = true
+            self:FojjiScanItems() self:FojjiScanSkills() self:FojjiScanBuff()
+        end
+        local f = { "S6", ("%.0f"):format(d.expires or 0), tostring(d.campfire or 0), ("%.0f"):format(d.mask or 0) }
+        for _, slot in ipairs(d.slots) do f[#f + 1] = slot[1] .. ":" .. slot[2] end
+        f[#f + 1] = ""
+        f[#f + 1] = d.known and "1" or "0"
+        f[#f + 1] = ("%.0f"):format(d.buffDur or 0)
+        f[#f + 1] = ("%.0f"):format(d.buffEnd or 0)
+        return table.concat(f, ";")
+    end
+
+    --- My campfire line to the group (never the guild), when it changed or `force`.
+    function lib:FojjiSendCamp(force)
+        if self:FojjiQuiet() then return "quiet" end
+        local ch = self:FojjiChannel()
+        if not ch then return "alone" end
+        local s, msg = state(), self:FojjiCampLine()
+        if not force and msg == s.campSent then return "same" end
+        local sent, why = send(FJ_CAMP, msg, ch)
+        if sent then
+            s.campSent = msg
+        elseif why == "again" and not s.campRetry then
+            s.campRetry = true
+            After(1.1, function() s.campRetry = nil lib:FojjiSendCamp(force) end)
+        end
+        return "ok"
+    end
+
+    -- a profession tool used: the hour's cooldown starts (its use spells learnt once, from the items)
+    function lib:FojjiCast(spell)
+        if ask(InCombatLockdown) == true then return end
+        spell = plainNum(spell)
+        if not spell then return end
+        local s = state()
+        if not s.useSpells and C_Item and C_Item.GetItemSpell then
+            s.useSpells = {}
+            for _, id in ipairs(FJ_ITEMS) do
+                local ok, _, sp = pcall(C_Item.GetItemSpell, id)
+                if ok and plainNum(sp) then s.useSpells[sp] = true end
+            end
+        end
+        if not (s.useSpells and s.useSpells[spell]) then return end
+        local now = plainNum(ask(GetServerTime))
+        if not now then return end
+        camp().expires = now + FJ_CD
+        self:FojjiSendCamp(true)
+    end
+
+    --- FojjiCore asks ("Q1" / "R"), on the group channel: answered once per FJ_ASK_GAP, after a jitter.
+    function lib:FojjiHeard(prefix, msg, channel, sender)
+        if Secret(prefix) or Secret(msg) or Secret(channel) or Secret(sender) then return end
+        if prefix ~= FJ_XP and prefix ~= FJ_CAMP then return end
+        if not self.enabled or channel == "GUILD" or channel ~= self:FojjiChannel() then return end
+        if Short(sender) == Short(ask(UnitName, "player")) then return end
+        local s, now = state(), Now()
+        local what = (prefix == FJ_XP and msg == "Q1") and "xp" or (prefix == FJ_CAMP and msg == "R") and "camp" or nil
+        if not what or now - (s.asked[what] or -999) < FJ_ASK_GAP then return end
+        s.asked[what] = now
+        local function answer()
+            if what == "xp" then lib:FojjiSendXP(true, channel) else lib:FojjiSendCamp(true) end
+        end
+        if not After(0.2 + math.random() * 0.6, answer) then answer() end
+    end
+
+    -- in a group: listen to the bags, the professions, the buff and the casts; alone, not at all
+    local GROUP_EVENTS = { "BAG_UPDATE_DELAYED", "SKILL_LINES_CHANGED", "PLAYER_REGEN_ENABLED" }
+    function lib:FojjiGrouped(on)
+        local f = self._fjFrame
+        if not f or (self._fjGrouped or false) == on then return end
+        self._fjGrouped = on
+        for _, ev in ipairs(GROUP_EVENTS) do
+            pcall(on and f.RegisterEvent or f.UnregisterEvent, f, ev)
+        end
+        for _, ev in ipairs({ "UNIT_AURA", "UNIT_SPELLCAST_SUCCEEDED" }) do
+            if on and f.RegisterUnitEvent then pcall(f.RegisterUnitEvent, f, ev, "player")
+            else pcall(on and f.RegisterEvent or f.UnregisterEvent, f, ev) end
+        end
+    end
+
+    function lib:FojjiRoster()
+        local ch = self:FojjiChannel()
+        local joined = ch and not self._fjGrouped
+        self:FojjiGrouped(ch and true or false)
+        if joined then
+            -- just arrived: both lines once, the way FojjiCore says hello
+            soon("joined", 0.5 + math.random(), function()
+                local now = lib:FojjiChannel()
+                if not now then return end
+                lib:FojjiSendXP(true, now)
+                state().scanned = nil
+                lib:FojjiSendCamp(true)
+            end)
+        end
+    end
+
+    function lib:StartFojji()
+        if self._fjFrame or not CreateFrame then return end
+        if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
+            pcall(C_ChatInfo.RegisterAddonMessagePrefix, FJ_XP)
+            pcall(C_ChatInfo.RegisterAddonMessagePrefix, FJ_CAMP)
+        end
+        local f = CreateFrame("Frame")
+        self._fjFrame = f
+        for _, ev in ipairs({ "CHAT_MSG_ADDON", "CHAT_MSG_ADDON_LOGGED", "GROUP_ROSTER_UPDATE", "PLAYER_ENTERING_WORLD",
+                              "PLAYER_XP_UPDATE", "PLAYER_LEVEL_UP" }) do
+            pcall(f.RegisterEvent, f, ev)
+        end
+        f:SetScript("OnEvent", function(_, event, a1, a2, a3, a4)
+            if event == "CHAT_MSG_ADDON" or event == "CHAT_MSG_ADDON_LOGGED" then
+                lib:FojjiHeard(a1, a2, a3, a4)
+            elseif event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_ENTERING_WORLD" then
+                soon("roster", 0.5, function() lib:FojjiRoster() end)
+            elseif event == "PLAYER_XP_UPDATE" then
+                soon("xp", 0.5, function() lib:FojjiSendXP(false) end)
+            elseif event == "PLAYER_LEVEL_UP" then
+                soon("level", 1, function() lib:FojjiSendXP(true) end)
+            elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
+                if a1 == "player" then lib:FojjiCast(a3) end
+            elseif event == "UNIT_AURA" then
+                soon("buff", 1, function() if lib:FojjiScanBuff() then lib:FojjiSendCamp(false) end end)
+            elseif event == "BAG_UPDATE_DELAYED" then
+                soon("bags", 1, function() lib:FojjiScanItems() lib:FojjiSendCamp(false) end)
+            elseif event == "SKILL_LINES_CHANGED" then
+                soon("skills", 1, function() lib:FojjiScanSkills() lib:FojjiSendCamp(false) end)
+            elseif event == "PLAYER_REGEN_ENABLED" then
+                soon("fight", 4, function() if lib:FojjiScanBuff() then lib:FojjiSendCamp(false) end end)
+            end
+        end)
+    end
+end
+if lib._booted then lib:StartFojji() end
+
+--------------------------------------------------------------------
 -- the one slash: status and the honest off switch
 --------------------------------------------------------------------
 
@@ -1691,6 +2047,8 @@ if SlashCmdList then
             local timed = 0
             for _ in pairs(lib.rides or {}) do timed = timed + 1 end
             say(("rides timed: %d%s"):format(timed, lib.riding and (" - riding from " .. lib.riding.from.name) or ""))
+            local quiet = lib.FojjiQuiet and lib:FojjiQuiet()
+            say("FojjiCore's windows: " .. (quiet and ("quiet (" .. quiet .. ")") or "your experience and campfire are shared"))
             say(("sent %d, refused %d, waiting %d%s%s"):format(lib.sentCount or 0, lib.refusedCount or 0,
                 #(lib.outbox or {}), lib._lastError and (", last trouble: " .. lib._lastError) or "",
                 OutgoingBlocked() and " (the realm says restricted - Forever always does; ignored)" or ""))
