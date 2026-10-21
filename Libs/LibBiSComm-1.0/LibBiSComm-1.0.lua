@@ -1163,7 +1163,11 @@ if lib._booted then lib:StartSpots() end
 -- RIDE_FOR: no ride's leg is longer (the longest loops are ~8 min, a leg half that) - a "ride" older than this
 -- is a hearth or a walk, and is forgotten: its far end reached later is NOT an arrival. RIDE_MIN_LEG: a ride seen
 -- leaving cannot arrive sooner.
-local RIDE_DWELL, RIDE_CARRY, RIDE_FOR, RIDE_AT_STOP, RIDE_MIN_LEG = 60, 0.35, 480, 120, 20
+-- RIDE_CARRY / RIDE_STILL measured on Arn's rides (21 Oct, /biscomm ride): a zeppelin cruises at 0.5-0.6 map units a
+-- second and starts at under 0.4; standing still reads 0.00. "Carried" also needs IsPlayerMoving to say no, so a
+-- low line cannot mistake a run for a ride.
+local RIDE_DWELL, RIDE_CARRY, RIDE_FOR, RIDE_AT_STOP, RIDE_MIN_LEG = 60, 0.2, 480, 120, 20
+local RIDE_STILL = 0.08
 -- RIDE_AREA: map units round a stop's measured spot where its docked ride may sit (Arn's Skycutter: yards off it)
 local RIDE_AREA = 4
 local RIDE_ASK_EVERY, RIDE_STALE, RIDE_LOOK = 60, 6 * 3600, 1
@@ -1189,18 +1193,21 @@ lib.RIDE_STOPS = {
   { id = "org_gg", group = "orgtower", name = "Orgrimmar's zeppelin tower", map = 1411, x = 50.6, y = 12.8, r = 1.5,
     kind = "zeppelin", ship = "the Iron Eagle", to = "ggtower", toName = "Grom'gol",
     npc = 12136, who = "Snurk Bucksquick", face = "Snurk", src = "MEASURED" },
-  { id = "uc_org", group = "uctower", name = "Undercity's zeppelin tower", map = 1420, x = 60.8, y = 58.8, r = 1.5,
+  -- MEASURED by Arn 21 Oct: Zapetta (9566) at 60.7 58.8, Hin Denburg (3150) at 61.8 59.1 - Classic's, held
+  { id = "uc_org", group = "uctower", name = "Undercity's zeppelin tower", map = 1420, x = 60.7, y = 58.8, r = 1.5,
     kind = "zeppelin", ship = "the Thundercaller", to = "orgtower", toName = "Orgrimmar",
-    npc = 9566, who = "Zapetta", src = "C" },
-  { id = "uc_gg", group = "uctower", name = "Undercity's zeppelin tower", map = 1420, x = 61.8, y = 59.0, r = 1.5,
+    npc = 9566, who = "Zapetta", src = "MEASURED" },
+  { id = "uc_gg", group = "uctower", name = "Undercity's zeppelin tower", map = 1420, x = 61.8, y = 59.1, r = 1.5,
     kind = "zeppelin", ship = "the Purple Princess", to = "ggtower", toName = "Grom'gol",
-    npc = 3150, who = "Hin Denburg", src = "C" },
-  { id = "gg_org", group = "ggtower", name = "Grom'gol's zeppelin tower", map = 1434, x = 31.4, y = 29.8, r = 1.5,
+    npc = 3150, who = "Hin Denburg", src = "MEASURED" },
+  -- MEASURED by Arn 21 Oct: Nez'raz (3149) at 31.4 29.7, Squibby Overspeck (12137) at 31.6 29.0, the subzone
+  -- "Grom'gol Base Camp" - Classic's spots, held
+  { id = "gg_org", group = "ggtower", name = "Grom'gol's zeppelin tower", map = 1434, x = 31.4, y = 29.7, r = 1.5,
     kind = "zeppelin", ship = "the Iron Eagle", to = "orgtower", toName = "Orgrimmar",
-    npc = 3149, who = "Nez'raz", src = "C" },
-  { id = "gg_uc", group = "ggtower", name = "Grom'gol's zeppelin tower", map = 1434, x = 31.5, y = 29.4, r = 1.5,
+    npc = 3149, who = "Nez'raz", src = "MEASURED" },
+  { id = "gg_uc", group = "ggtower", name = "Grom'gol's zeppelin tower", map = 1434, x = 31.6, y = 29.0, r = 1.5,
     kind = "zeppelin", ship = "the Purple Princess", to = "uctower", toName = "Undercity",
-    npc = 12137, who = "Squibby Overspeck", face = "Squibby", src = "C" },
+    npc = 12137, who = "Squibby Overspeck", face = "Squibby", src = "MEASURED" },
   { id = "bb", group = "bootybay", name = "Booty Bay's pier", map = 1434, x = 25.9, y = 73.1, r = 1.5,
     kind = "boat", ship = "the Maiden's Fancy", to = "ratchet", toName = "Ratchet",
     npc = 4631, who = "Wharfmaster Lozgil", face = "Lozgil", src = "U" },
@@ -1361,7 +1368,7 @@ function lib:RideLearn(s, t, est)
     local n = A0 and math.floor((t - A0) / rtt + 0.5) or 0
     if n >= 1 then
       local r2 = (t - A0) / n
-      if math.abs(r2 - rtt) < 0.15 * rtt then rtt = r2 end
+      if math.abs(r2 - rtt) < 0.3 * rtt then rtt = r2 end      -- a first ride's loop can be well off (Arn's: 18%)
     end
   elseif est then
     rtt = est
@@ -1430,12 +1437,14 @@ function lib:RideLook()
   end
   local last, lastAt = self._rideLast, self._rideLastAt
   if near then self._rideLast, self._rideLastAt = near, clock end
+  local stillBefore = self._rideStillAt                    -- the last look standing still, before this one
+  if measured and speed < RIDE_STILL then self._rideStillAt = clock end
   local riding = self.riding
   if riding and clock - riding.t0 > RIDE_FOR then self.riding, riding = nil, nil end
   local said_
   if riding then
     local long = clock - riding.t0
-    if near and near.group == riding.from.to and measured and not carried and not (riding.dep and long < RIDE_MIN_LEG)
+    if near and near.group == riding.from.to and measured and speed < RIDE_STILL and not (riding.dep and long < RIDE_MIN_LEG)
        and not said(UnitOnTaxi, "player") then
       self.riding = nil
       local now = ServerNow()
@@ -1451,10 +1460,13 @@ function lib:RideLook()
     local before = math.sqrt((last.x - prev.x) ^ 2 + (last.y - prev.y) ^ 2)
     local after = math.sqrt((last.x - x) ^ 2 + (last.y - y) ^ 2)
     if after > before then
+      -- it left when you last stood still (a zeppelin creeps off before it is fast enough to count as carried)
       local now = ServerNow()
-      self.riding = { from = last, dep = now, t0 = clock }
-      self:RideLearn(last, now - RIDE_DWELL)
-      said_ = "departed " .. last.id
+      local lag = (stillBefore and clock - stillBefore <= RIDE_AT_STOP) and math.floor(clock - stillBefore + 0.5) or 0
+      local dep = now - lag
+      self.riding = { from = last, dep = dep, t0 = clock - lag }
+      self:RideLearn(last, dep - RIDE_DWELL)
+      said_ = "departed " .. last.id .. (lag > 0 and (" (" .. lag .. " s ago)") or "")
     end
   end
   trace(("%d map %d %s %s speed %.2f%s%s%s"):format(math.floor(clock), map, near and near.id or "-",
