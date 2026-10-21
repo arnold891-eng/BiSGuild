@@ -1181,14 +1181,14 @@ lib.RIDE_STOPS = {
   { id = "sky_zeph", group = "zephras", name = "Valanaar", map = 2521, x = 58.0, y = 80.5, r = 1.5,
     kind = "zeppelin", place = "dock", ship = "the Skycutter", to = "skywatch", toName = "Mulgore",
     npc = 275270, who = "Windshapers Dockmaster", face = "Dockmaster", src = "MEASURED" },
-  -- MEASURED by Arn 21 Oct: npc 9564 stands at 50.8 13.7 - Classic's Frezza, named "Koffy Inx" on Forever; the
-  -- place has no subzone name
+  -- MEASURED by Arn 21 Oct: Frezza (npc 9564, the Classic id and name) stands at 50.8 13.7; Snurk Bucksquick (12136)
+  -- at 50.6 12.8, Classic's spot exactly. The place has no subzone name.
   { id = "org_uc", group = "orgtower", name = "Orgrimmar's zeppelin tower", map = 1411, x = 50.8, y = 13.7, r = 1.5,
     kind = "zeppelin", ship = "the Thundercaller", to = "uctower", toName = "Undercity",
-    npc = 9564, who = "Koffy Inx", src = "MEASURED" },
+    npc = 9564, who = "Frezza", src = "MEASURED" },
   { id = "org_gg", group = "orgtower", name = "Orgrimmar's zeppelin tower", map = 1411, x = 50.6, y = 12.8, r = 1.5,
     kind = "zeppelin", ship = "the Iron Eagle", to = "ggtower", toName = "Grom'gol",
-    npc = 12136, who = "Snurk Bucksquick", face = "Snurk", src = "C" },
+    npc = 12136, who = "Snurk Bucksquick", face = "Snurk", src = "MEASURED" },
   { id = "uc_org", group = "uctower", name = "Undercity's zeppelin tower", map = 1420, x = 60.8, y = 58.8, r = 1.5,
     kind = "zeppelin", ship = "the Thundercaller", to = "orgtower", toName = "Orgrimmar",
     npc = 9566, who = "Zapetta", src = "C" },
