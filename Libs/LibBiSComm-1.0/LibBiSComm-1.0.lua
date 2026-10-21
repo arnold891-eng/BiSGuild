@@ -1394,7 +1394,7 @@ end
 
 -- THE RIDE LOG (/biscomm ride): the last RIDE_TRACE looks, so a ride the clock missed says why (Arn's first ride
 -- of the Skycutter, 21 Oct, learned nothing - and nothing told us what it had seen)
-local RIDE_TRACE = 40
+local RIDE_TRACE = 300               -- about five minutes of looks: a whole leg of a ride
 local function trace(line)
   local t = lib._rideTrace
   t[#t + 1] = line
@@ -1619,9 +1619,18 @@ if SlashCmdList then
             lib:SetSharing(false); say("share off - your guild no longer sees where you are on their map")
         elseif msg == "ride" then
             -- the ride log: what the clock's last looks saw (a ride it missed says why)
-            say(("ride log, last %d looks (time, map, nearest stop, distance, speed):"):format(#(lib._rideTrace or {})))
+            -- the moments that matter (carried, a departure, an arrival, a loading screen), then the last few looks
             local t = lib._rideTrace or {}
-            for i = math.max(1, #t - 19), #t do say("  " .. t[i]) end
+            say(("ride log (%d looks kept): time, map, nearest stop, distance, speed"):format(#t))
+            local shown = 0
+            for i = 1, math.max(0, #t - 8) do
+                if shown < 24 and (t[i]:find("carried", 1, true) or t[i]:find(" - ", 1, true)
+                                   or t[i]:find("loading", 1, true)) then
+                    say("  " .. t[i]) shown = shown + 1
+                end
+            end
+            say("  ...the last looks:")
+            for i = math.max(1, #t - 7), #t do say("  " .. t[i]) end
         elseif msg == "share on" then
             lib:SetSharing(true); say("share on - your guild sees where you are on their map (while you move, outside instances)")
         else
