@@ -1170,6 +1170,18 @@ local RIDE_DWELL, RIDE_CARRY, RIDE_FOR, RIDE_AT_STOP, RIDE_MIN_LEG = 60, 0.2, 48
 local RIDE_STILL = 0.08
 local RIDE_CLOSER = 0.05                -- map units: less than this closer to the dock in a look = no longer closing in
 local RIDE_REFINE = 0.3                 -- a later arrival may move the loop this much (a first ride was 18% off)
+-- THE MEASURED LOOPS (21 Oct, Arn: "the timers are off again" - no zeppelin at the tower the card called docked).
+-- A loop learned from one ride end to end was 7-51 s off (Org-UC 374 vs 356.3), and the error repeats every loop:
+-- seven loops after the sighting the card was two minutes out. These are measured over many rides - the
+-- NauticusClassic / NauticusClassicResurrected transport dataset (MIT, github.com/psynct/NauticusClassic,
+-- github.com/sam-k-taylor/NauticusClassicResurrected), as ForeverTransport carries it; the Skycutter's is
+-- ForeverTransport's own Forever measure. A known route keeps its loop whatever a ride or a guildmate says: a
+-- sighting only moves WHEN it docks. Menethil-Auberdine is left out (Forever's route there is a triangle).
+local RIDE_LOOP = {
+  ["org_uc~uc_org"] = 356.29, ["gg_org~org_gg"] = 303.47, ["gg_uc~uc_gg"] = 335.30,
+  ["bb~rat"] = 350.82, ["men_th~thera"] = 329.32, ["aub_rut~rut"] = 316.25, ["sky_mul~sky_zeph"] = 347,
+}
+lib.RIDE_LOOP = RIDE_LOOP
 -- RIDE_AREA: map units round a stop's measured spot where its docked ride may sit (Arn's Skycutter: yards off it)
 local RIDE_AREA = 4
 local RIDE_ASK_EVERY, RIDE_STALE, RIDE_LOOK = 60, 6 * 3600, 1
@@ -1298,11 +1310,17 @@ local function store(key, rec)
   for _, t in ipairs(lib.rideStores) do t[key] = rec end
 end
 
+--- A route's loop: the measured one (RIDE_LOOP) where there is one, else what its record learned.
+function lib:RideLoop(key, rec)
+  return RIDE_LOOP[key] or (rec and rec.rtt)
+end
+
 --- When the ride docked at stop s by record rec: the far end is half a loop from the near one.
 function lib:RideArrival(rec, s)
   if rec.at == s.id then return rec.t end
-  if not rec.rtt then return nil end
-  return rec.t + rec.rtt / 2
+  local rtt = self:RideLoop(self:RideKey(s), rec)
+  if not rtt then return nil end
+  return rec.t + rtt / 2
 end
 
 --- The ride at stop s (a stop or its id) now: { docked, left, rtt, by, via, age } - left is the seconds to the
@@ -1311,13 +1329,14 @@ function lib:RideSched(s, now)
   if type(s) == "string" then s = self.rideById[s] end
   local key = s and self:RideKey(s)
   local rec = key and self.rides[key]
-  if not (rec and rec.rtt and rec.t) then return nil end
+  local rtt = self:RideLoop(key, rec)
+  if not (rec and rtt and rec.t) then return nil end
   now = now or ServerNow()
   local A = self:RideArrival(rec, s)
-  local phase = (now - A) % rec.rtt
+  local phase = (now - A) % rtt
   local docked = phase < RIDE_DWELL
-  return { docked = docked, left = docked and (RIDE_DWELL - phase) or (rec.rtt - phase),
-           rtt = rec.rtt, by = rec.by, via = rec.via, age = now - (rec.seen or rec.t) }
+  return { docked = docked, left = docked and (RIDE_DWELL - phase) or (rtt - phase),
+           rtt = rtt, by = rec.by, via = rec.via, age = now - (rec.seen or rec.t) }
 end
 
 --- Every stop on a map (a capital counts as its zone), each with its ride now: { { stop, sched }, ... }.
@@ -1370,8 +1389,8 @@ function lib:RideLearn(s, t, est)
   -- A RIDE SEEN END TO END (est) is the measure: it replaces a kept loop however far off that was (Arn's first rides
   -- saved one two minutes short). An arrival some loops after a kept one refines the loop - the whole loops between
   -- them, the time shared out - only when it agrees with the best guess to within RIDE_REFINE.
-  local guess = est or rtt
-  if guess and old and old.rtt then
+  local guess = RIDE_LOOP[key] or est or rtt
+  if guess and old and old.rtt and not RIDE_LOOP[key] then
     local A0 = self:RideArrival(old, s)
     local n = A0 and math.floor((t - A0) / guess + 0.5) or 0
     if n >= 1 then
