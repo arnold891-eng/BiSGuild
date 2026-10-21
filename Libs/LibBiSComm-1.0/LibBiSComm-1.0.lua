@@ -1164,6 +1164,8 @@ if lib._booted then lib:StartSpots() end
 -- is a hearth or a walk, and is forgotten: its far end reached later is NOT an arrival. RIDE_MIN_LEG: a ride seen
 -- leaving cannot arrive sooner.
 local RIDE_DWELL, RIDE_CARRY, RIDE_FOR, RIDE_AT_STOP, RIDE_MIN_LEG = 60, 0.35, 480, 120, 20
+-- RIDE_AREA: map units round a stop's measured spot where its docked ride may sit (Arn's Skycutter: yards off it)
+local RIDE_AREA = 4
 local RIDE_ASK_EVERY, RIDE_STALE, RIDE_LOOK = 60, 6 * 3600, 1
 lib.RIDE_DWELL, lib.RIDE_CARRY, lib.RIDE_LOOK = RIDE_DWELL, RIDE_CARRY, RIDE_LOOK
 lib.guildMods.RIDE = true
@@ -1378,41 +1380,86 @@ function lib:RideStopAt(map, x, y)
   return best
 end
 
---- One look: my map and spot, and the stop I am on. LEAN: on a dock it asks the client for the map, the spot
---- and the time; my feet, a flight and the server's clock only at the moment I come off a stop or onto the far one.
+--- The nearest stop on this map within `within` map units of my spot, and how far.
+function lib:RideNear(map, x, y, within)
+  local best, bd
+  for _, s in ipairs(self.RIDE_STOPS) do
+    if s.map == map then
+      local d = math.sqrt((s.x - x) ^ 2 + (s.y - y) ^ 2)
+      if d <= within and (not bd or d < bd) then best, bd = s, d end
+    end
+  end
+  return best, bd
+end
+
+-- THE RIDE LOG (/biscomm ride): the last RIDE_TRACE looks, so a ride the clock missed says why (Arn's first ride
+-- of the Skycutter, 21 Oct, learned nothing - and nothing told us what it had seen)
+local RIDE_TRACE = 40
+local function trace(line)
+  local t = lib._rideTrace
+  t[#t + 1] = line
+  if #t > RIDE_TRACE then table.remove(t, 1) end
+end
+lib._rideTrace = lib._rideTrace or {}
+
+--- One look. AS RIDDEN (Arn, 21 Oct - the first rule learned nothing): you walk off the dock's spot onto the ship,
+--- wait aboard yards away, and are carried off from THERE; the ship docks yards from the far spot. So:
+---   the departure: CARRIED (moving more than RIDE_CARRY map units a second while IsPlayerMoving says no) and moving
+---                  AWAY from a stop you were near (RIDE_AREA) within the last RIDE_AT_STOP seconds
+---   the arrival:   riding, near the far end's stop, and NOT carried any more - it has stopped
+--- LEAN: on a dock it asks for the map, the spot and the time; your feet and a flight only when you move fast.
 function lib:RideLook()
   local map, x, y = self:RideSpot()
   if not map then return nil end
   local clock = Now()
   local inside = x and self:RideStopAt(map, x, y) or nil
+  local near, nd = nil, nil
+  if x then near, nd = self:RideNear(map, x, y, RIDE_AREA) end
   local prev = self._ridePrev
   self._ridePrev = { m = map, x = x, y = y, stop = inside, clock = clock }
-  if inside then self._rideLast, self._rideLastAt = inside, clock end
+  local speed, carried, measured = 0, false, false
+  if prev and prev.m == map and x and prev.x then
+    measured = true                                        -- two looks on one map: a speed (else nothing is known)
+    local dt = math.max(0.2, clock - (prev.clock or clock))
+    speed = math.sqrt((x - prev.x) ^ 2 + (y - prev.y) ^ 2) / dt
+    if speed >= RIDE_CARRY then
+      carried = said(IsPlayerMoving) == false and not said(IsFalling) and not said(UnitOnTaxi, "player")
+    end
+  end
+  local last, lastAt = self._rideLast, self._rideLastAt
+  if near then self._rideLast, self._rideLastAt = near, clock end
   local riding = self.riding
   if riding and clock - riding.t0 > RIDE_FOR then self.riding, riding = nil, nil end
-  if riding and inside and inside.group ~= riding.from.group then
-    self.riding = nil
+  local said_
+  if riding then
     local long = clock - riding.t0
-    if inside.group == riding.from.to and not said(UnitOnTaxi, "player") and not (riding.dep and long < RIDE_MIN_LEG) then
+    if near and near.group == riding.from.to and measured and not carried and not (riding.dep and long < RIDE_MIN_LEG)
+       and not said(UnitOnTaxi, "player") then
+      self.riding = nil
       local now = ServerNow()
       local est = riding.dep and (2 * (now - riding.dep) + 2 * RIDE_DWELL) or nil
-      self:RideLearn(inside, now, est)
-      return "arrived"
+      self:RideLearn(near, now, est)
+      said_ = "arrived " .. near.id
+    elseif inside and inside.group ~= riding.from.group and inside.group ~= riding.from.to then
+      self.riding = nil                                    -- somewhere else entirely: not that ride
+      said_ = "not that ride"
     end
-    return nil
-  end
-  if not riding and prev and prev.stop and not inside and prev.m == map and x and prev.x then
-    local dt = math.max(0.2, clock - (prev.clock or clock))
-    local speed = math.sqrt((x - prev.x) ^ 2 + (y - prev.y) ^ 2) / dt
-    if speed >= RIDE_CARRY and said(IsPlayerMoving) == false and not said(IsFalling) and not said(UnitOnTaxi, "player") then
+  elseif carried and last and lastAt and clock - lastAt <= RIDE_AT_STOP and last.map == map and x and prev and prev.x then
+    -- carried AWAY from the stop (a ship coming in to a dock is carried TOWARD it - not a departure)
+    local before = math.sqrt((last.x - prev.x) ^ 2 + (last.y - prev.y) ^ 2)
+    local after = math.sqrt((last.x - x) ^ 2 + (last.y - y) ^ 2)
+    if after > before then
       local now = ServerNow()
-      self.riding = { from = prev.stop, dep = now, t0 = clock }
-      self:RideLearn(prev.stop, now - RIDE_DWELL)
-      return "departed"
+      self.riding = { from = last, dep = now, t0 = clock }
+      self:RideLearn(last, now - RIDE_DWELL)
+      said_ = "departed " .. last.id
     end
   end
+  trace(("%d map %d %s %s speed %.2f%s%s%s"):format(math.floor(clock), map, near and near.id or "-",
+    nd and ("%.1f"):format(nd) or "-", speed, carried and " carried" or "", self.riding and " riding" or "",
+    said_ and (" - " .. said_) or ""))
   if inside and not (prev and prev.stop == inside) then self:RideAsk(inside) end   -- just arrived: no clock? ask
-  return inside and "on" or "off"
+  return said_ and said_:match("^(%a+)") or (inside and "on" or "off")
 end
 
 --- My map and my spot on it, 0-100 (x, y nil where the client will not say).
@@ -1436,6 +1483,7 @@ end
 function lib:RideLeaving()
   if not self.riding and self._rideLast and Now() - (self._rideLastAt or 0) <= RIDE_AT_STOP then
     self.riding = { from = self._rideLast, t0 = Now() }
+    trace(("%d loading screen - riding from %s"):format(math.floor(Now()), self._rideLast.id))
   end
   return self.riding
 end
@@ -1569,6 +1617,11 @@ if SlashCmdList then
             lib:SetEnabled(true); lib:Hi(); say("comm on")
         elseif msg == "share off" then
             lib:SetSharing(false); say("share off - your guild no longer sees where you are on their map")
+        elseif msg == "ride" then
+            -- the ride log: what the clock's last looks saw (a ride it missed says why)
+            say(("ride log, last %d looks (time, map, nearest stop, distance, speed):"):format(#(lib._rideTrace or {})))
+            local t = lib._rideTrace or {}
+            for i = math.max(1, #t - 19), #t do say("  " .. t[i]) end
         elseif msg == "share on" then
             lib:SetSharing(true); say("share on - your guild sees where you are on their map (while you move, outside instances)")
         else
@@ -1582,7 +1635,7 @@ if SlashCmdList then
             say(("sent %d, refused %d, waiting %d%s%s"):format(lib.sentCount or 0, lib.refusedCount or 0,
                 #(lib.outbox or {}), lib._lastError and (", last trouble: " .. lib._lastError) or "",
                 OutgoingBlocked() and " (the realm says restricted - Forever always does; ignored)" or ""))
-            say("/biscomm on | off  -  /biscomm share on | off")
+            say("/biscomm on | off  -  /biscomm share on | off  -  /biscomm ride (the ride clock's log)")
         end
     end
 end
