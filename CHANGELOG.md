@@ -1,5 +1,9 @@
 # BiSGuild
 
+## 0.4.1
+
+- **Carries the shared ride clock** (the BiS lib, version 15): ride a zeppelin or a boat with any BiS addon on and its timetable goes to your guild and group - for BiS Tools' ride card and Power Word: Shell's ZEPPELIN.EXE and HARBOR.EXE.
+
 ## 0.4.0
 
 - **RECRUITS, a new terminal tab** (with BiS> Nebbinator 4.0). Everyone sees what the guild needs and which officer set it. Officers also see the guild's recruits - who, how far along, who in the guild is talking to them, when, and the note - and which channel brings the most whispers. An officer's **SET THEM** opens Nebbinator's Team page. Type `recruits` to open it too.
