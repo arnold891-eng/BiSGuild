@@ -3,6 +3,7 @@
 ## Unreleased
 
 - **ROSTER and the raid-night pop-up make the raid by themselves.** Invite more than a party holds and the party turns into a raid: on your own, the first four go out and the rest wait until someone joins; in a party, it becomes a raid before the sixth would be refused. Invites still waiting for an answer count, so asking one raider at a time as they log in works past five. (With BiS Tools' party tool on, BiS Tools does the same.) Nobody joins within two minutes: the waiting ones are dropped and named.
+- **You show up in FojjiCore's windows.** A party member running FojjiCore now sees your level and experience in its Experience window and your campfire in its Campfires window, instead of "No Addon" (the shared BiS lib, version 16 - quiet if you run FojjiCore's Dungeon Journal yourself, which says the same).
 
 ## 0.4.1
 
