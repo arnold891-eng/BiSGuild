@@ -1,5 +1,9 @@
 # BiSGuild
 
+## Unreleased
+
+- **ROSTER and the raid-night pop-up make the raid by themselves.** Invite more than a party holds and the party turns into a raid: on your own, the first four go out and the rest wait until someone joins; in a party, it becomes a raid before the sixth would be refused. Invites still waiting for an answer count, so asking one raider at a time as they log in works past five. (With BiS Tools' party tool on, BiS Tools does the same.) Nobody joins within two minutes: the waiting ones are dropped and named.
+
 ## 0.4.1
 
 - **Carries the shared ride clock** (the BiS lib, version 15): ride a zeppelin or a boat with any BiS addon on and its timetable goes to your guild and group - for BiS Tools' ride card and Power Word: Shell's ZEPPELIN.EXE and HARBOR.EXE.
