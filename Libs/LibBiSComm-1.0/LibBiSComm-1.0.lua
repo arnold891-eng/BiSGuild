@@ -1168,6 +1168,7 @@ if lib._booted then lib:StartSpots() end
 -- low line cannot mistake a run for a ride.
 local RIDE_DWELL, RIDE_CARRY, RIDE_FOR, RIDE_AT_STOP, RIDE_MIN_LEG = 60, 0.2, 480, 120, 20
 local RIDE_STILL = 0.08
+local RIDE_REFINE = 0.3                 -- a later arrival may move the loop this much (a first ride was 18% off)
 -- RIDE_AREA: map units round a stop's measured spot where its docked ride may sit (Arn's Skycutter: yards off it)
 local RIDE_AREA = 4
 local RIDE_ASK_EVERY, RIDE_STALE, RIDE_LOOK = 60, 6 * 3600, 1
@@ -1363,16 +1364,19 @@ function lib:RideLearn(s, t, est)
   if not key then return nil end
   local old = self.rides[key]
   local rtt = old and old.rtt
-  if rtt then
+  -- A RIDE SEEN END TO END (est) is the measure: it replaces a kept loop however far off that was (Arn's first rides
+  -- saved one two minutes short). An arrival some loops after a kept one refines the loop - the whole loops between
+  -- them, the time shared out - only when it agrees with the best guess to within RIDE_REFINE.
+  local guess = est or rtt
+  if guess and old and old.rtt then
     local A0 = self:RideArrival(old, s)
-    local n = A0 and math.floor((t - A0) / rtt + 0.5) or 0
+    local n = A0 and math.floor((t - A0) / guess + 0.5) or 0
     if n >= 1 then
       local r2 = (t - A0) / n
-      if math.abs(r2 - rtt) < 0.3 * rtt then rtt = r2 end      -- a first ride's loop can be well off (Arn's: 18%)
+      if math.abs(r2 - guess) < RIDE_REFINE * guess then guess = r2 end
     end
-  elseif est then
-    rtt = est
   end
+  rtt = guess
   self:RideSet(key, s.id, t, rtt and math.floor(rtt * 10 + 0.5) / 10 or nil, ServerNow(), nil)
   return self.rides[key]
 end
