@@ -1213,9 +1213,11 @@ lib.RIDE_STOPS = {
   { id = "bb", group = "bootybay", name = "Booty Bay's pier", map = 1434, x = 25.9, y = 73.1, r = 1.5,
     kind = "boat", ship = "the Maiden's Fancy", to = "ratchet", toName = "Ratchet",
     npc = 4631, who = "Wharfmaster Lozgil", face = "Lozgil", src = "U" },
-  { id = "rat", group = "ratchet", name = "Ratchet's pier", map = 1413, x = 63.7, y = 38.6, r = 1.5,
+  -- MEASURED by Arn 21 Oct: Grimble <Shipmaster> (npc 9558) stands on the pier at 63.5 38.6, subzone "Ratchet" - the
+  -- one who announces the boat
+  { id = "rat", group = "ratchet", name = "Ratchet's pier", map = 1413, x = 63.5, y = 38.6, r = 1.5,
     kind = "boat", ship = "the Maiden's Fancy", to = "bootybay", toName = "Booty Bay",
-    npc = 3453, who = "Wharfmaster Dizzywig", face = "Dizzywig", src = "U" },
+    npc = 9558, who = "Grimble", src = "MEASURED" },
   { id = "men_th", group = "menethil_s", name = "Menethil Harbor", map = 1437, x = 5.0, y = 63.5, r = 1.5,
     kind = "boat", ship = "the Lady Mehley", to = "theramore", toName = "Theramore",
     who = "The harbormaster", face = "Harbormaster", src = "U" },
