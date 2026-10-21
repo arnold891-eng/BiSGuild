@@ -1168,6 +1168,7 @@ if lib._booted then lib:StartSpots() end
 -- low line cannot mistake a run for a ride.
 local RIDE_DWELL, RIDE_CARRY, RIDE_FOR, RIDE_AT_STOP, RIDE_MIN_LEG = 60, 0.2, 480, 120, 20
 local RIDE_STILL = 0.08
+local RIDE_CLOSER = 0.05                -- map units: less than this closer to the dock in a look = no longer closing in
 local RIDE_REFINE = 0.3                 -- a later arrival may move the loop this much (a first ride was 18% off)
 -- RIDE_AREA: map units round a stop's measured spot where its docked ride may sit (Arn's Skycutter: yards off it)
 local RIDE_AREA = 4
@@ -1448,7 +1449,14 @@ function lib:RideLook()
   local said_
   if riding then
     local long = clock - riding.t0
-    if near and near.group == riding.from.to and measured and speed < RIDE_STILL and not (riding.dep and long < RIDE_MIN_LEG)
+    -- DOCKED = IT STOPPED GETTING CLOSER (Arn's log, 21 Oct: a docked zeppelin bobs - "speed 0.21" standing still -
+    -- so "truly still" came up to 30 s late): near the far end, the distance to its stop no longer shrinking, or
+    -- truly still
+    local closing = near and near.group == riding.from.to and nd or nil
+    local stopped = measured and (speed < RIDE_STILL
+      or (closing and riding.lastD and closing >= riding.lastD - RIDE_CLOSER))
+    if closing then riding.lastD = closing end
+    if closing and stopped and not (riding.dep and long < RIDE_MIN_LEG)
        and not said(UnitOnTaxi, "player") then
       self.riding = nil
       local now = ServerNow()
