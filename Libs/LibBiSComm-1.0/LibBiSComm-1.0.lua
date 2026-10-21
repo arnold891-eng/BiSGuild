@@ -37,7 +37,10 @@
 -- minor 12 (14 Oct 2026): SPOT - where guildmates are, for BiS Tools' map: every embedder shares
 -- your spot on the GUILD channel while you move (cascading 15/30/60 s by guild size), one switch
 -- for all of them (/biscomm share on|off), and lib.spots for any addon to draw
-local MAJOR, MINOR = "LibBiSComm-1.0", 14
+-- minor 15 (21 Oct 2026): RIDE - when the zeppelins and boats dock, learned by riding them and shared with the
+-- guild, so one rider with any BiS addon sets the clock for everyone; lib:RidesAt / RideSched for any addon to
+-- show (BiS Tools draws the card; the lib still draws nothing)
+local MAJOR, MINOR = "LibBiSComm-1.0", 15
 
 local lib = _G.LibBiSComm
 if lib and (lib.MINOR or 0) >= MINOR then return end   -- an equal or newer copy won
@@ -946,6 +949,7 @@ function lib:Boot()
     reg("GUILD_ROSTER_UPDATE")
     reg("ADDON_RESTRICTION_STATE_CHANGED")     -- Forever: the lockdown starting or lifting (minor 10)
     if self.StartSpots then self:StartSpots() end -- minor 12: guild spots
+    if self.StartRides then self:StartRides() end -- minor 15: the ride clock
 
     f:SetScript("OnEvent", function(_, event, a1, a2, a3, a4)
         if event == "CHAT_MSG_ADDON" then
@@ -1128,6 +1132,421 @@ end
 if lib._booted then lib:StartSpots() end
 
 --------------------------------------------------------------------
+-- RIDE: when the zeppelins and boats dock - learned by riding, shared with the guild (minor 15)
+--------------------------------------------------------------------
+-- Arn, 21 Oct 2026: "the timer lives in the libraries, so somebody that has BiS Healing and leaves can start the
+-- timer and someone that is not on the Zeppelin will get [it] ... their card will say I'm in Orgrimmar ...
+-- Zeppelin just arrived, leaving for Undercity". Built first inside BiS Shell's ZEPPELIN.EXE, moved here so
+-- ANY one BiS addon learns, shares, answers and shows it.
+--
+--   RIDE|AT|route|end|arrival|loop|seen|via    a ride docked at `end` at server time `arrival`
+--   RIDE|ASK|route                             somebody arrived with no clock for that route
+--
+-- EVERY RIDE RUNS A FIXED LOOP and waits RIDE_DWELL at each end (the shape ForeverTransport taught - studied,
+-- not copied), so one moment and the loop's length give every arrival at both ends: the far end is half a loop
+-- on. HOW IT LEARNS, once a second and only on a map with a stop (or its capital, or while riding):
+--   the departure - you were on a stop, now you are off it, CARRIED: your spot moved more than RIDE_CARRY map
+--                   units a second while IsPlayerMoving says no (not falling, not on a flight)
+--   a loading screen soon after a stop - you are on its ride (when it left: unknown)
+--   the arrival   - riding, on the far end's stop. The loop = the ride twice + a dwell at each end; a later
+--                   arrival refines it (whole loops between two arrivals, the time shared out)
+-- Shared on GUILD and the group. A newer sighting replaces ours; nobody's is passed on again (no echo).
+-- Arriving with no clock asks the guild once; one who knows answers after 1-5 s unless someone did first.
+-- THE LIB STILL DRAWS NOTHING (Arn, 21 Oct: "everybody with the library does not show the clock by default.
+-- BiS Tools enables the card and more options live in BiS Tools" - "the library still draws nothing"). It learns,
+-- shares and answers: lib:RidesAt(map) for the rides from here, lib:RideSched(stop), lib:RideLine(stop, sched)
+-- for the words, the "RIDE" callback on every new sighting. BiS Tools draws the card from these.
+-- The lib has no SavedVariables: an embedder hands it a table (lib:RideStore(db.rides)) and the clock lives
+-- there too; without one, the clock lasts the session and the guild fills it in.
+-- UNVERIFIED in game: RIDE_CARRY (how fast a ride moves you on the map) and RIDE_DWELL (the long-known minute).
+
+local RIDE_DWELL, RIDE_CARRY, RIDE_FOR, RIDE_AT_STOP = 60, 0.35, 1200, 120
+local RIDE_ASK_EVERY, RIDE_STALE, RIDE_LOOK = 60, 6 * 3600, 1
+lib.RIDE_DWELL, lib.RIDE_CARRY, lib.RIDE_LOOK = RIDE_DWELL, RIDE_CARRY, RIDE_LOOK
+lib.guildMods.RIDE = true
+
+-- THE STOPS: one platform or pier each - its map (uiMapID), its spot (0-100 on that map) and a radius in the
+-- same units. A tower's two platforms are two stops of one `group`; `to` is the group its ride goes to.
+-- MEASURED = Arn's probe in game (21 Oct); C = the zeppelin master's spot on Wowhead Classic; U = a dock pin from
+-- the HandyNotes TravelGuide Classic data (no NPC stands on those piers). Forever may have moved the Classic ones.
+lib.RIDE_STOPS = {
+  { id = "sky_mul", group = "skywatch", name = "Skywatcher Plateau", map = 1412, x = 34.3, y = 25.7, r = 1.5,
+    kind = "zeppelin", place = "dock", ship = "the Skycutter", to = "zephras", toName = "Zephras Isle",
+    npc = 262502, who = "Skycutter Dockhand", face = "Dockhand", src = "MEASURED" },
+  { id = "sky_zeph", group = "zephras", name = "Valanaar", map = 2521, x = 58.0, y = 80.5, r = 1.5,
+    kind = "zeppelin", place = "dock", ship = "the Skycutter", to = "skywatch", toName = "Mulgore",
+    npc = 275270, who = "Windshapers Dockmaster", face = "Dockmaster", src = "MEASURED" },
+  { id = "org_uc", group = "orgtower", name = "Orgrimmar's zeppelin tower", map = 1411, x = 50.8, y = 13.4, r = 1.5,
+    kind = "zeppelin", ship = "the Thundercaller", to = "uctower", toName = "Undercity",
+    npc = 9564, who = "Frezza", src = "C" },
+  { id = "org_gg", group = "orgtower", name = "Orgrimmar's zeppelin tower", map = 1411, x = 50.6, y = 12.8, r = 1.5,
+    kind = "zeppelin", ship = "the Iron Eagle", to = "ggtower", toName = "Grom'gol",
+    npc = 12136, who = "Snurk Bucksquick", face = "Snurk", src = "C" },
+  { id = "uc_org", group = "uctower", name = "Undercity's zeppelin tower", map = 1420, x = 60.8, y = 58.8, r = 1.5,
+    kind = "zeppelin", ship = "the Thundercaller", to = "orgtower", toName = "Orgrimmar",
+    npc = 9566, who = "Zapetta", src = "C" },
+  { id = "uc_gg", group = "uctower", name = "Undercity's zeppelin tower", map = 1420, x = 61.8, y = 59.0, r = 1.5,
+    kind = "zeppelin", ship = "the Purple Princess", to = "ggtower", toName = "Grom'gol",
+    npc = 3150, who = "Hin Denburg", src = "C" },
+  { id = "gg_org", group = "ggtower", name = "Grom'gol's zeppelin tower", map = 1434, x = 31.4, y = 29.8, r = 1.5,
+    kind = "zeppelin", ship = "the Iron Eagle", to = "orgtower", toName = "Orgrimmar",
+    npc = 3149, who = "Nez'raz", src = "C" },
+  { id = "gg_uc", group = "ggtower", name = "Grom'gol's zeppelin tower", map = 1434, x = 31.5, y = 29.4, r = 1.5,
+    kind = "zeppelin", ship = "the Purple Princess", to = "uctower", toName = "Undercity",
+    npc = 12137, who = "Squibby Overspeck", face = "Squibby", src = "C" },
+  { id = "bb", group = "bootybay", name = "Booty Bay's pier", map = 1434, x = 25.9, y = 73.1, r = 1.5,
+    kind = "boat", ship = "the Maiden's Fancy", to = "ratchet", toName = "Ratchet",
+    npc = 4631, who = "Wharfmaster Lozgil", face = "Lozgil", src = "U" },
+  { id = "rat", group = "ratchet", name = "Ratchet's pier", map = 1413, x = 63.7, y = 38.6, r = 1.5,
+    kind = "boat", ship = "the Maiden's Fancy", to = "bootybay", toName = "Booty Bay",
+    npc = 3453, who = "Wharfmaster Dizzywig", face = "Dizzywig", src = "U" },
+  { id = "men_th", group = "menethil_s", name = "Menethil Harbor", map = 1437, x = 5.0, y = 63.5, r = 1.5,
+    kind = "boat", ship = "the Lady Mehley", to = "theramore", toName = "Theramore",
+    who = "The harbormaster", face = "Harbormaster", src = "U" },
+  { id = "men_aub", group = "menethil_n", name = "Menethil Harbor", map = 1437, x = 4.6, y = 57.1, r = 1.5,
+    kind = "boat", ship = "the Bravery", to = "auberdine_s", toName = "Auberdine",
+    who = "The harbormaster", face = "Harbormaster", src = "U" },
+  { id = "thera", group = "theramore", name = "Theramore's pier", map = 1445, x = 71.6, y = 56.5, r = 1.5,
+    kind = "boat", ship = "the Lady Mehley", to = "menethil_s", toName = "Menethil Harbor",
+    who = "The harbormaster", face = "Harbormaster", src = "U" },
+  { id = "aub_men", group = "auberdine_s", name = "Auberdine's pier", map = 1439, x = 32.4, y = 43.8, r = 1.5,
+    kind = "boat", ship = "the Bravery", to = "menethil_n", toName = "Menethil Harbor",
+    who = "The harbormaster", face = "Harbormaster", src = "U" },
+  { id = "aub_rut", group = "auberdine_n", name = "Auberdine's pier", map = 1439, x = 33.2, y = 40.1, r = 1.5,
+    kind = "boat", ship = "the Moonspray", to = "rutheran", toName = "Rut'theran Village",
+    who = "The harbormaster", face = "Harbormaster", src = "U" },
+  { id = "rut", group = "rutheran", name = "Rut'theran Village", map = 1438, x = 54.9, y = 96.8, r = 1.5,
+    kind = "boat", ship = "the Moonspray", to = "auberdine_n", toName = "Auberdine",
+    who = "The harbormaster", face = "Harbormaster", src = "U" },
+}
+-- A CAPITAL AND ITS ZONE (Arn: "their card will say I'm in Orgrimmar"): the towers stand on the zone's map, the
+-- player stands in the city's - RidesAt answers a capital's rides too
+lib.RIDE_CITY = { [1454] = 1411, [1456] = 1412, [1458] = 1420 }   -- Orgrimmar, Thunder Bluff, Undercity
+
+lib.rideById, lib.ridePartner, lib.rideKeys, lib.rideMaps = {}, {}, {}, {}
+for _, s in ipairs(lib.RIDE_STOPS) do lib.rideById[s.id] = s lib.rideMaps[s.map] = true end
+for _, s in ipairs(lib.RIDE_STOPS) do
+  for _, o in ipairs(lib.RIDE_STOPS) do
+    if o.group == s.to and o.to == s.group then lib.ridePartner[s.id] = o end
+  end
+end
+
+--- A route's name: its two ends' ids sorted and joined - the same from either end.
+function lib:RideKey(s)
+  if type(s) == "string" then s = self.rideById[s] end
+  local o = s and self.ridePartner[s.id]
+  if not o then return nil end
+  local a, b = s.id, o.id
+  if a > b then a, b = b, a end
+  return a .. "~" .. b
+end
+for _, s in ipairs(lib.RIDE_STOPS) do local k = lib:RideKey(s) if k then lib.rideKeys[k] = true end end
+
+lib.rides = lib.rides or {}            -- route -> { at, t, rtt, seen, by, via }
+lib.rideStores = lib.rideStores or {}  -- the embedders' saved tables, every one kept in step
+
+local function ServerNow()
+  local t = GetServerTime and plainNum(GetServerTime())
+  if t then return t end
+  return math.floor(Now())
+end
+lib.RideNow = ServerNow
+
+local function said(fn, ...)
+  if not fn then return nil end
+  local ok, v = pcall(fn, ...)
+  if not ok or v == nil or Secret(v) then return nil end
+  return v and true or false
+end
+
+--- An embedder's saved table: what it remembers comes in (the newer wins), and from now on every new sighting
+--- is written there too.
+function lib:RideStore(tbl)
+  if type(tbl) ~= "table" then return nil end
+  for _, s in ipairs(self.rideStores) do if s == tbl then return tbl end end
+  self.rideStores[#self.rideStores + 1] = tbl
+  for key, rec in pairs(tbl) do
+    if type(rec) == "table" and self.rideKeys[key] then
+      local mine = self.rides[key]
+      if not mine or (rec.seen or 0) > (mine.seen or 0) then self.rides[key] = rec end
+    end
+  end
+  for key, rec in pairs(self.rides) do tbl[key] = rec end
+  return tbl
+end
+
+local function store(key, rec)
+  lib.rides[key] = rec
+  for _, t in ipairs(lib.rideStores) do t[key] = rec end
+end
+
+--- When the ride docked at stop s by record rec: the far end is half a loop from the near one.
+function lib:RideArrival(rec, s)
+  if rec.at == s.id then return rec.t end
+  if not rec.rtt then return nil end
+  return rec.t + rec.rtt / 2
+end
+
+--- The ride at stop s (a stop or its id) now: { docked, left, rtt, by, via, age } - left is the seconds to the
+--- arrival, or while docked to the departure. nil while nobody has timed it.
+function lib:RideSched(s, now)
+  if type(s) == "string" then s = self.rideById[s] end
+  local key = s and self:RideKey(s)
+  local rec = key and self.rides[key]
+  if not (rec and rec.rtt and rec.t) then return nil end
+  now = now or ServerNow()
+  local A = self:RideArrival(rec, s)
+  local phase = (now - A) % rec.rtt
+  local docked = phase < RIDE_DWELL
+  return { docked = docked, left = docked and (RIDE_DWELL - phase) or (rec.rtt - phase),
+           rtt = rec.rtt, by = rec.by, via = rec.via, age = now - (rec.seen or rec.t) }
+end
+
+--- Every stop on a map (a capital counts as its zone), each with its ride now: { { stop, sched }, ... }.
+function lib:RidesAt(map, now)
+  local out = {}
+  map = self.RIDE_CITY[map] or map
+  for _, s in ipairs(self.RIDE_STOPS) do
+    if s.map == map then out[#out + 1] = { stop = s, sched = self:RideSched(s, now) } end
+  end
+  return out
+end
+
+--- A record fit to keep: a route we know, one of its ends, times this side of a fortnight, a sane loop.
+function lib:RideSane(key, at, t, rtt, seen)
+  if not (key and self.rideKeys[key] and at and self.rideById[at] and self:RideKey(at) == key) then return false end
+  local now = ServerNow()
+  if type(t) ~= "number" or math.abs(t - now) > 14 * 86400 then return false end
+  if type(seen) ~= "number" or seen > now + 300 or now - seen > 14 * 86400 then return false end
+  if rtt ~= nil and (type(rtt) ~= "number" or rtt < 120 or rtt > 1200) then return false end
+  return true
+end
+
+--- Keep a record if it is newer than ours. by: who saw it (nil = you: then it is shared).
+function lib:RideSet(key, at, t, rtt, seen, by, via)
+  if not self:RideSane(key, at, t, rtt, seen) then return false end
+  local old = self.rides[key]
+  if old and (old.seen or 0) >= seen - 1 then return false end
+  local mine = by == nil
+  store(key, { at = at, t = t, rtt = rtt or (old and old.rtt), seen = seen,
+               by = by or PlayerName() or "you", via = via or (mine and self:RideVia()) or nil })
+  if mine then self:RideShare(key) end
+  fire("RIDE", key, self.rides[key])
+  return true
+end
+
+--- One of my addons, for "timed by Chain - BiS Healing" (the first registered, by name).
+function lib:RideVia()
+  local names = {}
+  for name in pairs(self.addons) do names[#names + 1] = name end
+  table.sort(names)
+  return names[1]
+end
+
+--- The ride docked at stop s at time t; est: the loop from a ride seen end to end (or nil).
+function lib:RideLearn(s, t, est)
+  local key = self:RideKey(s)
+  if not key then return nil end
+  local old = self.rides[key]
+  local rtt = old and old.rtt
+  if rtt then
+    local A0 = self:RideArrival(old, s)
+    local n = A0 and math.floor((t - A0) / rtt + 0.5) or 0
+    if n >= 1 then
+      local r2 = (t - A0) / n
+      if math.abs(r2 - rtt) < 0.15 * rtt then rtt = r2 end
+    end
+  elseif est then
+    rtt = est
+  end
+  self:RideSet(key, s.id, t, rtt and math.floor(rtt * 10 + 0.5) / 10 or nil, ServerNow(), nil)
+  return self.rides[key]
+end
+
+--- The stop I am on, by my spot on this map (0-100), or nil - the nearer one at a tower's two platforms.
+function lib:RideStopAt(map, x, y)
+  local best, bd
+  for _, s in ipairs(self.RIDE_STOPS) do
+    if s.map == map then
+      local d = math.sqrt((s.x - x) ^ 2 + (s.y - y) ^ 2)
+      if d <= s.r and (not bd or d < bd) then best, bd = s, d end
+    end
+  end
+  return best
+end
+
+--- One look: my map and spot, and the stop I am on. LEAN: on a dock it asks the client for the map, the spot
+--- and the time; my feet, a flight and the server's clock only at the moment I come off a stop or onto the far one.
+function lib:RideLook()
+  local map, x, y = self:RideSpot()
+  if not map then return nil end
+  local clock = Now()
+  local inside = x and self:RideStopAt(map, x, y) or nil
+  local prev = self._ridePrev
+  self._ridePrev = { m = map, x = x, y = y, stop = inside, clock = clock }
+  if inside then self._rideLast, self._rideLastAt = inside, clock end
+  local riding = self.riding
+  if riding and clock - riding.t0 > RIDE_FOR then self.riding, riding = nil, nil end
+  if riding and inside and inside.group ~= riding.from.group then
+    self.riding = nil
+    if inside.group == riding.from.to and not said(UnitOnTaxi, "player") then
+      local now = ServerNow()
+      local est = riding.dep and (2 * (now - riding.dep) + 2 * RIDE_DWELL) or nil
+      self:RideLearn(inside, now, est)
+      return "arrived"
+    end
+    return nil
+  end
+  if not riding and prev and prev.stop and not inside and prev.m == map and x and prev.x then
+    local dt = math.max(0.2, clock - (prev.clock or clock))
+    local speed = math.sqrt((x - prev.x) ^ 2 + (y - prev.y) ^ 2) / dt
+    if speed >= RIDE_CARRY and said(IsPlayerMoving) == false and not said(IsFalling) and not said(UnitOnTaxi, "player") then
+      local now = ServerNow()
+      self.riding = { from = prev.stop, dep = now, t0 = clock }
+      self:RideLearn(prev.stop, now - RIDE_DWELL)
+      return "departed"
+    end
+  end
+  if inside and not (prev and prev.stop == inside) then self:RideAsk(inside) end   -- just arrived: no clock? ask
+  return inside and "on" or "off"
+end
+
+--- My map and my spot on it, 0-100 (x, y nil where the client will not say).
+function lib:RideSpot()
+  if not (C_Map and C_Map.GetBestMapForUnit) then return nil end
+  local ok, map = pcall(C_Map.GetBestMapForUnit, "player")
+  map = ok and plainNum(map) or nil
+  if not map then return nil end
+  if not (C_Map.GetPlayerMapPosition) then return map end
+  local ok2, pos = pcall(C_Map.GetPlayerMapPosition, map, "player")
+  if not ok2 or pos == nil or Secret(pos) then return map end
+  local ok3, x, y = pcall(function() return pos:GetXY() end)
+  if not ok3 then return map end
+  x = plainNum(x)
+  y = plainNum(y)
+  if not (x and y) then return map end
+  return map, x * 100, y * 100
+end
+
+--- A loading screen: soon after a stop, I am on its ride (when it left: unknown).
+function lib:RideLeaving()
+  if not self.riding and self._rideLast and Now() - (self._rideLastAt or 0) <= RIDE_AT_STOP then
+    self.riding = { from = self._rideLast, t0 = Now() }
+  end
+  return self.riding
+end
+
+function lib:RideShare(key)
+  local rec = self.rides[key]
+  if not (rec and self.enabled) then return false end
+  local a = self:SendTo("GUILD", "RIDE", "AT", key, rec.at, tostring(rec.t), rec.rtt and tostring(rec.rtt) or "",
+                        tostring(rec.seen), rec.via or "")
+  local b = self:Send("RIDE", "AT", key, rec.at, tostring(rec.t), rec.rtt and tostring(rec.rtt) or "",
+                      tostring(rec.seen), rec.via or "")
+  return a or b
+end
+
+--- On a stop with no clock (or an old one): ask the guild, once a minute a route at most.
+function lib:RideAsk(s)
+  local key = self:RideKey(s)
+  if not (key and self.enabled) then return false end
+  local rec = self.rides[key]
+  local now = ServerNow()
+  if rec and rec.rtt and now - (rec.seen or 0) < RIDE_STALE then return false end
+  self._rideAsked = self._rideAsked or {}
+  if self._rideAsked[key] and now - self._rideAsked[key] < RIDE_ASK_EVERY then return false end
+  self._rideAsked[key] = now
+  return self:SendTo("GUILD", "RIDE", "ASK", key)
+end
+
+lib._rideHeard = lib._rideHeard or {}
+lib.handlers.RIDE = lib.handlers.RIDE or {}
+lib.handlers.RIDE.AT = function(sender, key, at, t, rtt, seen, via)
+  t, seen = tonumber(t), tonumber(seen)
+  rtt = (rtt and rtt ~= "") and tonumber(rtt) or nil
+  lib._rideHeard[key or ""] = ServerNow()
+  return lib:RideSet(key, at, t, rtt, seen, sender, (via and via ~= "") and via or nil)
+end
+-- somebody asks: answer after a short random wait, unless somebody else answers first
+lib.handlers.RIDE.ASK = function(sender, key)
+  local rec = key and lib.rides[key]
+  if not (rec and rec.rtt) then return false end
+  local asked = ServerNow()
+  local function answer()
+    if (lib._rideHeard[key] or 0) >= asked then return end
+    lib:RideShare(key)
+  end
+  if not After(1 + math.random() * 4, answer) then answer() end
+  return true
+end
+
+--------------------------------------------------------------------
+-- the watch: once a second, only where a ride is (its map or its capital) or while riding
+--------------------------------------------------------------------
+
+function lib:RideWanted()
+  if self.riding then return true end
+  local ok, map = pcall(C_Map and C_Map.GetBestMapForUnit or function() end, "player")
+  map = ok and plainNum(map) or nil
+  if not map then return false end
+  return self.rideMaps[map] or self.RIDE_CITY[map] ~= nil
+end
+
+function lib:RideRewatch()
+  local f = self._rideFrame
+  if not f then return nil end
+  local on = self.enabled and self:RideWanted()
+  if on and not self._rideWatching then
+    self._rideWatching, self._rideIn = true, 0
+    f:SetScript("OnUpdate", function(_, elapsed)
+      lib._rideIn = (lib._rideIn or 0) - (tonumber(elapsed) or 0)
+      if lib._rideIn > 0 then return end
+      lib._rideIn = RIDE_LOOK
+      lib:RideLook()
+    end)
+  elseif not on and self._rideWatching then
+    self._rideWatching = nil
+    f:SetScript("OnUpdate", nil)
+  end
+  return self._rideWatching
+end
+
+function lib:StartRides()
+  if self._rideFrame or not CreateFrame then return end
+  local f = CreateFrame("Frame")
+  self._rideFrame = f
+  for _, ev in ipairs({ "PLAYER_ENTERING_WORLD", "PLAYER_LEAVING_WORLD", "ZONE_CHANGED_NEW_AREA", "ZONE_CHANGED",
+                        "ZONE_CHANGED_INDOORS" }) do
+    pcall(f.RegisterEvent, f, ev)
+  end
+  f:SetScript("OnEvent", function(_, event)
+    if event == "PLAYER_LEAVING_WORLD" then lib:RideLeaving() return end
+    lib:RideRewatch()
+  end)
+end
+if lib._booted then lib:StartRides() end
+
+--------------------------------------------------------------------
+-- words for a ride (the lib draws nothing: BiS Tools' card and BiS Shell's game say these)
+--------------------------------------------------------------------
+
+local function clock(sec)
+  sec = math.max(0, math.floor(sec + 0.5))
+  return ("%d:%02d"):format(math.floor(sec / 60), sec % 60)
+end
+lib.RideClock = clock
+
+--- One ride in words: "Zeppelin to Undercity - arrives in 3:10", "... - here now, leaves in 0:45".
+function lib:RideLine(s, sc)
+  if type(s) == "string" then s = self.rideById[s] end
+  if not s then return nil end
+  local what = (s.kind == "zeppelin" and "Zeppelin" or "Boat") .. " to " .. tostring(s.toName)
+  if not sc then return what .. " - not timed yet" end
+  if sc.docked then return what .. " - here now, leaves in " .. clock(sc.left) end
+  return what .. " - arrives in " .. clock(sc.left)
+end
+
+--------------------------------------------------------------------
 -- the one slash: status and the honest off switch
 --------------------------------------------------------------------
 
@@ -1153,6 +1572,9 @@ if SlashCmdList then
                 :format(lib:Enabled() and "on" or "off", lib:Sharing() and "on" or "off", lib.MINOR, lib:Count(),
                         lib:AddonsBlob() ~= "" and lib:AddonsBlob() or "nothing"))
             -- what left and what did not (minor 13: the night "sent 0" took four /run lines to see)
+            local timed = 0
+            for _ in pairs(lib.rides or {}) do timed = timed + 1 end
+            say(("rides timed: %d%s"):format(timed, lib.riding and (" - riding from " .. lib.riding.from.name) or ""))
             say(("sent %d, refused %d, waiting %d%s%s"):format(lib.sentCount or 0, lib.refusedCount or 0,
                 #(lib.outbox or {}), lib._lastError and (", last trouble: " .. lib._lastError) or "",
                 OutgoingBlocked() and " (the realm says restricted - Forever always does; ignored)" or ""))
