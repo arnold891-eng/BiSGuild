@@ -1160,7 +1160,10 @@ if lib._booted then lib:StartSpots() end
 -- there too; without one, the clock lasts the session and the guild fills it in.
 -- UNVERIFIED in game: RIDE_CARRY (how fast a ride moves you on the map) and RIDE_DWELL (the long-known minute).
 
-local RIDE_DWELL, RIDE_CARRY, RIDE_FOR, RIDE_AT_STOP = 60, 0.35, 1200, 120
+-- RIDE_FOR: no ride's leg is longer (the longest loops are ~8 min, a leg half that) - a "ride" older than this
+-- is a hearth or a walk, and is forgotten: its far end reached later is NOT an arrival. RIDE_MIN_LEG: a ride seen
+-- leaving cannot arrive sooner.
+local RIDE_DWELL, RIDE_CARRY, RIDE_FOR, RIDE_AT_STOP, RIDE_MIN_LEG = 60, 0.35, 480, 120, 20
 local RIDE_ASK_EVERY, RIDE_STALE, RIDE_LOOK = 60, 6 * 3600, 1
 lib.RIDE_DWELL, lib.RIDE_CARRY, lib.RIDE_LOOK = RIDE_DWELL, RIDE_CARRY, RIDE_LOOK
 lib.guildMods.RIDE = true
@@ -1389,7 +1392,8 @@ function lib:RideLook()
   if riding and clock - riding.t0 > RIDE_FOR then self.riding, riding = nil, nil end
   if riding and inside and inside.group ~= riding.from.group then
     self.riding = nil
-    if inside.group == riding.from.to and not said(UnitOnTaxi, "player") then
+    local long = clock - riding.t0
+    if inside.group == riding.from.to and not said(UnitOnTaxi, "player") and not (riding.dep and long < RIDE_MIN_LEG) then
       local now = ServerNow()
       local est = riding.dep and (2 * (now - riding.dep) + 2 * RIDE_DWELL) or nil
       self:RideLearn(inside, now, est)
