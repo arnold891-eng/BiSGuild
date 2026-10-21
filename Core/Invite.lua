@@ -312,23 +312,96 @@ function I.One(name)
     return 1
 end
 
+--- MORE THAN A PARTY HOLDS BECOMES A RAID BY ITSELF (Arn, 21 Oct: "auto turn the party into raid when
+--- more than 5 people in the party or if the invited people will be more than 5") - BiS Tools' rule,
+--- for when it is not here. The game counts the invites still out: a party, or you alone, takes five,
+--- and the sixth is refused "party is full". It tells an addon nothing about invites out, so we count
+--- our own (I.out, younger than I.OUT_FOR). A raid is made only from a party: alone, the overflow
+--- WAITS (I.held) until the first one joins, the party becomes a raid, and then it goes. Nobody joins
+--- in I.HOLD_FOR: dropped and said.
+I.PARTY, I.HOLD_FOR, I.OUT_FOR = 5, 120, 60
+I.out = {}
+
+function I.Out(here)
+    here = here or I.Here()
+    local now, n = (GetTime and GetTime()) or 0, 0
+    for name, t in pairs(I.out) do
+        -- joined, by whatever name the client gives a group member: whole, or the first name alone
+        local first = (name:match("^([^%s%-]+)") or name):lower()
+        if here[Key(name)] or here[name:lower()] or here[first] or now - t > I.OUT_FOR then I.out[name] = nil
+        else n = n + 1 end
+    end
+    return n
+end
+
+function I.Convert()
+    local convert = (C_PartyInfo and C_PartyInfo.ConvertToRaid) or ConvertToRaid
+    if convert then pcall(convert) end
+end
+
+function I.Hold(names)
+    if I.held then
+        for _, n in ipairs(names) do I.held.names[#I.held.names + 1] = n end
+        return
+    end
+    local h = { names = names }
+    I.held = h
+    K.Say(("%d more wait for the raid - they go out once someone joins"):format(#names), "gold")
+    if C_Timer and C_Timer.After then
+        C_Timer.After(I.HOLD_FOR, function()
+            if I.held ~= h then return end
+            I.held = nil
+            K.Say(("nobody joined - not invited: %s"):format(table.concat(names, ", ")), "warn")
+        end)
+    end
+end
+
+--- A roster change: the party exists - make it a raid; the raid exists - send who waited.
+function I.Held()
+    local h = I.held
+    if not h or not (IsInGroup and IsInGroup()) then return end
+    if not (IsInRaid and IsInRaid()) then
+        if I.Leads() then I.Convert() end
+        return
+    end
+    I.held = nil
+    for _, n in ipairs(h.names) do I.queue[#I.queue + 1] = n end
+    I.Pump()
+end
+
 I.queue = {}
 function I.Queue(names)
-    -- past five, the party must be a raid before the sixth invite can land
-    local total = ((GetNumGroupMembers and GetNumGroupMembers()) or 0) + #names
-    if total > 4 and IsInGroup and IsInGroup() and not (IsInRaid and IsInRaid()) then
-        local convert = (C_PartyInfo and C_PartyInfo.ConvertToRaid) or ConvertToRaid
-        if convert then pcall(convert) end
+    local now, later = names, nil
+    if not (IsInRaid and IsInRaid()) then
+        local here = I.Here()
+        local with = math.max((GetNumGroupMembers and GetNumGroupMembers()) or 0, 1) + I.Out(here) + #I.queue
+        if with + #names > I.PARTY then
+            if IsInGroup and IsInGroup() then I.Convert() end
+            now, later = {}, {}
+            for i, n in ipairs(names) do
+                if i <= I.PARTY - with then now[#now + 1] = n else later[#later + 1] = n end
+            end
+        end
     end
-    for _, n in ipairs(names) do I.queue[#I.queue + 1] = n end
+    for _, n in ipairs(now) do I.queue[#I.queue + 1] = n end
+    if later and #later > 0 then I.Hold(later) end
     I.Pump()
+end
+
+do
+    local ev = CreateFrame("Frame")
+    ev:RegisterEvent("GROUP_ROSTER_UPDATE")
+    ev:SetScript("OnEvent", function() if I.held then I.Held() end end)
+    I.events = ev
 end
 
 function I.Pump()
     if I._armed or #I.queue == 0 then return end
     local name = table.remove(I.queue, 1)
     local invite = (C_PartyInfo and C_PartyInfo.InviteUnit) or InviteUnit
-    if invite then pcall(invite, name) end
+    if invite then
+        if pcall(invite, name) then I.out[name] = (GetTime and GetTime()) or 0 end
+    end
     I.sent = (I.sent or 0) + 1
     if #I.queue > 0 and C_Timer and C_Timer.After then
         I._armed = true

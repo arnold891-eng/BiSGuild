@@ -2071,6 +2071,99 @@ do
     K.Hide()
 end
 
+-- MORE THAN A PARTY HOLDS BECOMES A RAID (Arn, 21 Oct: "auto turn the party into raid when more than 5
+-- people in the party or if the invited people will be more than 5"). THE CLIENT'S RULES: a party, or you
+-- alone, holds five counting the invites out - the sixth is refused "party is full", no Lua error; a raid
+-- is made only from a party. The kit's timers run at once whatever their delay, so this test keeps its
+-- own clock that honours them.
+do
+    local I = NS.Inv
+    local keep = { PI = _G.C_PartyInfo, IG = _G.IsInGroup, IR = _G.IsInRaid, N = _G.GetNumGroupMembers,
+                   UN = _G.UnitName, Lead = _G.UnitIsGroupLeader, T = _G.C_Timer, clock = H.clock }
+    local party, raid = { "Kumlust" }, false                    -- you first
+    local out, full, made = {}, {}, 0
+    _G.C_PartyInfo = {
+        InviteUnit = function(n)
+            if not raid and #party + #out >= 5 then full[#full + 1] = n return end
+            out[#out + 1] = n
+        end,
+        ConvertToRaid = function() made = made + 1 if #party > 1 then raid = true end end,
+    }
+    _G.IsInGroup = function() return #party > 1 end
+    _G.IsInRaid = function() return raid end
+    _G.GetNumGroupMembers = function() return #party > 1 and #party or 0 end
+    _G.UnitName = function(u)
+        if u == "player" then return "Kumlust" end
+        local i = tonumber(tostring(u):match("^party(%d+)$") or tostring(u):match("^raid(%d+)$") or "")
+        if not i then return nil end
+        return raid and party[i] or party[i + 1]
+    end
+    _G.UnitIsGroupLeader = function() return true end
+    local due = {}
+    _G.C_Timer = { After = function(d, fn) due[#due + 1] = { at = H.clock + d, fn = fn } end }
+    local function run(dt)                          -- in small steps: a timer may set the next one
+        local stop = H.clock + dt
+        while H.clock < stop do
+            H.clock = math.min(stop, H.clock + 0.05)
+            for i = #due, 1, -1 do
+                if due[i] and due[i].at <= H.clock then local t = table.remove(due, i) t.fn() end
+            end
+        end
+    end
+    local function join(n)                          -- an invite accepted: out of `out`, into the party
+        for i, o in ipairs(out) do if o == n then table.remove(out, i) end end
+        party[#party + 1] = (n:match("^(%S+)"))     -- Forever names a group member by first name
+        fire("GROUP_ROSTER_UPDATE")
+    end
+    I.out, I.held, I.queue, I._armed = {}, nil, {}, false
+
+    I.Queue({ "Ari", "Mare", "Shwed", "Kio Alpha", "Bob" })
+    run(5)
+    H.ok(#out == 4 and #full == 0 and I.held and I.held.names[1] == "Bob",
+         "alone with five to ask: four go out, Bob WAITS - the game would refuse him (party full)", #out .. " out, " .. #full .. " refused")
+    H.eq(made, 0, "no raid yet: alone there is no party to make one of")
+    join("Ari")
+    H.ok(made == 1 and raid, "Ari joins: the party becomes a raid by itself", made)
+    fire("GROUP_ROSTER_UPDATE")                     -- the raid's own roster change
+    run(5)
+    H.ok(I.held == nil and out[#out] == "Bob" and #full == 0, "the raid is here: Bob is asked, nothing refused", table.concat(out, ","))
+
+    -- ONE AT A TIME (the raid-night pop-up, each raider as they log in): three of you, two out
+    party, raid, out, full, made, I.out, I.queue = { "Kumlust", "Tobi", "Kio" }, false, {}, {}, 0, {}, {}
+    I.Queue({ "Ari" }) run(1)
+    I.Queue({ "Mare" }) run(1)
+    H.ok(#out == 2 and made == 0 and I.held == nil, "three of you, two asked: five, still a party", #out)
+    I.Queue({ "Shwed" }) run(1)
+    H.ok(made == 1 and I.held and I.held.names[1] == "Shwed" and #full == 0,
+         "the next would be the sixth: the party becomes a raid, Shwed waits instead of being refused", #full)
+    fire("GROUP_ROSTER_UPDATE") run(1)
+    H.ok(I.held == nil and out[3] == "Shwed", "the raid made: Shwed is asked", table.concat(out, ","))
+
+    -- a joined player stops counting as out, by first name or whole
+    party, raid, out, full, made, I.out, I.queue = { "Kumlust" }, false, {}, {}, 0, {}, {}
+    I.Queue({ "Kio Alpha", "Bob" }) run(1)
+    H.eq(I.Out(), 2, "alone, two asked: two out")
+    join("Kio Alpha")
+    H.eq(I.Out(), 1, "Kio joins (the client calls him Kio): one out")
+    H.clock = H.clock + I.OUT_FOR + 1
+    H.eq(I.Out(), 0, "a minute unanswered: Bob no longer counts")
+
+    -- nobody ever joins: the waiting ones are dropped and said, never sent on some later group
+    party, raid, out, full, made, I.out, I.queue = { "Kumlust" }, false, {}, {}, 0, {}, {}
+    I.Queue({ "A1", "B1", "C1", "D1", "E1", "F1" }) run(5)
+    H.ok(I.held and #I.held.names == 2, "alone with six: two wait", I.held and #I.held.names)
+    run(I.HOLD_FOR + 1)
+    H.ok(I.held == nil, "two minutes and nobody joined: dropped")
+    -- LEAN: the watcher is one look at I.held - a roster change with nobody waiting asks the game nothing
+    local Cost = dofile("../_bisdev/dev/cost.lua")
+    local n, by = Cost.Count(function() I.events._scripts.OnEvent(I.events, "GROUP_ROSTER_UPDATE") end)
+    H.ok(n == 0, "cost: a roster change, nobody waiting = 0 calls", Cost.Top and Cost.Top(by, 3))
+
+    I.out, I.held, I.queue, I._armed = {}, nil, {}, false
+    _G.C_PartyInfo, _G.IsInGroup, _G.IsInRaid, _G.GetNumGroupMembers = keep.PI, keep.IG, keep.IR, keep.N
+    _G.UnitName, _G.UnitIsGroupLeader, _G.C_Timer = keep.UN, keep.Lead, keep.T
+end
+
 --=============================================================================
 -- "X JUST LOGGED IN - INVITE?" (16 Oct 2026). Arn: "if the addons can see if someone logged in and
 -- they are on the roster, makes the invite button pulse or a window pop up". And: "does the json say
