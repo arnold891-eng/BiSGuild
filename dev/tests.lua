@@ -2409,6 +2409,26 @@ do
     _G.SlashCmdList.BISGUILD("dots on")
     H.eq(#pins(), 1, "/bisg dots on: back")
 
+    -- NOT YOUR GROUP (Arn, 22 Oct: "both of these blue marks are frank how about they only show up if we are not
+    -- in a party or raid"): Cara joins your raid - the game draws her, so her dot goes; she leaves, it comes back
+    H.inRaid, H.raid = true, { "Me", "Cara" }
+    H.units.raid1, H.units.raid2 = { name = "Me" }, { name = "Cara" }
+    M.Update()
+    H.eq(#pins(), 0, "Cara in your raid: no BiS dot (the game's own is there)")
+    H.inRaid, H.raid = false, {}
+    H.units.raid1, H.units.raid2 = nil, nil
+    M.Update()
+    H.eq(#pins(), 1, "she leaves the raid: her dot is back")
+    -- a party: party1..party(n-1), the player is not one of them
+    local realNum2, realRaid2 = _G.GetNumGroupMembers, _G.IsInRaid
+    _G.GetNumGroupMembers, _G.IsInRaid = function() return 2 end, function() return false end
+    H.units.party1 = { name = "Cara" }
+    M.Update()
+    H.eq(#pins(), 0, "Cara in your party: no BiS dot")
+    _G.GetNumGroupMembers, _G.IsInRaid = realNum2, realRaid2
+    H.units.party1 = nil
+    M.Update()
+
     -- a spot arriving draws within a second, once for a burst
     local timers = #H.timers
     M.Soon() M.Soon() M.Soon()
