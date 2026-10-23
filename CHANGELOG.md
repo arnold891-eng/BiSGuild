@@ -1,7 +1,8 @@
 # BiSGuild
 
-## Unreleased
+## 0.5.1
 
+- **The Deeprun Tram's timetable, for the whole guild.** With the shared BiS lib's new version, riding the Deeprun Tram with any BiS addon times it for your guild, the way the zeppelins and boats already are - BiS Tools' ride card and BiS Shell's TRAM-TRAK read it.
 - **No double marks for your group on the map.** The game already draws your party and raid members on the world map, so a guildmate in your group no longer gets a BiS Guild dot on top of it. When they leave your group, their dot comes back.
 
 ## 0.5.0

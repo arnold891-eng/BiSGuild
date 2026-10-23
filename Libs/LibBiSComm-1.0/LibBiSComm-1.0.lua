@@ -43,7 +43,12 @@
 -- minor 16 (21 Oct 2026): FOJJI - anyone with any BiS addon shows up in FojjiCore's party Experience and Campfires
 -- windows: the lib says FojjiCore's own two lines (FOJJI_GXP_V1, FojjiCamp1) and answers its asks; quiet when
 -- FojjiCore's journal is loaded here
-local MAJOR, MINOR = "LibBiSComm-1.0", 16
+-- minor 17 (22 Oct 2026): BiS> in - asking for Innervate / Power Infusion / Mana Tide (MOD IN: OPT, CD, REQ, CLAIM,
+-- CANCEL); the first claim wins everywhere; the buttons are BiSTheme's shared Ask piece (docs/bisin.md)
+--   + (23 Oct) the Deeprun Tram on the ride clock: two stops on lib.TRAM_MAP (no map in its zone - your world spot,
+--   lib:TramSpot), a dwell per stop, two cars half a loop apart (sched.cars); lib:RideSure - the confidence %, moved
+--   here from BiS Tools so every addon says the same number; Stormwind Harbor's Darkshore boat (sw_aub)
+local MAJOR, MINOR = "LibBiSComm-1.0", 17
 
 local lib = _G.LibBiSComm
 if lib and (lib.MINOR or 0) >= MINOR then return end   -- an equal or newer copy won
@@ -327,6 +332,13 @@ function lib:PurgeAbsent()
     local me = PlayerName()
     for name in pairs(self.peers) do
         if name ~= me and not here[name] then self.peers[name] = nil end
+    end
+    -- BiS> in (minor 17): who left the group leaves its lists too, in the same one walk
+    local b = self.bisin
+    if b then
+        for name in pairs(b.peers) do
+            if not here[name] then b.peers[name] = nil end
+        end
     end
 end
 
@@ -1184,6 +1196,9 @@ local RIDE_REFINE = 0.3                 -- a later arrival may move the loop thi
 local RIDE_LOOP = {
   ["org_uc~uc_org"] = 356.29, ["gg_org~org_gg"] = 303.47, ["gg_uc~uc_gg"] = 335.30,
   ["bb~rat"] = 350.82, ["men_th~thera"] = 329.32, ["aub_rut~rut"] = 316.25, ["sky_mul~sky_zeph"] = 347,
+  -- THE DEEPRUN TRAM (minor 17), measured on Forever by Arn's probe ridden there and back (23 Oct): 58.6 s a ride,
+  -- 13 s at each end - one car's loop 2 x 58.6 + 2 x 13
+  ["tram_if~tram_sw"] = 143.2,
 }
 lib.RIDE_LOOP = RIDE_LOOP
 -- RIDE_AREA: map units round a stop's measured spot where its docked ride may sit (Arn's Skycutter: yards off it)
@@ -1252,7 +1267,24 @@ lib.RIDE_STOPS = {
   { id = "rut", group = "rutheran", name = "Rut'theran Village", map = 1438, x = 54.9, y = 96.8, r = 1.5,
     kind = "boat", ship = "the Moonspray", to = "auberdine_n", toName = "Auberdine",
     who = "The harbormaster", face = "Harbormaster", src = "U" },
+  -- MEASURED by Arn 22 Oct (beta): FOREVER'S OWN - the Darkshore boat leaves from Stormwind's harbor, a route Classic
+  -- never had. Idrieth Mossgrove (npc 276318) works the dock at 25.9 54.3, the ship lies at 22.6 56.0: the stop sits
+  -- between, its radius reaching both. The Auberdine end and the ship's name: not measured yet.
+  { id = "sw_aub", group = "stormwind", name = "Stormwind Harbor", map = 1453, x = 24.2, y = 55.2, r = 2.2,
+    kind = "boat", to = "auberdine_s", toName = "Auberdine",
+    npc = 276318, who = "Idrieth Mossgrove", face = "Idrieth", src = "MEASURED" },
+  -- THE DEEPRUN TRAM (minor 17; Arn, 23 Oct: "go ahead with the tram in the library"). No map in its zone (C_Map is
+  -- nil the whole ride - measured), so its stops stand on lib.TRAM_MAP, and lib:RideSpot hands back your WORLD
+  -- position there: along the track and across it, in tens of yards (UnitPosition: x -45.6 the whole ride, y 2471.3
+  -- at Stormwind's platform to -12 at Ironforge's; 42.3 yd/s). The car stops 13 s (dwell); two cars run the line,
+  -- half a loop apart (cars - UNVERIFIED, the web's "when one leaves Stormwind the other reaches Ironforge").
+  { id = "tram_sw", group = "tramsw", name = "the Deeprun Tram, Stormwind", map = -369, x = 247.13, y = -4.0, r = 3,
+    kind = "tram", to = "tramif", toName = "Ironforge", dwell = 13, cars = 2, src = "MEASURED" },
+  { id = "tram_if", group = "tramif", name = "the Deeprun Tram, Ironforge", map = -369, x = -1.2, y = -4.0, r = 3,
+    kind = "tram", to = "tramsw", toName = "Stormwind", dwell = 13, cars = 2,
+    npc = 12997, who = "Monty", face = "Monty", src = "MEASURED" },
 }
+lib.TRAM_MAP, lib.TRAM_INSTANCE, lib.TRAM_ZONE = -369, 369, "Deeprun Tram"
 -- A CAPITAL AND ITS ZONE (Arn: "their card will say I'm in Orgrimmar"): the towers stand on the zone's map, the
 -- player stands in the city's - RidesAt answers a capital's rides too
 lib.RIDE_CITY = { [1454] = 1411, [1456] = 1412, [1458] = 1420 }   -- Orgrimmar, Thunder Bluff, Undercity
@@ -1337,10 +1369,41 @@ function lib:RideSched(s, now)
   if not (rec and rtt and rec.t) then return nil end
   now = now or ServerNow()
   local A = self:RideArrival(rec, s)
-  local phase = (now - A) % rtt
-  local docked = phase < RIDE_DWELL
-  return { docked = docked, left = docked and (RIDE_DWELL - phase) or (rtt - phase),
-           rtt = rtt, by = rec.by, via = rec.via, age = now - (rec.seen or rec.t) }
+  local D = s.dwell or RIDE_DWELL
+  -- EVERY CAR (the tram has two, half a loop apart): each its own phase; the stop sees the one docked, else the next in
+  local cars, best = {}, nil
+  for c = 0, (s.cars or 1) - 1 do
+    local phase = (now - A - c * rtt / (s.cars or 1)) % rtt
+    local docked = phase < D
+    local car = { docked = docked, left = docked and (D - phase) or (rtt - phase), phase = phase }
+    cars[#cars + 1] = car
+    if not best or (car.docked and not best.docked) or (car.docked == best.docked and car.left < best.left) then best = car end
+  end
+  return { docked = best.docked, left = best.left, rtt = rtt, dwell = D, cars = #cars > 1 and cars or nil,
+           by = rec.by, via = rec.via, age = now - (rec.seen or rec.t) }
+end
+
+--- HOW SURE (minor 17 - moved here from BiS Tools' ride card so every addon says the same number; Arn, 22 Oct:
+--- "a confidence % the longer its been since a reading the less confidence its correct"). 0-100: the chance the
+--- countdown is still within RIDE_SURE_WITHIN seconds - a bell curve as wide as a reading's error and the loop's
+--- error times the laps since; a measured loop drifts slower than a learned one; past RIDE_STALE (a server restart
+--- resets every ride, and the client cannot tell us one happened) 0. nil with nothing to judge by.
+lib.RIDE_SURE_WITHIN, lib.RIDE_READ_ERR, lib.RIDE_LAP_ERR = 10, 2, { measured = 1, learned = 4 }
+local function erf(x)                          -- Abramowitz and Stegun 7.1.26: good to 1.5e-7
+  local sg = x < 0 and -1 or 1
+  x = math.abs(x)
+  local t = 1 / (1 + 0.3275911 * x)
+  local p = ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t
+  return sg * (1 - p * math.exp(-x * x))
+end
+function lib:RideSure(sched, s)
+  if not (sched and type(sched.rtt) == "number" and sched.rtt > 0 and type(sched.age) == "number") then return nil end
+  if sched.age > RIDE_STALE then return 0 end
+  if type(s) == "string" then s = self.rideById[s] end
+  local measured = s and RIDE_LOOP[self:RideKey(s) or ""] ~= nil
+  local drift = math.max(0, sched.age) / sched.rtt * (measured and self.RIDE_LAP_ERR.measured or self.RIDE_LAP_ERR.learned)
+  local width = math.sqrt(self.RIDE_READ_ERR ^ 2 + drift ^ 2)
+  return math.floor(100 * erf(self.RIDE_SURE_WITHIN / (width * math.sqrt(2))) + 0.5)
 end
 
 --- Every stop on a map (a capital counts as its zone), each with its ride now: { { stop, sched }, ... }.
@@ -1488,7 +1551,7 @@ function lib:RideLook()
        and not said(UnitOnTaxi, "player") then
       self.riding = nil
       local now = ServerNow()
-      local est = riding.dep and (2 * (now - riding.dep) + 2 * RIDE_DWELL) or nil
+      local est = riding.dep and (2 * (now - riding.dep) + 2 * (near.dwell or RIDE_DWELL)) or nil
       self:RideLearn(near, now, est)
       said_ = "arrived " .. near.id
     elseif inside and inside.group ~= riding.from.group and inside.group ~= riding.from.to then
@@ -1505,7 +1568,7 @@ function lib:RideLook()
       local lag = (stillBefore and clock - stillBefore <= RIDE_AT_STOP) and math.floor(clock - stillBefore + 0.5) or 0
       local dep = now - lag
       self.riding = { from = last, dep = dep, t0 = clock - lag }
-      self:RideLearn(last, dep - RIDE_DWELL)
+      self:RideLearn(last, dep - (last.dwell or RIDE_DWELL))
       said_ = "departed " .. last.id .. (lag > 0 and (" (" .. lag .. " s ago)") or "")
     end
   end
@@ -1518,10 +1581,10 @@ end
 
 --- My map and my spot on it, 0-100 (x, y nil where the client will not say).
 function lib:RideSpot()
-  if not (C_Map and C_Map.GetBestMapForUnit) then return nil end
-  local ok, map = pcall(C_Map.GetBestMapForUnit, "player")
+  local ok, map = false, nil
+  if C_Map and C_Map.GetBestMapForUnit then ok, map = pcall(C_Map.GetBestMapForUnit, "player") end
   map = ok and plainNum(map) or nil
-  if not map then return nil end
+  if not map then return self:TramSpot() end
   if not (C_Map.GetPlayerMapPosition) then return map end
   local ok2, pos = pcall(C_Map.GetPlayerMapPosition, map, "player")
   if not ok2 or pos == nil or Secret(pos) then return map end
@@ -1531,6 +1594,34 @@ function lib:RideSpot()
   y = plainNum(y)
   if not (x and y) then return map end
   return map, x * 100, y * 100
+end
+
+--- In the Deeprun Tram? Its instance id (GetInstanceInfo's 8th answer), or its name in any of the client's three
+--- zone answers (Arn's first try, 23 Oct: the instance id alone missed it once).
+function lib:InTram()
+  if GetInstanceInfo then
+    local ok, _, _, _, _, _, _, _, id = pcall(GetInstanceInfo)
+    if ok and plainNum(id) == self.TRAM_INSTANCE then return true end
+  end
+  for _, fn in ipairs({ GetRealZoneText or false, GetZoneText or false, GetMinimapZoneText or false }) do
+    if fn then
+      local ok, z = pcall(fn)
+      if ok and type(z) == "string" and not Secret(z) and z:find(self.TRAM_ZONE, 1, true) then return true end
+    end
+  end
+  return false
+end
+
+--- Your spot in the tram, as RideSpot gives it there: lib.TRAM_MAP, then along the track and across it in tens of
+--- yards (UnitPosition's second and first answers - the order Arn's probe printed them in). nil anywhere else.
+function lib:TramSpot()
+  if not (UnitPosition and self:InTram()) then return nil end
+  local ok, across, along = pcall(UnitPosition, "player")
+  if not ok then return self.TRAM_MAP end
+  across = plainNum(across)
+  along = plainNum(along)
+  if not (across and along) then return self.TRAM_MAP end
+  return self.TRAM_MAP, along / 10, across / 10
 end
 
 --- A loading screen: soon after a stop, I am on its ride (when it left: unknown).
@@ -1592,6 +1683,7 @@ end
 
 function lib:RideWanted()
   if self.riding then return true end
+  if self:InTram() then return true end                    -- the tram has no map: its own question (minor 17)
   local ok, map = pcall(C_Map and C_Map.GetBestMapForUnit or function() end, "player")
   map = ok and plainNum(map) or nil
   if not map then return false end
@@ -1646,10 +1738,383 @@ lib.RideClock = clock
 function lib:RideLine(s, sc)
   if type(s) == "string" then s = self.rideById[s] end
   if not s then return nil end
-  local what = (s.kind == "zeppelin" and "Zeppelin" or "Boat") .. " to " .. tostring(s.toName)
+  local what = (s.kind == "zeppelin" and "Zeppelin" or s.kind == "tram" and "Tram" or "Boat") .. " to " .. tostring(s.toName)
   if not sc then return what .. " - not timed yet" end
   if sc.docked then return what .. " - here now, leaves in " .. clock(sc.left) end
   return what .. " - arrives in " .. clock(sc.left)
+end
+
+--------------------------------------------------------------------
+-- BiS> in: asking for Innervate, Power Infusion, Mana Tide (minor 17)
+--------------------------------------------------------------------
+-- Arn, 22 Oct 2026 (docs/bisin.md, the plan): "a mage can ask for an innervate ... as long as they have an addon
+-- installed the mages can turn /bisin on and they opt in and a druid /bisin on and they opt in and now the druid sees
+-- all the people that opt in and who ever he clicks the druid cast innervate on them ... all this is api so ideally we
+-- dont have to make them install bishealing". TBC's BiS Innervate did it (REQ / CLAIM / CANCEL); this is Forever's.
+-- The lib says and remembers; it draws nothing - the buttons are BiSTheme's shared Ask piece (step 2).
+--
+--   OPT|on|give|ask|class|cds   I'm in (on 1/0); the spells I give ("innervate,pi"); I ask (1/0); my class;
+--                               my cooldowns ("innervate:<readyAt>,..."). Said on /bisin, to a new group member, and
+--                               back to anyone new who says it - so a late joiner learns who is in.
+--   CD|spell|readyAt            my spell is ready again at readyAt (server time); 0 = now. Said when I cast it.
+--   REQ|id|spell                I ask. Over by CANCEL, by the spell landing, or BISIN_TTL later on its own.
+--   CLAIM|id|at                 mine, casting - sent on the click. The FIRST claim wins everywhere: the earliest at,
+--                               the lower name on a tie - so two druids clicking at once agree who has it.
+--   CANCEL|id|why               the ask is over.
+--
+-- Group channel only, from someone in the group (OnMessage's guards). Off is deaf: an opted-out client keeps nothing.
+-- Mana Tide reaches the shaman's own PARTY only, so in a raid it counts only his subgroup's asks and givers.
+lib.BISIN = lib.BISIN or {
+    innervate = { id = 29166, class = "DRUID",   cd = 360, target = true },
+    pi        = { id = 10060, class = "PRIEST",  cd = 180, target = true },
+    tide      = { id = 16190, class = "SHAMAN",  cd = 300, target = false, party = true },
+}
+lib.BISIN_ORDER = { "innervate", "pi", "tide" }
+-- who asks: the classes with mana (Arn: "healers and casters only ... never warriors or rogues")
+lib.BISIN_MANA = { MAGE = true, WARLOCK = true, DRUID = true, HUNTER = true, PRIEST = true, SHAMAN = true, PALADIN = true }
+lib.BISIN_TTL, lib.BISIN_SAY_GAP = 30, 2
+do
+    local B = lib.BISIN
+    local function state()
+        local s = lib.bisin
+        if not s then
+            s = { on = false, give = {}, ask = false, class = nil, cd = {}, peers = {}, reqs = {}, n = 0, told = {} }
+            lib.bisin = s
+        end
+        return s
+    end
+    lib.BisInState = state
+
+    local function ServerNow2()
+        if GetServerTime then
+            local ok, t = pcall(GetServerTime)
+            if ok and not Secret(t) and type(t) == "number" then return t end
+        end
+        return math.floor(Now())
+    end
+
+    local function myClass()
+        if not UnitClass then return nil end
+        local ok, _, file = pcall(UnitClass, "player")
+        if not ok or Secret(file) or type(file) ~= "string" then return nil end
+        return file
+    end
+
+    local function knows(id)
+        local f = IsPlayerSpell or IsSpellKnown
+        if not f then return false end
+        local ok, v = pcall(f, id)
+        return ok and not Secret(v) and v == true
+    end
+
+    local function list(set)
+        local out = {}
+        for _, k in ipairs(lib.BISIN_ORDER) do if set[k] then out[#out + 1] = k end end
+        return table.concat(out, ",")
+    end
+    local function unlist(s)
+        local set = {}
+        for k in tostring(s or ""):gmatch("[^,]+") do if B[k] then set[k] = true end end
+        return set
+    end
+
+    --- The OPT line's fields for me.
+    local function optFields()
+        local s = state()
+        local cds = {}
+        for k, t in pairs(s.cd) do if B[k] and t > ServerNow2() then cds[#cds + 1] = k .. ":" .. t end end
+        table.sort(cds)
+        return s.on and "1" or "0", list(s.give), s.ask and "1" or "0", s.class or "", table.concat(cds, ",")
+    end
+
+    local function sayOpt()
+        local s = state()
+        s.saidAt = Now()
+        return lib:Send("IN", "OPT", optFields())
+    end
+
+    --- /bisin on|off. On: my part from my class and spells (a druid who knows Innervate gives it; every class with
+    --- mana asks); `opts` may set give / ask by hand (a UI's choices). Off: deaf, and the others are told.
+    function lib:BisInSet(on, opts)
+        local s = state()
+        s.on = on and true or false
+        s.class = myClass()
+        s.give, s.ask = {}, false
+        if s.on then
+            for k, sp in pairs(B) do
+                if s.class == sp.class and knows(sp.id) then s.give[k] = true end
+            end
+            s.ask = s.class ~= nil and lib.BISIN_MANA[s.class] == true
+            if type(opts) == "table" then
+                if type(opts.give) == "table" then s.give = {} for k, v in pairs(opts.give) do if B[k] and v then s.give[k] = true end end end
+                if opts.ask ~= nil then s.ask = opts.ask and true or false end
+            end
+        else
+            s.peers, s.reqs = {}, {}
+        end
+        lib:BisInWatch()
+        sayOpt()
+        fire("BISIN", "me")
+        return s.on
+    end
+
+    function lib:BisInMe()
+        local s = state()
+        return { on = s.on, give = s.give, ask = s.ask, class = s.class }
+    end
+
+    --- Is this group member in my party (a raid's subgroup)? Out of a raid, everyone is.
+    local function sameParty(name)
+        if not (IsInRaid and IsInRaid()) then return true end
+        if not GetRaidRosterInfo then return true end
+        local mine, theirs
+        local n = (GetNumGroupMembers and GetNumGroupMembers()) or 0
+        local me = PlayerName()
+        for i = 1, n do
+            local ok, rn, _, sub = pcall(GetRaidRosterInfo, i)
+            if ok and not Secret(rn) and type(rn) == "string" then
+                rn = Short(rn)
+                if rn == me or First(rn) == First(me) and not rn:find(" ", 1, true) then mine = sub end
+                if rn == name or (First(rn) == First(name) and not rn:find(" ", 1, true)) then theirs = sub end
+            end
+        end
+        return mine ~= nil and mine == theirs
+    end
+
+    --- Who gives this spell, in the group: ready now, the soonest ready-at of the rest, and the givers' names.
+    function lib:BisInReady(spell)
+        local s, sp = state(), B[spell]
+        if not (s.on and sp) then return 0, nil, {} end
+        local now, ready, soonest, givers = ServerNow2(), 0, nil, {}
+        for name, p in pairs(s.peers) do
+            if p.on and p.give[spell] and (not sp.party or sameParty(name)) then
+                givers[#givers + 1] = name
+                local at = p.cd[spell] or 0
+                if at <= now then ready = ready + 1
+                elseif not soonest or at < soonest then soonest = at end
+            end
+        end
+        table.sort(givers)
+        return ready, (ready == 0) and soonest or nil, givers
+    end
+
+    --- The faces a giver sees: the mana users who opted in to ask, never me. { name, class }, by name.
+    function lib:BisInAskers()
+        local s, out = state(), {}
+        if not s.on then return out end
+        for name, p in pairs(s.peers) do
+            if p.on and p.ask then out[#out + 1] = { name = name, class = p.class } end
+        end
+        table.sort(out, function(a, b) return a.name < b.name end)
+        return out
+    end
+
+    local function expire()
+        local s, now = state(), Now()
+        for id, r in pairs(s.reqs) do
+            if now - r.at > lib.BISIN_TTL then s.reqs[id] = nil end
+        end
+    end
+
+    function lib:BisInRequest(id)
+        expire()
+        return state().reqs[id]
+    end
+
+    --- The open asks for a spell I give: unclaimed, not mine; Mana Tide only from my party.
+    function lib:BisInRequests(spell)
+        expire()
+        local s, out = state(), {}
+        if not (s.on and s.give[spell]) then return out end
+        for _, r in pairs(s.reqs) do
+            if r.spell == spell and not r.claim and r.owner ~= PlayerName()
+               and (not B[spell].party or sameParty(r.owner)) then
+                out[#out + 1] = r
+            end
+        end
+        table.sort(out, function(a, b) return a.at < b.at end)
+        return out
+    end
+
+    --- I ask: a request id, or nil and why (nobody gives it here, I'm not in, I have no mana).
+    function lib:BisInAsk(spell)
+        local s = state()
+        if not s.on then return nil, "off" end
+        if not s.ask then return nil, "nothing to ask" end
+        local _, _, givers = self:BisInReady(spell)
+        if #givers == 0 then return nil, "nobody gives it here" end
+        s.n = s.n + 1
+        local id = (PlayerName() or "?"):gsub("%s", "") .. "-" .. ServerNow2() .. "-" .. s.n
+        s.reqs[id] = { id = id, owner = PlayerName(), spell = spell, at = Now() }
+        self:Send("IN", "REQ", id, spell)
+        fire("BISIN", "ask", s.reqs[id])
+        self:BisInWatch()
+        return id
+    end
+
+    -- the first claim wins everywhere: the earlier at, the lower name on a tie
+    local function better(a, b)
+        if not b then return true end
+        if a.at ~= b.at then return a.at < b.at end
+        return a.by < b.by
+    end
+
+    --- The giver's click: mine, casting.
+    function lib:BisInClaim(id)
+        local s = state()
+        local r = self:BisInRequest(id)
+        if not (s.on and r) then return false end
+        local c = { by = PlayerName(), at = ServerNow2() }
+        if better(c, r.claim) then r.claim = c end
+        self:Send("IN", "CLAIM", id, tostring(c.at))
+        fire("BISIN", "claim", r)
+        return r.claim.by == c.by
+    end
+
+    --- The asker takes it back (or the spell landed).
+    function lib:BisInCancel(id, why)
+        local s = state()
+        local r = s.reqs[id]
+        if not r then return false end
+        s.reqs[id] = nil
+        if r.owner == PlayerName() then self:Send("IN", "CANCEL", id, why or "taken back") end
+        fire("BISIN", "end", r)
+        return true
+    end
+
+    --- My own cast of a spell I give: its cooldown, to the group.
+    function lib:BisInCast(spellId)
+        local s = state()
+        if not s.on or Secret(spellId) then return nil end
+        for k, sp in pairs(B) do
+            if sp.id == spellId and s.give[k] then
+                s.cd[k] = ServerNow2() + sp.cd
+                self:Send("IN", "CD", k, tostring(s.cd[k]))
+                fire("BISIN", "cd", k)
+                return k
+            end
+        end
+        return nil
+    end
+
+    -- the messages ---------------------------------------------------
+    local H = {}
+    function H.OPT(sender, on, give, ask, class, cds)
+        local s = state()
+        if not s.on then return end
+        local known = s.peers[sender] ~= nil
+        if on ~= "1" then
+            s.peers[sender] = nil
+            fire("BISIN", "roster")
+            return
+        end
+        local p = { on = true, give = unlist(give), ask = ask == "1", class = class ~= "" and class or nil, cd = {} }
+        for k, t in tostring(cds or ""):gmatch("([%a]+):(%d+)") do if B[k] then p.cd[k] = tonumber(t) end end
+        s.peers[sender] = p
+        fire("BISIN", "roster")
+        -- SOMEONE NEW LEARNS ME BACK - always, whatever I said before: what I said then may have reached them while
+        -- they were still out, and off is deaf. A burst of new faces (a raid opting in at once) shares one reply.
+        if not known and not s.replying then
+            s.replying = true
+            local function reply() s.replying = nil sayOpt() end
+            if not After(0.3 + math.random() * 0.7, reply) then reply() end
+        end
+    end
+    function H.CD(sender, spell, at)
+        local s = state()
+        local p = s.on and s.peers[sender]
+        if not (p and B[spell]) then return end
+        p.cd[spell] = tonumber(at) or 0
+        fire("BISIN", "cd", spell, sender)
+    end
+    function H.REQ(sender, id, spell)
+        local s = state()
+        if not (s.on and B[spell] and type(id) == "string" and id ~= "") then return end
+        s.reqs[id] = s.reqs[id] or { id = id, owner = sender, spell = spell, at = Now() }
+        fire("BISIN", "ask", s.reqs[id])
+    end
+    function H.CLAIM(sender, id, at)
+        local s = state()
+        local r = s.on and s.reqs[id]
+        if not r then return end
+        local c = { by = sender, at = tonumber(at) or ServerNow2() }
+        if better(c, r.claim) then r.claim = c fire("BISIN", "claim", r) end
+    end
+    function H.CANCEL(sender, id)
+        local s = state()
+        local r = s.on and s.reqs[id]
+        if not (r and r.owner == sender) then return end
+        s.reqs[id] = nil
+        fire("BISIN", "end", r)
+    end
+    for cmd, fn in pairs(H) do lib:RegisterHandler("IN", cmd, fn) end
+
+    -- a new group member hears who is in (the lib's PEER is the first line from them)
+    lib.callbacks.PEER = lib.callbacks.PEER or {}
+    if not lib._bisinPeerHook then
+        lib._bisinPeerHook = true
+        table.insert(lib.callbacks.PEER, function()
+            local s = lib.bisin
+            if s and s.on and Now() - (s.saidAt or -999) >= lib.BISIN_SAY_GAP then
+                if not After(0.5 + math.random(), function() sayOpt() end) then sayOpt() end
+            end
+        end)
+    end
+
+    --- My own asks that are still open.
+    local function mine()
+        expire()
+        local s, me, out = state(), PlayerName(), {}
+        for _, r in pairs(s.reqs) do if r.owner == me then out[#out + 1] = r end end
+        return out
+    end
+
+    --- My own open ask for a spell (the asker's button: "asked" / "Arn is coming"), or nil.
+    function lib:BisInMine(spell)
+        for _, r in ipairs(mine()) do if r.spell == spell then return r end end
+        return nil
+    end
+
+    --- The spell landed on me: my ask for it is over (UNIT_AURA, only while I have one open). Asked "hidden?" first -
+    --- in a lockdown auras go secret, and then BISIN_TTL ends it instead.
+    function lib:BisInLanded()
+        local got = C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID
+        if not got then return 0 end
+        local n = 0
+        for _, r in ipairs(mine()) do
+            local ok, aura = pcall(got, B[r.spell].id)
+            if ok and aura ~= nil and not Secret(aura) then
+                self:BisInCancel(r.id, "got it")
+                n = n + 1
+            end
+        end
+        self:BisInWatch()
+        return n
+    end
+
+    -- my casts while I give something; my buffs while I have an ask open - nothing else, nothing while out
+    function lib:BisInWatch()
+        local f = self._bisinFrame
+        if not f and CreateFrame then
+            f = CreateFrame("Frame")
+            self._bisinFrame = f
+            f:SetScript("OnEvent", function(_, event, unit, _, spellId)
+                if unit ~= "player" then return end
+                if event == "UNIT_AURA" then lib:BisInLanded() else lib:BisInCast(spellId) end
+            end)
+        end
+        if not f then return end
+        local s = state()
+        local function want(ev, on)
+            if on then
+                if f.RegisterUnitEvent then pcall(f.RegisterUnitEvent, f, ev, "player") else pcall(f.RegisterEvent, f, ev) end
+            else
+                pcall(f.UnregisterEvent, f, ev)
+            end
+        end
+        want("UNIT_SPELLCAST_SUCCEEDED", s.on and next(s.give) ~= nil)
+        want("UNIT_AURA", s.on and #mine() > 0)
+    end
 end
 
 --------------------------------------------------------------------
@@ -2049,6 +2514,17 @@ if SlashCmdList then
             say(("rides timed: %d%s"):format(timed, lib.riding and (" - riding from " .. lib.riding.from.name) or ""))
             local quiet = lib.FojjiQuiet and lib:FojjiQuiet()
             say("FojjiCore's windows: " .. (quiet and ("quiet (" .. quiet .. ")") or "your experience and campfire are shared"))
+            local bi = lib.bisin
+            if bi and bi.on then
+                local g = {}
+                for _, k in ipairs(lib.BISIN_ORDER) do if bi.give[k] then g[#g + 1] = k end end
+                local n = 0
+                for _ in pairs(bi.peers) do n = n + 1 end
+                say(("BiS> in: on - you give %s%s; %d in the group opted in"):format(#g > 0 and table.concat(g, ", ") or "nothing",
+                    bi.ask and ", you ask" or "", n))
+            else
+                say("BiS> in: off")
+            end
             say(("sent %d, refused %d, waiting %d%s%s"):format(lib.sentCount or 0, lib.refusedCount or 0,
                 #(lib.outbox or {}), lib._lastError and (", last trouble: " .. lib._lastError) or "",
                 OutgoingBlocked() and " (the realm says restricted - Forever always does; ignored)" or ""))
