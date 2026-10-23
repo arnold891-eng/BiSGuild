@@ -18,6 +18,10 @@
   ONE FRAME PER PIN, never shared with the minimap (BiS Tools learned it 6 Oct: the library re-parents
   a pin into whichever map draws it, and a frame on two maps shows on neither).
 
+  NOT YOUR GROUP (Arn, 22 Oct, two marks on one cousin: "both of these blue marks are frank how about they only
+  show up if we are not in a party or raid"): the game already draws your party and raid on its map, so a
+  guildmate in your group gets no BiS dot; the moment he leaves it, his dot comes back (GROUP_ROSTER_UPDATE).
+
   `/bisg dots off` takes them all away; `/bisg dots on` brings them back.
 ]]
 local ADDON, ns = ...
@@ -34,6 +38,20 @@ local function HBD() return LibStub and LibStub("HereBeDragons-Pins-2.0", true) 
 local function Lib() return _G.LibBiSComm end
 
 function M.On() return ns.DB().mapDots ~= false end
+
+--- Who is in your party or raid, by whole name (Forever: "Name Surname", the name the shared spots carry).
+function M.Grouped()
+    local set = {}
+    local okN, n = pcall(GetNumGroupMembers)
+    n = okN and type(n) == "number" and n or 0
+    if n == 0 then return set end
+    local raid = IsInRaid and IsInRaid() == true
+    for i = 1, raid and n or n - 1 do
+        local ok, name = pcall(GetUnitName, (raid and "raid" or "party") .. i, false)
+        if ok and type(name) == "string" and name ~= "" then set[(name:gsub("%-.*$", ""))] = true end
+    end
+    return set
+end
 
 local function NewPin()
     local b = table.remove(M.pool)
@@ -87,8 +105,9 @@ function M.Update()
     if not (H and lib and lib.Spots) or not M.On() then M.Clear() return 0 end
     local seen, n = {}, 0
     local colours = _G.RAID_CLASS_COLORS
+    local grouped = M.Grouped()
     for sender, s in pairs(lib:Spots()) do
-        if type(sender) == "string" and type(s) == "table" and s.map and s.x and s.y then
+        if type(sender) == "string" and type(s) == "table" and s.map and s.x and s.y and not grouped[sender] then
             seen[sender] = true
             local p = M.pins[sender]
             if p and (p.map ~= s.map or p.x ~= s.x or p.y ~= s.y) then
@@ -140,4 +159,8 @@ end
 
 local f = CreateFrame("Frame")
 f:RegisterEvent("PLAYER_LOGIN")
-f:SetScript("OnEvent", function() M.Boot() M.Update() end)
+f:RegisterEvent("GROUP_ROSTER_UPDATE")
+f:SetScript("OnEvent", function(_, event)
+    if event == "GROUP_ROSTER_UPDATE" then M.Soon() return end     -- joined or left: dots on or off
+    M.Boot() M.Update()
+end)
